@@ -1,0 +1,123 @@
+[project]
+name = "djangoapitemplate"
+version = "0.1.0"
+description = "Reusable Django REST API template."
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.2,<6.0",
+    "django-auditlog>=3.4.1",
+    "django-cors-headers>=4.9.0",
+    "django-environ>=0.14.0",
+    "django-filter>=26.1",
+    "djangorestframework>=3.18.0",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.30.0",
+    "pillow>=12.3.0",
+    "psycopg[binary]>=3.3.5",
+]
+
+[dependency-groups]
+dev = [
+    "django-debug-toolbar>=8.0.0",
+    "django-stubs>=6.1.0",
+    "djangorestframework-stubs>=3.18.1",
+    "factory-boy>=3.3.3",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-django>=4.14.0",
+    "ruff>=0.16.6",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff - linter, formatter and import sorter in one tool.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 90
+target-version = "py313"
+extend-exclude = ["migrations"]  # generated code - not ours to lint
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes - unused imports, undefined names
+    "I",    # isort - import ordering
+    "N",    # pep8-naming
+    "UP",   # pyupgrade - modern syntax
+    "B",    # flake8-bugbear - likely bugs
+    "DJ",   # flake8-django - Django-specific pitfalls
+    "S",    # flake8-bandit - security issues
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "PTH",  # flake8-use-pathlib
+    "D",    # pydocstyle - docstring presence and format
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "RUF012",  # Django Meta/DRF class attrs are not ClassVar by convention
+    "DJ012",   # Django's Meta ordering convention differs from Ruff's
+    "D106",    # Django/DRF `class Meta` is framework boilerplate, not API surface
+    "D105",    # dunders such as __str__ are self-describing
+    "D107",    # Google style documents constructor arguments on the class
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Settings modules legitimately re-export via wildcard and run long.
+"config/settings/*" = ["F403", "F405", "E501"]
+# Tests may assert freely and hard-code credentials.
+"**/tests/*" = ["S101", "S105", "S106"]
+"**/factories.py" = ["S311"]  # non-cryptographic randomness is fine for fake data
+# Django app packages are conventionally empty; a docstring would say nothing.
+"**/__init__.py" = ["D104"]
+# Permission-carrier models are unmanaged and hold no rows, so DJ008's __str__
+# requirement (convention 6) does not apply to them.
+"apps/core/models/gates.py" = ["DJ008"]
+"apps/audit/models.py" = ["DJ008"]
+"**/commands/seed_demo.py" = ["S311", "S106"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+# Order reads: stdlib -> third-party -> django -> first-party -> local.
+known-first-party = ["config", "apps"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "django",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+django = ["django"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["django.utils.timezone.now"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["apps"]
+# --strict-markers: a typo'd marker fails instead of silently passing.
+addopts = "--strict-markers --reuse-db"
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/tests/*", "*/apps.py", "*/admin.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

@@ -1,0 +1,35 @@
+# Runs before each commit so violations never reach history.
+
+repos:
+  # --- General hygiene ------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key       # blocks committing keys and certificates
+      - id: debug-statements         # blocks a stray breakpoint()
+
+  # --- Ruff: lint + format (reads pyproject.toml) ---------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # --- Django safety net ----------------------------------------------
+  - repo: local
+    hooks:
+      - id: django-check
+        name: django system check
+        entry: uv run python manage.py check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]           # heavier - on push, not every commit
