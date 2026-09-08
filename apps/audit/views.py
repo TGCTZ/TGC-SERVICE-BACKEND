@@ -32,7 +32,17 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [StrictModelPermissions]
 
     search_fields = ("object_repr",)
-    filter_fields = ("action", "actor", "content_type", "object_pk")
+    # ``content_type__model`` is whitelisted alongside the raw id so a client can
+    # scope history to a model by name, which is what the API already reports as
+    # ``subject_type``; requiring the ContentType id would mean a lookup call
+    # before every history request.
+    filter_fields = (
+        "action",
+        "actor",
+        "content_type",
+        "content_type__model",
+        "object_pk",
+    )
     ordering_fields = ("id", "timestamp", "action")
     ordering = ["-timestamp"]
     date_filter_fields = ("timestamp",)

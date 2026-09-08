@@ -12,7 +12,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-DEMO_PASSWORD = "DemoPass!2026"  # noqa: S105 - demo data, never a real credential
+DEMO_PASSWORD = "1234567890"  # noqa: S105 - demo data, never a real credential
 
 
 class Command(BaseCommand):
@@ -58,7 +58,7 @@ class Command(BaseCommand):
         self.stdout.write("Creating one account per role...")
         for role in Group.objects.all():
             account = UserFactory(
-                email=f"{role.name}@example.com",
+                email=f"{role.name}@tgc.com",
                 username=role.name,
                 first_name=role.name.title(),
                 last_name="Demo",
@@ -93,6 +93,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Done. Role accounts: <role>@example.com / {DEMO_PASSWORD}"
+                f"Done. Role accounts: <role>@tgc.com / {DEMO_PASSWORD}"
             )
         )

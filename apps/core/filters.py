@@ -21,7 +21,8 @@ import re
 
 from rest_framework.filters import BaseFilterBackend
 
-from django.db.models import Q
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models import BooleanField, Q
 
 # Matches filter[field] and filter[field][from] / filter[field][to].
 FILTER_PARAM = re.compile(
@@ -32,15 +33,57 @@ TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
 FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
 
 
-def _coerce(value: str):
-    """Turn a query-string value into a bool or None where it clearly is one."""
+NULL_VALUES = {"null", "none", ""}
+
+
+def _resolve_field(model, path: str):
+    """Return the model field a ``__``-separated filter path points at.
+
+    Args:
+        model: The model the path is rooted in.
+        path: A field name, optionally traversing relations (``content_type__model``).
+
+    Returns:
+        The final field, or None when any segment does not resolve.
+    """
+    field = None
+    for part in path.split("__"):
+        if model is None:
+            return None
+        try:
+            field = model._meta.get_field(part)
+        except FieldDoesNotExist:
+            return None
+        model = field.related_model if field.is_relation else None
+    return field
+
+
+def _coerce(value: str, field=None):
+    """Turn a query-string value into a bool or None where the field calls for it.
+
+    Booleans are only recognised on an actual ``BooleanField``. Coercing by
+    appearance instead would read ``filter[brand]=1`` as ``brand=True``, which
+    silently matches nothing - the id ``1`` is the most common id there is, so
+    that bug hides in exactly the rows most likely to be filtered.
+
+    Everything else is passed through as a string for the ORM to coerce against
+    the real column type.
+
+    Args:
+        value: The raw query-string value.
+        field: The resolved model field, when the path could be resolved.
+
+    Returns:
+        True, False, None for an explicit null, or the trimmed string.
+    """
     lowered = value.strip().lower()
-    if lowered in TRUE_VALUES:
-        return True
-    if lowered in FALSE_VALUES:
-        return False
-    if lowered in {"null", "none", ""}:
+    if lowered in NULL_VALUES:
         return None
+    if isinstance(field, BooleanField):
+        if lowered in TRUE_VALUES:
+            return True
+        if lowered in FALSE_VALUES:
+            return False
     return value
 
 
@@ -98,11 +141,14 @@ class WhitelistFilterBackend(BaseFilterBackend):
 
             if field not in allowed:
                 continue
+            model_field = _resolve_field(queryset.model, field)
             if "," in raw:
-                values = [_coerce(part) for part in raw.split(",") if part.strip()]
+                values = [
+                    _coerce(part, model_field) for part in raw.split(",") if part.strip()
+                ]
                 queryset = queryset.filter(**{f"{field}__in": values})
             else:
-                value = _coerce(raw)
+                value = _coerce(raw, model_field)
                 if value is None:
                     queryset = queryset.filter(**{f"{field}__isnull": True})
                 else:
