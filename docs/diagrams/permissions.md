@@ -83,10 +83,10 @@ flowchart LR
 | Role | Scope |
 | --- | --- |
 | `superadmin` | Every permission, resolved dynamically |
-| `admin` | Full CRUD on users and catalog, roles, audit read |
-| `manager` | Full catalog CRUD, read-only people, audit read |
+| `administrator` | Full CRUD across the domain, users, roles, audit read |
+| `receptionist` | Customers and orders; registers and types stones |
 | `editor` | Catalog add / change / view — no delete |
-| `viewer` | Read-only across catalog and users |
+| `accountant` | Bills, payments, service providers, and pricing |
 
 Keeping the matrix in code rather than in seed data means a role change arrives
 as a reviewable diff.
@@ -112,7 +112,7 @@ out of the system irrecoverably.
 ## Module gates
 
 Four permissions guard whole UI sections rather than tables: `module_user`,
-`module_catalog`, `module_settings`, `module_audit`. They have no table of their
+`module_orders`, `module_billing`, `module_settings`, `module_audit`. They have no table of their
 own, so they hang off an **unmanaged** model.
 
 ```mermaid

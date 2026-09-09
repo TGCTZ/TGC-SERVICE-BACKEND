@@ -43,7 +43,7 @@ and `urls.py` are load-bearing for a simple CRUD app.
 | `filters.py` `(optional)` | Only if the shared whitelist backend is not enough. |
 | `admin.py` `(optional)` | Django admin registration. |
 | `management/commands/` `(optional)` | Operational commands. |
-| `tests/factories.py` | `factory_boy` factories. Reused by `seed_demo`. |
+| `tests/factories.py` | `factory_boy` factories. Reused by `seed`. |
 | `tests/test_*.py` | The suite. |
 
 ## The layers
@@ -59,4 +59,15 @@ layer. The rule is one line long and worth enforcing in review:
 | L1 | `apps.core` | Base models, managers, shared DRF machinery. Imports nothing local. |
 | L2 | `apps.users` | Custom user, authentication, RBAC. |
 | L2 | `apps.audit` | Read-only APIs over the activity log and log file. |
-| L3 | `apps.catalog` | The product domain - the worked example. |
+| L2 | `apps.gems` | Every domain enum, and the stone reference tables. |
+| L3 | `apps.orders` | Customers, orders, stones, and the stone status trail. |
+| L4 | `apps.billing` | Bills, payments, and the GePG payment gateway. |
+| L4 | `apps.identification` | Gemmological findings recorded against a stone. |
+| L5 | `apps.certificates` | Certificates and their public verification. |
+
+`apps.billing` and `apps.identification` sit at the same layer and must not
+import one another. Where one needs the other's state - the findings queue is
+gated on the bill being paid - it is reached by ORM traversal
+(`stone.order.bill`) with the enum coming from `apps.gems` at L2. That is the
+reason every domain enum lives in `gems` rather than beside the model it
+describes.

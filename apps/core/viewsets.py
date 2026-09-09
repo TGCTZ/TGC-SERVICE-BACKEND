@@ -8,7 +8,14 @@ from rest_framework.response import Response
 from django.utils import timezone
 
 from apps.core.filters import TRUE_VALUES
-from apps.core.permissions import StrictModelPermissions
+from apps.core.permissions import ActionPermissions
+
+# ``AuditFieldsMixin`` renders created_by/updated_by as display labels, which
+# dereferences both foreign keys on every row. Joined here rather than left to
+# each ViewSet because it applies to every list the mixin serializes, and the
+# cost is invisible in tests - factories create rows outside a request, so the
+# actor columns are null and the lookup never happens.
+AUDIT_ACTOR_JOINS = ("created_by", "updated_by")
 
 
 class SoftDeleteViewSetMixin:
@@ -34,13 +41,14 @@ class SoftDeleteViewSetMixin:
             only_trashed = True
 
         if only_trashed:
-            return queryset.model.all_objects.filter(
+            queryset = queryset.model.all_objects.filter(
                 deleted_at__isnull=False,
                 pk__in=queryset.model.all_objects.values("pk"),
             )
-        if with_trashed:
-            return queryset.model.all_objects.all()
-        return queryset
+        elif with_trashed:
+            queryset = queryset.model.all_objects.all()
+
+        return queryset.select_related(*AUDIT_ACTOR_JOINS)
 
     def perform_destroy(self, instance):
         """Soft-delete the instance and record it explicitly in the audit log."""
@@ -88,7 +96,7 @@ class BaseModelViewSet(SoftDeleteViewSetMixin):
     ``filter_fields``, ``ordering_fields`` and ``date_filter_fields``.
     """
 
-    permission_classes = [StrictModelPermissions]
+    permission_classes = [ActionPermissions]
     ordering = ["-id"]
 
     search_fields: tuple = ()

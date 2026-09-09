@@ -54,7 +54,11 @@ LOCAL_APPS = [
     "apps.core",  # L1 - base models, managers, shared DRF machinery
     "apps.users",  # L2 - custom user, authentication, RBAC
     "apps.audit",  # L2 - activity-log and system-log read APIs
-    "apps.catalog",  # L3 - product domain
+    "apps.gems",  # L2 - domain enums and stone reference tables
+    "apps.orders",  # L3 - customers, orders and stones
+    "apps.billing",  # L4 - bills, payments and the GePG gateway
+    "apps.identification",  # L4 - gemmological findings
+    "apps.certificates",  # L5 - certificates and public verification
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -169,8 +173,11 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Django API Template",
-    "DESCRIPTION": "Reusable Django REST API starter.",
+    "TITLE": "TGC Service API",
+    "DESCRIPTION": (
+        "Tanzania Gemmological Centre - stone identification, billing through "
+        "the GePG gateway, and certification."
+    ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
@@ -206,3 +213,36 @@ LOGGING = {
         "level": env("LOG_LEVEL", default="INFO"),
     },
 }
+
+# --- GePG payment gateway ----------------------------------------------------
+# The Tanzanian government payment gateway. Bills are submitted for a control
+# number, and payment is confirmed asynchronously on a callback - there is no
+# manual payment entry anywhere in the system.
+
+GEPG_BILL_CREATE_URL = env("GEPG_BILL_CREATE_URL", default="")
+GEPG_BILL_CANCEL_URL = env("GEPG_BILL_CANCEL_URL", default="")
+GEPG_RECONCILIATION_URL = env("GEPG_RECONCILIATION_URL", default="")
+
+GEPG_SP_GRP_CODE = env("GEPG_SP_GRP_CODE", default="")
+GEPG_SYS_CODE = env("GEPG_SYS_CODE", default="")
+GEPG_SP_CODE = env("GEPG_SP_CODE", default="")
+GEPG_SUB_SP_CODE = env("GEPG_SUB_SP_CODE", default="")
+GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
+GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
+
+GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=False)
+# No default: a signing passphrase is a secret, and a blank one would let an
+# unsigned payload reach the gateway without anyone noticing.
+GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
+GEPG_PRIVATE_KEY_PATH = env(
+    "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")
+)
+GEPG_PUBLIC_CERT_PATH = env(
+    "GEPG_PUBLIC_CERT_PATH", default=str(BASE_DIR / "certificates" / "public.pfx")
+)
+
+GEPG_BILL_EXPIRY_DAYS = env.int("GEPG_BILL_EXPIRY_DAYS", default=365)
+
+# Skips the network call and returns a fake control number, so the whole
+# order -> bill -> payment -> certificate flow can be walked offline.
+GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)

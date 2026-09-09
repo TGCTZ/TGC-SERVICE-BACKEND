@@ -7,7 +7,7 @@ Rows are never physically removed by ordinary code paths. `delete()` stamps
 
 ```mermaid
 flowchart TD
-    DEL(["DELETE /api/v1/products/1/"]) --> PERM{"has delete_product?"}
+    DEL(["DELETE /api/v1/customers/1/"]) --> PERM{"has delete_customer?"}
     PERM -->|no| E403(["403"])
     PERM -->|yes| SOFT["perform_destroy()<br/>instance.delete()"]
 
@@ -18,7 +18,7 @@ flowchart TD
 
     UPD --> HIDDEN["hidden from the default manager,<br/>so list views no longer return it"]
 
-    RES(["POST /api/v1/products/1/restore/"]) --> FIND["get_queryset() forces<br/>only_trashed for this action"]
+    RES(["POST /api/v1/customers/1/restore/"]) --> FIND["get_queryset() forces<br/>only_trashed for this action"]
     FIND --> ISDEL{"actually deleted?"}
     ISDEL -->|no| E400(["400<br/>this record is not deleted"])
     ISDEL -->|yes| CLEAR["restore()<br/>deleted_at = NULL<br/>deleted_by = NULL"]
@@ -42,7 +42,7 @@ one that every other view deliberately hides.
 
 ```mermaid
 flowchart LR
-    SD["Soft delete"] --> SQL[("UPDATE products<br/>SET deleted_at = now")]
+    SD["Soft delete"] --> SQL[("UPDATE orders_customer<br/>SET deleted_at = now")]
     SQL --> AL["django-auditlog sees<br/>an ordinary UPDATE"]
     AL --> INDIST["indistinguishable from<br/>any other field change"]
     INDIST --> FIX["SoftDeleteViewSetMixin._log()<br/>writes an explicit DELETE entry"]
@@ -80,7 +80,7 @@ manager choice rather than needing its own check.
 
 ```mermaid
 flowchart TD
-    Q["Brand 'Acme' is soft-deleted.<br/>Can a new 'Acme' be created?"] --> WHICH{"constraint style"}
+    Q["Species 'Corundum' is soft-deleted.<br/>Can a new 'Corundum' be created?"] --> WHICH{"constraint style"}
 
     WHICH -->|"unique=True"| BAD["IntegrityError<br/><i>the deleted row holds the<br/>name hostage forever</i>"]
     WHICH -->|"UniqueConstraint with<br/>condition deleted_at IS NULL"| GOOD["created successfully"]
@@ -92,7 +92,8 @@ flowchart TD
 ```
 
 Every natural key in the project uses the partial form — `name` on
-`ReferenceModel`, plus `slug`, `sku` and `code` on the catalog models. A plain
+`ReferenceModel`, plus `reference_number`, `bill_number`, `trx_id` and the
+certificate's number and token. A plain
 `unique=True` on a soft-deletable model is a bug waiting to be filed as "cannot
 create, says it already exists, but I deleted it".
 

@@ -50,7 +50,7 @@ flowchart LR
 
     subgraph params["Accepted query parameters"]
         P1["?search=laptop"]
-        P2["?filter[brand]=3<br/>?filter[brand]=3,4,5<br/>?filter[is_active]=true"]
+        P2["?filter[stone_type]=3<br/>?filter[stone_type]=3,4,5<br/>?filter[is_active]=true"]
         P3["?ordering=-price"]
         P4["?filter[created_at][from]=2026-01-01<br/>?filter[created_at][to]=2026-06-30"]
     end

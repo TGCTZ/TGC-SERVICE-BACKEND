@@ -31,8 +31,23 @@ upgrade in its first eighteen months.
 | `django-cors-headers` | 4.9.0 | Cross-origin access for browser clients |
 | `psycopg[binary]` | 3.3.5 | PostgreSQL driver |
 | `pillow` | 12.3.0 | Image handling for `ImageField` |
+| `requests` | 2.34.2 | Outbound HTTP to the GePG gateway |
+| `cryptography` | 50.0.1 | PKCS#12 loading and SHA256withRSA signing for GePG |
+| `defusedxml` | 0.7.1 | Parsing untrusted XML from the payment callbacks |
 
 ### Why each one
+
+**`defusedxml`** — not a preference, a requirement. The payment-notification
+webhook parses XML posted by anyone who can reach the URL, and Python's own
+`xml.etree.ElementTree` is documented as unsafe against maliciously constructed
+input: an entity-expansion payload a few hundred bytes long can exhaust the
+process. `defusedxml` is a drop-in replacement that refuses those constructs and
+raises instead, which the service turns into a `7102` acknowledgement.
+
+**`cryptography`** — loads the PKCS#12 key and signs outbound payloads. Note the
+signing path **fails open**: a missing key logs an error and sends the request
+unsigned rather than refusing. That is inherited behaviour and is on the
+follow-up list, not a decision.
 
 **`djangorestframework`** — the default choice for Django APIs, and the reason
 is ecosystem rather than elegance. Authentication, permissions, pagination,
@@ -83,7 +98,7 @@ needed.
 | `pytest` | 9.1.1 | Test runner |
 | `pytest-django` | 4.14.0 | Database fixtures, settings integration |
 | `pytest-cov` | 7.1.0 | Coverage measurement |
-| `factory-boy` | 3.3.3 | Test data factories, reused by `seed_demo` |
+| `factory-boy` | 3.3.3 | Test data factories, reused by `seed` |
 | `ruff` | 0.16.6 | Linter, formatter, import sorter, docstring checker |
 | `pre-commit` | 4.6.2 | Git hook management |
 | `django-debug-toolbar` | 8.0.0 | Local SQL and request inspection |
@@ -97,7 +112,7 @@ Notably `D` runs with `convention = "google"`, so docstring format is checked
 automatically rather than in review.
 
 **`factory-boy`** factories live in `apps/<app>/tests/factories.py` and are
-imported by the `seed_demo` management command. One definition serves both the
+imported by the `seed` management command. One definition serves both the
 test suite and demo data, so the two cannot disagree about what a valid row
 looks like.
 

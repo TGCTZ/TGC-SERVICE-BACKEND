@@ -160,21 +160,21 @@ def test_api_writes_record_the_acting_user(admin_user, auth_client):
     APIAuthenticationMiddleware resolving the token first, CurrentUserMiddleware
     sees AnonymousUser and every API-created row is left unattributed.
     """
-    from apps.catalog.models import Brand
+    from apps.gems.models import Species
 
-    response = auth_client(admin_user).post("/api/v1/brands/", {"name": "Attributed"})
+    response = auth_client(admin_user).post("/api/v1/species/", {"name": "Attributed"})
 
     assert response.status_code == 201, response.data
-    brand = Brand.objects.get(name="Attributed")
-    assert brand.created_by == admin_user
-    assert brand.updated_by == admin_user
+    species = Species.objects.get(name="Attributed")
+    assert species.created_by == admin_user
+    assert species.updated_by == admin_user
 
 
 def test_api_writes_are_attributed_in_the_activity_log(admin_user, auth_client):
     """The audit trail names the actor rather than falling back to 'System'."""
     from auditlog.models import LogEntry
 
-    response = auth_client(admin_user).post("/api/v1/brands/", {"name": "Logged"})
+    response = auth_client(admin_user).post("/api/v1/species/", {"name": "Logged"})
     assert response.status_code == 201, response.data
 
     entry = LogEntry.objects.filter(object_repr="Logged").first()

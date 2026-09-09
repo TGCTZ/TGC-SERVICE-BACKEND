@@ -1,0 +1,354 @@
+@host = http://localhost:8000
+@api = {{host}}/api/v1
+
+### TGC Service API — request collection
+#
+# Runs in PyCharm/IntelliJ out of the box (click the green arrow beside a
+# request), and in VS Code with the "REST Client" extension.
+#
+# Start here: run "Sign in" first. It captures the access token into a client
+# variable that every request below reuses, so you never paste a token by hand.
+#
+# Prerequisites: the server is running and the database is seeded.
+#   uv run python manage.py seed
+#   uv run python manage.py runserver
+
+### Sign in  (run this first — captures the token)
+# Swap the email to test a different station:
+#   superadmin@tgc.com | administrator@tgc.com | receptionist@tgc.com
+#   gemmologist@tgc.com | accountant@tgc.com
+POST {{api}}/auth/login/
+Content-Type: application/json
+
+{
+  "email": "administrator@tgc.com",
+  "password": "1234567890"
+}
+
+> {%
+    client.global.set("access", response.body.access);
+    client.global.set("refresh", response.body.refresh);
+    client.log("Signed in as " + response.body.user.email);
+    client.log("Roles: " + response.body.user.roles);
+    // One id for this run. The two notification requests below must share a
+    // trx_id to prove the redelivery guard, but separate runs must not - a
+    // fixed trx_id makes every later run look like a redelivery of the first,
+    // and the bill silently never settles.
+    client.global.set("run", Date.now().toString());
+%}
+
+### Who am I (roles + every permission the UI gates on)
+GET {{api}}/auth/me/
+Authorization: Bearer {{access}}
+
+### Refresh the token pair
+# Rotation is on: the response carries a NEW refresh token, and the one you
+# sent is blacklisted. Storing only the access token breaks the next refresh.
+POST {{api}}/auth/refresh/
+Content-Type: application/json
+
+{ "refresh": "{{refresh}}" }
+
+> {%
+    client.global.set("access", response.body.access);
+    client.global.set("refresh", response.body.refresh);
+%}
+
+
+###############################################################################
+# Reference data
+###############################################################################
+
+### Stone types
+GET {{api}}/stone-types/?ordering=name
+Authorization: Bearer {{access}}
+
+### Stone types — filtered by category
+GET {{api}}/stone-types/?filter[category]=precious&ordering=-price
+Authorization: Bearer {{access}}
+
+### Varieties, with their species expanded
+GET {{api}}/varieties/?page_size=5
+Authorization: Bearer {{access}}
+
+### Create a stone type
+# The name is unique among live rows, so it carries a timestamp - otherwise the
+# collection only runs once. `$timestamp` is understood by both PyCharm and the
+# VS Code REST Client.
+POST {{api}}/stone-types/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "name": "Amethyst {{$timestamp}}",
+  "category": "semi_precious",
+  "price": "35000.00",
+  "description": "Purple quartz."
+}
+
+> {% client.global.set("stoneTypeId", response.body.id); %}
+
+### Soft-delete it
+DELETE {{api}}/stone-types/{{stoneTypeId}}/
+Authorization: Bearer {{access}}
+
+### Show only deleted rows
+GET {{api}}/stone-types/?only_trashed=1
+Authorization: Bearer {{access}}
+
+### Restore it
+POST {{api}}/stone-types/{{stoneTypeId}}/restore/
+Authorization: Bearer {{access}}
+
+
+###############################################################################
+# Reception: customers, orders, stones
+###############################################################################
+
+### Customers
+GET {{api}}/customers/?ordering=first_name
+Authorization: Bearer {{access}}
+
+### Create a customer
+POST {{api}}/customers/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "first_name": "Asha",
+  "middle_name": "N",
+  "last_name": "Mwakalinga",
+  "phone": "2557{{$timestamp}}",
+  "email": "asha@example.com",
+  "region": "Arusha"
+}
+
+> {% client.global.set("customerId", response.body.id); %}
+
+### Create an order
+# reference_number is ignored if you send it — the service mints ORD-YYYY-NNNN.
+POST {{api}}/orders/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "customer": {{customerId}},
+  "stone_count": 2,
+  "received_date": "2026-09-09"
+}
+
+> {%
+    client.global.set("orderId", response.body.id);
+    client.log("Order " + response.body.reference_number);
+%}
+
+### Register a stone against the order
+# Uses the stone type created (and restored) above rather than a hardcoded id,
+# so the collection depends on nothing but itself.
+#
+# Repeat until you hit stone_count — the next call then returns 400 with the cap
+# message, which is the guard worth seeing.
+POST {{api}}/orders/{{orderId}}/stones/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{ "stone_type": {{stoneTypeId}} }
+
+> {% client.global.set("stoneId", response.body.id); %}
+
+### Orders still awaiting registration
+GET {{api}}/orders/worklist-registration/
+Authorization: Bearer {{access}}
+
+### Move a stone to a new status
+# Needs orders.transition_stone — an accountant gets 403 here.
+POST {{api}}/stones/{{stoneId}}/transition/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{ "to_status": "billed", "note": "Manually moved for testing" }
+
+### A stone's status trail
+GET {{api}}/status-history/?filter[stone]={{stoneId}}
+Authorization: Bearer {{access}}
+
+
+###############################################################################
+# Billing and GePG
+###############################################################################
+
+### Orders ready to bill (every stone registered, no bill yet)
+GET {{api}}/bills/worklist/
+Authorization: Bearer {{access}}
+
+### Generate a bill
+# Prices every stone, transitions them to `billed`, then submits to GePG.
+# With GEPG_SIMULATE=True a fake control number comes back instantly.
+POST {{api}}/bills/generate/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{ "order": {{orderId}} }
+
+> {%
+    client.global.set("billId", response.body.id);
+    client.global.set("billNumber", response.body.bill_number);
+    client.global.set("controlNumber", response.body.control_number);
+    client.global.set("billTotal", response.body.total_amount);
+%}
+
+### The bill, with its line items and payments
+GET {{api}}/bills/{{billId}}/
+Authorization: Bearer {{access}}
+
+### Bills, filtered by status
+GET {{api}}/bills/?filter[status]=pending&ordering=-created_at
+Authorization: Bearer {{access}}
+
+### Payments received
+GET {{api}}/payments/
+Authorization: Bearer {{access}}
+
+
+###############################################################################
+# GePG callbacks — no authentication, on purpose
+#
+# These are the URLs the gateway posts to. They sit outside /api/v1/ because
+# their addresses are registered with GePG out of band and must survive an API
+# version bump. Note there is no Authorization header on any of them.
+###############################################################################
+
+### Payment notification (settles the bill)
+POST {{host}}/gepg/payments/notification/
+Content-Type: application/xml
+
+<Gepg><pmtSpNtfReq>
+  <PmtHdr>
+    <ReqId>MANUAL-{{run}}</ReqId>
+    <GrpBillId>{{billNumber}}</GrpBillId>
+    <SpGrpCode>SIM</SpGrpCode>
+    <CustCntrNum>{{controlNumber}}</CustCntrNum>
+    <EntryCnt>1</EntryCnt>
+  </PmtHdr>
+  <PmtDtls><PmtTrxDtl>
+    <SpCode>SIM</SpCode>
+    <BillId>{{billNumber}}</BillId>
+    <BillCtrNum>{{controlNumber}}</BillCtrNum>
+    <PspCode>CRDB</PspCode><PspName>CRDB Bank</PspName>
+    <TrxId>MANUAL-TRX-{{run}}</TrxId><PayRefId>REF-1</PayRefId>
+    <BillAmt>{{billTotal}}</BillAmt><PaidAmt>{{billTotal}}</PaidAmt>
+    <BillPayOpt>3</BillPayOpt><Ccy>TZS</Ccy>
+    <CollAccNum>ACC-1</CollAccNum>
+    <TrxDtTm>2026-09-09T10:00:00</TrxDtTm><UsdPayChnl>MOBILE</UsdPayChnl>
+    <PyrCellNum>255700000000</PyrCellNum>
+    <PyrName>Asha Mwakalinga</PyrName>
+    <PyrEmail>asha@example.com</PyrEmail>
+  </PmtTrxDtl></PmtDtls>
+</pmtSpNtfReq></Gepg>
+
+### Redeliver the identical notification
+# GePG retries until acknowledged. Send this twice and check /payments/ — there
+# must still be exactly one row, and the stone history must not gain an entry.
+POST {{host}}/gepg/payments/notification/
+Content-Type: application/xml
+
+<Gepg><pmtSpNtfReq>
+  <PmtHdr>
+    <ReqId>MANUAL-{{run}}</ReqId>
+    <GrpBillId>{{billNumber}}</GrpBillId>
+    <SpGrpCode>SIM</SpGrpCode>
+    <CustCntrNum>{{controlNumber}}</CustCntrNum>
+    <EntryCnt>1</EntryCnt>
+  </PmtHdr>
+  <PmtDtls><PmtTrxDtl>
+    <SpCode>SIM</SpCode>
+    <BillId>{{billNumber}}</BillId>
+    <BillCtrNum>{{controlNumber}}</BillCtrNum>
+    <PspCode>CRDB</PspCode><PspName>CRDB Bank</PspName>
+    <TrxId>MANUAL-TRX-{{run}}</TrxId><PayRefId>REF-1</PayRefId>
+    <BillAmt>{{billTotal}}</BillAmt><PaidAmt>{{billTotal}}</PaidAmt>
+    <BillPayOpt>3</BillPayOpt><Ccy>TZS</Ccy>
+    <CollAccNum>ACC-1</CollAccNum>
+    <TrxDtTm>2026-09-09T10:00:00</TrxDtTm><UsdPayChnl>MOBILE</UsdPayChnl>
+    <PyrCellNum>255700000000</PyrCellNum>
+    <PyrName>Asha Mwakalinga</PyrName>
+    <PyrEmail>asha@example.com</PyrEmail>
+  </PmtTrxDtl></PmtDtls>
+</pmtSpNtfReq></Gepg>
+
+### Malformed body — must still answer with a well-formed 7102 ack
+POST {{host}}/gepg/payments/notification/
+Content-Type: application/xml
+
+not xml at all
+
+
+###############################################################################
+# Identification — findings, only after the bill is settled
+###############################################################################
+
+### Stones waiting for findings (paid, not finalized)
+GET {{api}}/identification-reports/worklist/
+Authorization: Bearer {{access}}
+
+### Record findings for the stone billed above
+# Refused with 400 until the bill is paid — the gate lives in the service, so
+# every route to a report enforces it.
+POST {{api}}/identification-reports/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{
+  "stone": {{stoneId}},
+  "nature_type": "natural",
+  "transparency": "transparent",
+  "optic_character": "dr",
+  "refractive_index": "1.762-1.770",
+  "specific_gravity": "4.000",
+  "is_polished": true,
+  "conclusion": "Natural corundum."
+}
+
+> {% client.global.set("reportId", response.body.id); %}
+
+### Edit the draft
+PATCH {{api}}/identification-reports/{{reportId}}/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{ "conclusion": "Natural corundum, heat treated." }
+
+### Finalize — needs identification.finalize_report
+POST {{api}}/identification-reports/{{reportId}}/finalize/
+Authorization: Bearer {{access}}
+
+### The lock holds: this must return 400
+# @expect 400
+PATCH {{api}}/identification-reports/{{reportId}}/
+Authorization: Bearer {{access}}
+Content-Type: application/json
+
+{ "conclusion": "Rewritten after the fact." }
+
+
+###############################################################################
+# Audit and health
+###############################################################################
+
+### Change history
+GET {{api}}/activity-logs/?page_size=5
+Authorization: Bearer {{access}}
+
+### History for one record
+GET {{api}}/activity-logs/?filter[content_type__model]=stone&filter[object_pk]={{stoneId}}
+Authorization: Bearer {{access}}
+
+### Application log
+GET {{api}}/system-logs/?level=WARNING
+Authorization: Bearer {{access}}
+
+### Liveness
+GET {{host}}/api/health/
+
+### Readiness (database + pending migrations)
+GET {{host}}/api/health/ready/

@@ -1,13 +1,13 @@
 # Read request
 
-`GET /api/v1/products/?search=laptop&ordering=-price&page_size=20`
+`GET /api/v1/stones/?search=ruby&ordering=label&page_size=20`
 
 ```mermaid
 flowchart TD
-    REQ(["GET /api/v1/products/<br/>Authorization: Bearer ..."]) --> MW
+    REQ(["GET /api/v1/stones/<br/>Authorization: Bearer ..."]) --> MW
 
     MW["Middleware stack<br/><i>see middleware-stack.md</i>"]
-    MW --> ROUTE["DefaultRouter<br/><b>apps/catalog/urls.py</b><br/>products/ + GET to ProductViewSet.list"]
+    MW --> ROUTE["DefaultRouter<br/><b>apps/orders/urls.py</b><br/>stones/ + GET to StoneViewSet.list"]
     ROUTE --> DISPATCH["ViewSet.dispatch()"]
     DISPATCH --> INITIAL["initial()"]
 
@@ -15,7 +15,7 @@ flowchart TD
     AUTHN -->|no| E401["401<br/>Unauthenticated"]
     AUTHN -->|yes| PERM
 
-    PERM{"StrictModelPermissions<br/>has catalog.view_product?"}
+    PERM{"StrictModelPermissions<br/>has orders.view_stone?"}
     PERM -->|no| E403["403<br/>Permission denied"]
     PERM -->|yes| THROTTLE
 
@@ -24,7 +24,7 @@ flowchart TD
     THROTTLE -->|yes| QS
 
     QS["get_queryset()<br/><b>SoftDeleteViewSetMixin</b><br/>picks objects vs all_objects"]
-    QS --> EAGER["select_related: category, brand,<br/>status, unit_of_measure<br/>prefetch_related: tags, images"]
+    QS --> EAGER["select_related: order, customer,<br/>stone_type, created_by, updated_by"]
     EAGER --> FILTER
 
     FILTER["WhitelistFilterBackend<br/><b>apps/core/filters.py</b>"]
@@ -33,7 +33,7 @@ flowchart TD
     F2 --> F3["_order — validated against<br/>ordering_fields"]
 
     F3 --> PAGE["StandardPagination<br/>page_size capped at 100"]
-    PAGE --> SER["ProductSerializer(many=True)<br/>nested *_detail objects"]
+    PAGE --> SER["StoneSerializer(many=True)<br/>nested *_detail objects"]
     SER --> RENDER["JSONRenderer"]
     RENDER --> OK(["200<br/>count / next / previous / results"])
 
@@ -64,7 +64,7 @@ declare its own permissions **fails closed** rather than open.
 Both are lazy — nothing executes until pagination slices the queryset — so the
 joins compose with whatever the filter added.
 
-Without them, serialising one page of 15 products would issue dozens of queries
-instead of a handful. `test_listing_products_does_not_n_plus_one` asserts a
+Without them, serialising one page of 15 stones would issue dozens of queries
+instead of a handful. `test_listing_stones_does_not_n_plus_one` asserts a
 ceiling of 12 queries, so a regression fails the suite rather than quietly
 slowing production.
