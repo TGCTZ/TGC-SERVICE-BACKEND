@@ -14,25 +14,29 @@ from apps.certificates.services import (
     revoke_certificate,
 )
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import CertificateStatus, StoneStatus
+from apps.gems.enums import CertificateStatus, StoneStatus, WeightUnit
 from apps.gems.tests.factories import ColorFactory, OriginFactory, StoneTypeFactory
 from apps.identification.services import create_report, finalize_report
 from apps.orders.models import StatusHistory
-from apps.orders.services import add_stone
+from apps.orders.services import add_stone, update_stone
 from apps.orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
 
 def _paid_stone(settings, *, weight=Decimal("2.500")):
-    """A stone whose order is billed and settled."""
+    """A stone whose order is billed and settled, and weighed at the bench.
+
+    Weight arrives after the refresh, not with ``add_stone``: identification
+    records the type only, and the bench weighs the stone during the findings.
+    """
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=1)
-    stone = add_stone(
-        order, stone_type=StoneTypeFactory(price=Decimal("50000.00")), weight=weight
-    )
+    stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("50000.00")))
     simulate_payment(generate_bill_for_order(order))
     stone.refresh_from_db()
+    if weight is not None:
+        update_stone(stone, weight=weight)
     return stone
 
 
@@ -57,6 +61,7 @@ def test_issuing_freezes_the_findings(certifiable_stone, user):
     assert certificate.certificate_number.startswith("CERT-")
     assert certificate.stone_type_snapshot == certifiable_stone.stone_type.name
     assert certificate.weight_snapshot == Decimal("2.500")
+    assert certificate.weight_unit_snapshot == WeightUnit.CARAT
     assert certificate.color_snapshot == "Red"
     assert certificate.origin_snapshot == "Tanzania"
     assert certificate.status == CertificateStatus.ISSUED

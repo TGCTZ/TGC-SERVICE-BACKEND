@@ -8,6 +8,7 @@ from .models import (
     Origin,
     ShapeCut,
     Species,
+    StoneCategory,
     StoneType,
     Variety,
 )
@@ -27,12 +28,22 @@ class ReferenceSerializer(AuditFieldsMixin):
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
 
 
+class StoneCategorySerializer(ReferenceSerializer):
+    """Pricing tiers, with the flat identification fee each carries."""
+
+    class Meta(ReferenceSerializer.Meta):
+        model = StoneCategory
+        fields = (*ReferenceSerializer.Meta.fields, "price")
+
+
 class StoneTypeSerializer(ReferenceSerializer):
-    """Stone types, with the category and the flat identification fee."""
+    """Stone types, with the tier that prices them."""
+
+    category_detail = StoneCategorySerializer(source="category", read_only=True)
 
     class Meta(ReferenceSerializer.Meta):
         model = StoneType
-        fields = (*ReferenceSerializer.Meta.fields, "category", "price")
+        fields = (*ReferenceSerializer.Meta.fields, "category", "category_detail")
 
 
 class SpeciesSerializer(ReferenceSerializer):

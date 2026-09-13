@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.gems.tests.factories import StoneTypeFactory
+from apps.gems.tests.factories import StoneCategoryFactory, StoneTypeFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -104,7 +104,7 @@ def test_admin_can_create_a_stone_type(admin_user, auth_client):
     """A role with add_stonetype may create."""
     response = auth_client(admin_user).post(
         "/api/v1/stone-types/",
-        {"name": "New Stone Type", "category": "precious", "price": "19.99"},
+        {"name": "New Stone Type", "category": StoneCategoryFactory().pk},
     )
 
     assert response.status_code == 201, response.data

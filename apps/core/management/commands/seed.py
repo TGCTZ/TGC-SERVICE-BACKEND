@@ -16,15 +16,22 @@ from django.db import transaction
 DEMO_PASSWORD = "1234567890"  # noqa: S105 - demo data, never a real credential
 
 # Enough of a stone catalogue to exercise pricing, findings and certification.
+# The lab's three pricing tiers and the flat fee each carries, in TZS.
+STONE_CATEGORIES = (
+    ("Precious", 30_000),
+    ("Semi-precious", 10_000),
+    ("Diamond", 40_000),
+)
+
 STONE_TYPES = (
-    ("Ruby", "precious"),
-    ("Sapphire", "precious"),
-    ("Emerald", "precious"),
-    ("Diamond", "diamond"),
-    ("Tanzanite", "semi_precious"),
-    ("Garnet", "semi_precious"),
-    ("Tourmaline", "semi_precious"),
-    ("Spinel", "semi_precious"),
+    ("Ruby", "Precious"),
+    ("Sapphire", "Precious"),
+    ("Emerald", "Precious"),
+    ("Diamond", "Diamond"),
+    ("Tanzanite", "Semi-precious"),
+    ("Garnet", "Semi-precious"),
+    ("Tourmaline", "Semi-precious"),
+    ("Spinel", "Semi-precious"),
 )
 
 SPECIES_VARIETIES = {
@@ -71,6 +78,7 @@ class Command(BaseCommand):
             OriginFactory,
             ShapeCutFactory,
             SpeciesFactory,
+            StoneCategoryFactory,
             StoneTypeFactory,
             VarietyFactory,
         )
@@ -92,13 +100,13 @@ class Command(BaseCommand):
         genders = [GenderFactory() for _ in range(4)]
 
         self.stdout.write("Creating the stone reference tables...")
+        # The fee lives on the tier, so a ruby and a sapphire cost the same.
+        categories = {
+            name: StoneCategoryFactory(name=name, price=price)
+            for name, price in STONE_CATEGORIES
+        }
         for name, category in STONE_TYPES:
-            # A realistic spread of fees, rounded to whole shillings.
-            StoneTypeFactory(
-                name=name,
-                category=category,
-                price=random.randrange(20_000, 150_000, 5_000),
-            )
+            StoneTypeFactory(name=name, category=categories[category])
         for species_name, varieties in SPECIES_VARIETIES.items():
             species = SpeciesFactory(name=species_name)
             for variety_name in varieties:
@@ -156,7 +164,7 @@ class Command(BaseCommand):
                 if billed <= 2:
                     simulate_payment(bill)
                     # Carry the first order all the way to a certificate, so the
-                    # full-identification and certification queues both have
+                    # findings and certification queues both have
                     # content and at least one certificate exists.
                     for stone in order.stones.all():
                         stone.refresh_from_db()

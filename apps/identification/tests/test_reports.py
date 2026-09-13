@@ -1,4 +1,4 @@
-"""Full identification, the payment gate and the finalize lock."""
+"""Findings, the payment gate and the finalize lock."""
 
 from decimal import Decimal
 
@@ -7,6 +7,7 @@ import pytest
 from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
+from apps.gems.enums import WeightUnit
 from apps.gems.tests.factories import (
     ColorFactory,
     InstrumentFactory,
@@ -14,7 +15,7 @@ from apps.gems.tests.factories import (
     StoneTypeFactory,
 )
 from apps.identification.models import IdentificationReport, InstrumentUsed
-from apps.identification.selectors import full_identification_worklist
+from apps.identification.selectors import findings_worklist
 from apps.identification.services import create_report, finalize_report, update_report
 from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
@@ -117,20 +118,16 @@ def test_a_report_cannot_be_finalized_twice(paid_stone, user):
         finalize_report(report, user=user)
 
 
-def test_full_identification_worklist_holds_paid_unfinalized_stones(
-    paid_stone, billed_stone, user
-):
+def test_findings_worklist_holds_paid_unfinalized_stones(paid_stone, billed_stone, user):
     """The queue is exactly the bench's inbox."""
-    assert paid_stone in full_identification_worklist()
-    assert billed_stone not in full_identification_worklist()
+    assert paid_stone in findings_worklist()
+    assert billed_stone not in findings_worklist()
 
     report = create_report(stone=paid_stone, user=user)
-    assert paid_stone in full_identification_worklist(), (
-        "a draft is still work in progress"
-    )
+    assert paid_stone in findings_worklist(), "a draft is still work in progress"
 
     finalize_report(report, user=user)
-    assert paid_stone not in full_identification_worklist()
+    assert paid_stone not in findings_worklist()
 
 
 def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_client):
@@ -230,9 +227,7 @@ def test_instruments_cannot_be_added_to_a_finalized_report(
     assert InstrumentUsed.objects.filter(report=report).count() == 1
 
 
-def test_full_identification_worklist_endpoint_lists_stones(
-    paid_stone, admin_user, auth_client
-):
+def test_findings_worklist_endpoint_lists_stones(paid_stone, admin_user, auth_client):
     """The queue endpoint returns stones, not reports."""
     response = auth_client(admin_user).get("/api/v1/identification-reports/worklist/")
 
@@ -259,3 +254,69 @@ def test_listing_reports_does_not_n_plus_one(
     assert response.status_code == 200
     assert response.data["count"] == 5
     assert IdentificationReport.objects.count() == 5
+
+
+def test_weight_recorded_on_the_report_lands_on_the_stone(paid_stone, user):
+    """One source of truth: the certificate snapshots the stone, not the report."""
+    report = create_report(stone=paid_stone, weight=Decimal("3.250"), user=user)
+
+    paid_stone.refresh_from_db()
+    assert paid_stone.weight == Decimal("3.250")
+    # The report carries the value through; it does not keep a copy.
+    assert not hasattr(report, "weight")
+
+
+def test_a_weight_can_be_cleared_while_the_report_is_a_draft(paid_stone, user):
+    """A reading typed against the wrong stone has to be removable."""
+    report = create_report(stone=paid_stone, weight=Decimal("3.250"), user=user)
+
+    update_report(report, weight=None, user=user)
+
+    paid_stone.refresh_from_db()
+    assert paid_stone.weight is None
+
+
+def test_report_endpoint_records_the_weight_in_one_request(
+    paid_stone, admin_user, auth_client
+):
+    """The findings and the weight they were measured with arrive together.
+
+    One request, one transaction - so a stone can never end up weighed against
+    findings that failed to save, or the reverse.
+    """
+    response = auth_client(admin_user).post(
+        "/api/v1/identification-reports/",
+        {
+            "stone": paid_stone.pk,
+            "conclusion": "Natural ruby.",
+            "weight": "3.250",
+            "weight_unit": WeightUnit.GRAM,
+        },
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["stone_weight"] == "3.250"
+    assert response.data["stone_weight_unit"] == WeightUnit.GRAM
+
+    paid_stone.refresh_from_db()
+    assert paid_stone.weight == Decimal("3.250")
+    assert paid_stone.weight_unit == WeightUnit.GRAM
+
+
+def test_a_finalized_report_refuses_a_weight_change(paid_stone, admin_user, auth_client):
+    """The lock covers the stone's weight too.
+
+    Otherwise a certificate could quote a weight that was edited after it was
+    signed off.
+    """
+    report = create_report(stone=paid_stone, weight=Decimal("3.250"))
+    client = auth_client(admin_user)
+    client.post(f"/api/v1/identification-reports/{report.pk}/finalize/")
+
+    response = client.patch(
+        f"/api/v1/identification-reports/{report.pk}/", {"weight": "9.999"}
+    )
+
+    assert response.status_code == 400
+    paid_stone.refresh_from_db()
+    assert paid_stone.weight == Decimal("3.250")

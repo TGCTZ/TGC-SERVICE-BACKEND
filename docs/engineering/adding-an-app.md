@@ -24,7 +24,7 @@ decides what it may import, and that decision is hard to undo later.
 | L5 | `apps.certificates` | Certificates and their PDF documents |
 
 **If two apps at the same layer need each other, something is in the wrong
-place.** `identification` gates full identification on the bill being paid without importing
+place.** `identification` gates findings on the bill being paid without importing
 `billing`: the join is ORM traversal (`stone.order.bill`) and the enum comes from
 `gems` at L2. That is why every domain enum lives in `gems` rather than beside
 the model it describes - putting `BillStatus` in `billing` would force an

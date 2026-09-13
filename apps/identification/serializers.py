@@ -3,6 +3,7 @@
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
+from apps.gems.enums import WeightUnit
 from apps.gems.serializers import (
     ColorSerializer,
     InstrumentSerializer,
@@ -49,6 +50,27 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     )
     identified_by_label = serializers.SerializerMethodField()
 
+    # Weight is measured at the bench alongside the dimensions, so it belongs on
+    # this form - but it lives on the Stone, which is what the certificate
+    # snapshots. It travels through here and the service hands it on. Read back
+    # under stone_* so the form seeds itself in one request.
+    stone_weight = serializers.DecimalField(
+        source="stone.weight", max_digits=10, decimal_places=3, read_only=True
+    )
+    stone_weight_unit = serializers.CharField(source="stone.weight_unit", read_only=True)
+    weight = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    # No default, deliberately: a default lands in validated_data on every
+    # request, so a PATCH of the conclusion alone would write to the stone.
+    weight_unit = serializers.ChoiceField(
+        choices=WeightUnit.choices, required=False, write_only=True
+    )
+
     class Meta:
         model = IdentificationReport
         fields = (
@@ -74,6 +96,10 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "dimensions",
             "refractive_index",
             "specific_gravity",
+            "weight",
+            "weight_unit",
+            "stone_weight",
+            "stone_weight_unit",
             "is_polished",
             "conclusion",
             "instruments_used",

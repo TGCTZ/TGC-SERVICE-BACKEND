@@ -156,7 +156,7 @@ Content-Type: application/json
 
 > {% client.global.set("stoneId", response.body.id); %}
 
-### Orders still awaiting preliminary identification
+### Orders still awaiting identification
 GET {{api}}/orders/worklist/
 Authorization: Bearer {{access}}
 
@@ -284,14 +284,14 @@ not xml at all
 
 
 ###############################################################################
-# Full identification — only after the bill is settled
+# Findings — only after the bill is settled
 ###############################################################################
 
-### Stones waiting for full identification (paid, not finalized)
+### Stones waiting for findings (paid, not finalized)
 GET {{api}}/identification-reports/worklist/
 Authorization: Bearer {{access}}
 
-### Record the full identification for the stone billed above
+### Record the findings for the stone billed above
 # Refused with 400 until the bill is paid — the gate lives in the service, so
 # every route to a report enforces it.
 POST {{api}}/identification-reports/

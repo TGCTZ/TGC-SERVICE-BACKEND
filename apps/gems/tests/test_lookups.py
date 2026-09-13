@@ -1,5 +1,7 @@
 """Stone reference tables: CRUD, restore, constraints and query efficiency."""
 
+from decimal import Decimal
+
 import pytest
 
 from django.db import IntegrityError
@@ -7,6 +9,7 @@ from django.db import IntegrityError
 from apps.gems.models import StoneType, Variety
 from apps.gems.tests.factories import (
     SpeciesFactory,
+    StoneCategoryFactory,
     StoneTypeFactory,
     VarietyFactory,
 )
@@ -50,18 +53,30 @@ def test_delete_and_restore_are_recorded_in_the_activity_log(admin_user, auth_cl
     assert entries.filter(action=LogEntry.Action.DELETE).exists()
 
 
-def test_stone_type_price_may_be_unset(admin_user, auth_client):
-    """An unpriced type is representable; billing is what refuses it.
+def test_stone_category_price_may_be_unset(admin_user, auth_client):
+    """An unpriced tier is representable; billing is what refuses it.
 
     The column is nullable rather than defaulted to zero precisely so that a
     missing price is a visible configuration gap instead of a bill for nothing.
     """
     response = auth_client(admin_user).post(
-        "/api/v1/stone-types/", {"name": "Unpriced", "category": "precious"}
+        "/api/v1/stone-categories/", {"name": "Unpriced"}
     )
 
     assert response.status_code == 201, response.data
     assert response.data["price"] is None
+
+
+def test_a_stone_type_is_priced_through_its_category(admin_user, auth_client):
+    """The fee is per tier: a ruby and a sapphire cost the same to identify."""
+    category = StoneCategoryFactory(name="Precious", price=Decimal("30000.00"))
+
+    response = auth_client(admin_user).post(
+        "/api/v1/stone-types/", {"name": "Ruby", "category": category.pk}
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["category_detail"]["price"] == "30000.00"
 
 
 def test_variety_names_are_unique_per_species():

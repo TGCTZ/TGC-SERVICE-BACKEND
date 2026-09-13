@@ -23,6 +23,7 @@ BILLING_MODELS = ("bill", "billitem", "payment", "serviceprovider")
 IDENTIFICATION_MODELS = ("identificationreport", "instrumentused")
 CERTIFICATE_MODELS = ("certificate",)
 GEMS_MODELS = (
+    "stonecategory",
     "stonetype",
     "species",
     "variety",
@@ -89,13 +90,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         MODULE_GATES["reference"],
     ],
     # The bench: identifies each stone's type (preliminary, which fixes the
-    # price), then after payment records the full identification against the
+    # price), then after payment records the findings against the
     # reference tables it reads.
     "gemmologist": [
         *_perms("gems", GEMS_MODELS, READ),
         *_perms("orders", ("order", "stone"), READ),
         "billing.view_bill",
-        # Preliminary identification. Django names this permission after the row
+        # Identification. Django names this permission after the row
         # it creates, not the stage it belongs to.
         "orders.add_stone",
         "orders.change_stone",

@@ -10,7 +10,7 @@ from apps.core.viewsets import BaseModelViewSet
 from apps.orders.serializers import StoneSerializer
 
 from .models import IdentificationReport, InstrumentUsed
-from .selectors import full_identification_worklist
+from .selectors import findings_worklist
 from .serializers import IdentificationReportSerializer, InstrumentUsedSerializer
 from .services import create_report, finalize_report, update_report
 
@@ -90,8 +90,8 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @extend_schema(responses=StoneSerializer)
     @action(detail=False, methods=["get"])
     def worklist(self, request):
-        """Paid stones whose full identification is not finalized yet."""
-        queryset = full_identification_worklist()
+        """Paid stones whose findings are not finalized yet."""
+        queryset = findings_worklist()
         page = self.paginate_queryset(queryset)
         serializer = StoneSerializer(
             page, many=True, context=self.get_serializer_context()

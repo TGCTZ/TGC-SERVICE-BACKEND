@@ -3,7 +3,7 @@
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
-from apps.gems.enums import StoneStatus, WeightUnit
+from apps.gems.enums import StoneStatus
 from apps.gems.models import StoneType
 from apps.gems.serializers import StoneTypeSerializer
 
@@ -174,15 +174,13 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 
 
 class AddStoneSerializer(serializers.Serializer):
-    """Payload for the preliminary identification of one stone."""
+    """Payload for identifying one stone.
+
+    Type only: it is what the bill is priced from. Weight is a bench
+    measurement and arrives later, with the findings.
+    """
 
     stone_type = serializers.PrimaryKeyRelatedField(queryset=StoneType.objects.all())
-    weight = serializers.DecimalField(
-        max_digits=10, decimal_places=3, required=False, allow_null=True
-    )
-    weight_unit = serializers.ChoiceField(
-        choices=WeightUnit.choices, default=WeightUnit.CARAT
-    )
 
 
 class TransitionSerializer(serializers.Serializer):

@@ -93,7 +93,7 @@ the document keeps saying what it said on the day it was issued.
 
     <table class="findings">
       <tr><th>Stone type</th><td>{{ certificate.stone_type_snapshot }}</td></tr>
-      <tr><th>Weight</th><td>{{ certificate.weight_snapshot }} ct</td></tr>
+      <tr><th>Weight</th><td>{{ certificate.weight_snapshot }} {{ weight_unit }}</td></tr>
       <tr><th>Colour</th><td>{{ certificate.color_snapshot|default:"—" }}</td></tr>
       <tr><th>Origin</th><td>{{ certificate.origin_snapshot|default:"—" }}</td></tr>
     </table>

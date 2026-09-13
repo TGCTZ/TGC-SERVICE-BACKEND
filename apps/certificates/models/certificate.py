@@ -5,7 +5,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.core.models import BaseModel
-from apps.gems.enums import CertificateStatus
+from apps.gems.enums import CertificateStatus, WeightUnit
 
 
 class Certificate(BaseModel):
@@ -31,6 +31,12 @@ class Certificate(BaseModel):
     # Frozen at issue time.
     stone_type_snapshot = models.CharField(max_length=100)
     weight_snapshot = models.DecimalField(max_digits=10, decimal_places=3)
+    # Snapshotted alongside the weight: a certificate that states a number
+    # without its unit states nothing, and reading the stone's live unit later
+    # would let an edit rewrite an issued document.
+    weight_unit_snapshot = models.CharField(
+        max_length=10, choices=WeightUnit.choices, default=WeightUnit.CARAT
+    )
     color_snapshot = models.CharField(max_length=100, blank=True, default="")
     origin_snapshot = models.CharField(max_length=100, blank=True, default="")
     gemmologist = models.CharField(max_length=100, blank=True, default="")

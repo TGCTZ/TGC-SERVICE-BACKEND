@@ -107,6 +107,20 @@ unfiltered data — worth knowing when debugging "why is this returning everythi
 Values are coerced: `true`/`false`/`1`/`0`/`yes`/`no` become booleans, and
 `null`/`none` become an `IS NULL` lookup.
 
+### Params that deliberately sit outside `filter[...]`
+
+A viewset may read a **bare** query param in its own `get_queryset`, and one
+does: `GET /orders/?identification=pending|complete`.
+
+That is not an oversight. `filter[field]` is a *field lookup* the whitelist
+validates against `filter_fields`, and this predicate compares two columns —
+`Count(stones)` against `stone_count` — which no field lookup can express.
+Routing it through `filter[...]` would make the whitelist a liar about what it
+checks. The predicate itself lives in `apps/orders/selectors.py` alongside the
+worklist that shares it, so the screen and the queue cannot drift.
+
+Like every other unknown parameter, an unrecognised value is ignored.
+
 ## Ordering
 
 ```mermaid

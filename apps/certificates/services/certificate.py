@@ -60,6 +60,7 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         ),
         stone_type_snapshot=stone.stone_type.name,
         weight_snapshot=stone.weight,
+        weight_unit_snapshot=stone.weight_unit,
         color_snapshot=report.color.name if report.color else "",
         origin_snapshot=report.origin.name if report.origin else "",
         gemmologist=gemmologist,

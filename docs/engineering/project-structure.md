@@ -66,7 +66,7 @@ layer. The rule is one line long and worth enforcing in review:
 | L5 | `apps.certificates` | Certificates and their PDF documents. |
 
 `apps.billing` and `apps.identification` sit at the same layer and must not
-import one another. Where one needs the other's state - the full-identification queue is
+import one another. Where one needs the other's state - the findings queue is
 gated on the bill being paid - it is reached by ORM traversal
 (`stone.order.bill`) with the enum coming from `apps.gems` at L2. That is the
 reason every domain enum lives in `gems` rather than beside the model it

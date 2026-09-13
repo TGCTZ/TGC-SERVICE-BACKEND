@@ -1,9 +1,9 @@
-"""Preliminary identification of stones, and status transitions."""
+"""Identification of stones, and status transitions."""
 
 from django.db import transaction
 
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import StoneStatus, WeightUnit
+from apps.gems.enums import StoneStatus
 
 from ..models import Order, StatusHistory, Stone
 
@@ -45,13 +45,11 @@ def transition_stone(stone: Stone, to_status: str, *, user=None, note: str = "")
 
 
 @transaction.atomic
-def add_stone(
-    order: Order, *, stone_type, weight=None, weight_unit=WeightUnit.CARAT, user=None
-) -> Stone:
-    """Record the preliminary identification of a stone: its type.
+def add_stone(order: Order, *, stone_type, user=None) -> Stone:
+    """Record the identification of a stone: its type.
 
     Only the type is required here, because it is what the bill is priced from.
-    The full identification - weight and the gemmological findings - comes later,
+    The findings - weight and the gemmological findings - comes later,
     after payment.
 
     The label is the next letter of the alphabet, and the order cannot hold more
@@ -59,9 +57,7 @@ def add_stone(
 
     Args:
         order: The order the stone belongs to.
-        stone_type: The ``gems.StoneType`` that prices this stone.
-        weight: Optional here; usually recorded during full identification.
-        weight_unit: Carats unless stated otherwise.
+        stone_type: The ``gems.StoneType`` whose tier prices this stone.
         user: The acting user.
 
     Raises:
@@ -81,8 +77,6 @@ def add_stone(
         order=order,
         label=label,
         stone_type=stone_type,
-        weight=weight,
-        weight_unit=weight_unit,
         status=StoneStatus.RECEIVED,
     )
     if user is not None:
@@ -93,18 +87,61 @@ def add_stone(
         stone=stone,
         to_status=StoneStatus.RECEIVED,
         changed_by=user,
-        note="Preliminarily identified",
+        note="Identified",
     )
     return stone
 
 
+# The statuses in which a stone's *type* may still be corrected.
+#
+# ``received`` is the working state. ``on_hold`` and ``cancelled`` are the two a
+# human parks a stone in precisely *to* fix something, so they stay open. Every
+# other status means a bill has been priced from this stone's type - and the
+# type is the price, so changing it afterwards would silently make an issued
+# bill wrong.
+#
+# **This covers the type, not the whole record.** Weight arrives later than
+# billing by design: the bench weighs the stone during the findings, when it is
+# already ``paid``. Locking the row outright would make that impossible.
+RETYPEABLE_STATUSES = frozenset(
+    {StoneStatus.RECEIVED, StoneStatus.ON_HOLD, StoneStatus.CANCELLED}
+)
+
+
+def assert_stone_retypeable(stone: Stone) -> None:
+    """Refuse a type change once a bill has been priced from the current one.
+
+    Raises:
+        ServiceError: If the stone's status is not in ``RETYPEABLE_STATUSES``.
+    """
+    if stone.status not in RETYPEABLE_STATUSES:
+        raise ServiceError(
+            f"{stone.label} is {stone.get_status_display().lower()}, so its type "
+            f"can no longer change - that type is what priced the bill."
+        )
+
+
+# ``None`` is a meaningful weight - it is what a stone has before the bench
+# weighs it, and what a gemmologist sets after realising they typed a reading
+# against the wrong stone. A ``None`` default could not tell "clear this" from
+# "leave this alone", so an omitted weight gets its own sentinel.
+_UNSET = object()
+
+
 def update_stone(
-    stone: Stone, *, stone_type=None, weight=None, weight_unit=None, user=None
+    stone: Stone, *, stone_type=None, weight=_UNSET, weight_unit=None, user=None
 ) -> Stone:
-    """Update a stone's recorded properties during full identification."""
+    """Update a stone's recorded properties during the findings stage.
+
+    Raises:
+        ServiceError: If the stone has been billed and the caller is trying to
+            change its type. Weight stays writable at every status - the bench
+            records it after payment.
+    """
     if stone_type is not None:
+        assert_stone_retypeable(stone)
         stone.stone_type = stone_type
-    if weight is not None:
+    if weight is not _UNSET:
         stone.weight = weight
     if weight_unit:
         stone.weight_unit = weight_unit

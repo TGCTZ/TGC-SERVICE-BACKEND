@@ -135,7 +135,7 @@ copy.
 
 ```python
 def full_identification_worklist():
-    """Stones waiting for full identification: bill paid, report not finalized."""
+    """Stones waiting for findings: bill paid, report not finalized."""
     return Stone.objects.filter(order__bill__status=BillStatus.PAID).exclude(
         report__is_finalized=True
     )

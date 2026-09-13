@@ -23,16 +23,19 @@ logger = logging.getLogger(__name__)
 
 
 def _price_for(stone) -> Decimal:
-    """The fixed identification fee for a stone's type.
+    """The fixed identification fee for a stone's pricing tier.
+
+    The fee is per category - precious, semi-precious, diamond - not per type:
+    identifying a ruby and a sapphire costs the same because both are precious.
 
     Raises:
-        ServiceError: If the type has no price set. An unpriced type is a
+        ServiceError: If the category has no price set. An unpriced tier is a
             configuration gap, and billing zero would be worse than refusing.
     """
-    price = stone.stone_type.price
-    if price is None:
-        raise ServiceError(f"No price set for stone type '{stone.stone_type}'.")
-    return price
+    category = stone.stone_type.category
+    if category.price is None:
+        raise ServiceError(f"No price set for stone category '{category}'.")
+    return category.price
 
 
 @transaction.atomic
@@ -40,7 +43,7 @@ def _create_local_bill(order, service_provider, user) -> Bill:
     """Create the bill and its snapshotted line items; mark stones billed."""
     if Bill.objects.filter(order=order).exists():
         raise ServiceError(f"Order {order.reference_number} already has a bill.")
-    stones = list(order.stones.all())
+    stones = list(order.stones.select_related("stone_type__category"))
     if not stones:
         raise ServiceError("Order has no stones to bill.")
 

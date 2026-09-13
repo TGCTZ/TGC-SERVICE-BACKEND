@@ -1,11 +1,11 @@
-"""Reads that encode a full-identification workflow gate."""
+"""Reads that encode a findings workflow gate."""
 
 from apps.gems.enums import BillStatus
 from apps.orders.models import Stone
 
 
-def full_identification_worklist():
-    """Stones waiting for full identification.
+def findings_worklist():
+    """Stones waiting for findings.
 
     The bill must be settled before a gemmologist starts work, and a stone
     leaves the queue once its report is finalized. Reached through the bill on

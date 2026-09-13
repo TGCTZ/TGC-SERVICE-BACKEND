@@ -30,7 +30,7 @@ def billable_order(settings):
 
 
 def test_generating_a_bill_prices_every_stone(billable_order):
-    """The total is the sum of each stone type's flat fee."""
+    """The total is the sum of each stone's tier fee."""
     bill = generate_bill_for_order(billable_order)
 
     assert bill.bill_number.startswith("BILL-")
@@ -48,12 +48,12 @@ def test_generating_a_bill_transitions_every_stone(billable_order):
 
 
 def test_bill_items_snapshot_the_price(billable_order):
-    """Repricing a stone type later must not rewrite an issued bill."""
+    """Repricing a tier later must not rewrite an issued bill."""
     bill = generate_bill_for_order(billable_order)
-    stone_type = billable_order.stones.first().stone_type
+    category = billable_order.stones.first().stone_type.category
 
-    stone_type.price = Decimal("999999.00")
-    stone_type.save(update_fields=["price"])
+    category.price = Decimal("999999.00")
+    category.save(update_fields=["price"])
 
     bill.refresh_from_db()
     assert bill.total_amount == Decimal("150000.00")

@@ -73,6 +73,77 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
+            name="StoneCategory",
+            fields=[
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "deleted_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
+                ("name", models.CharField(max_length=100)),
+                ("description", models.TextField(blank=True)),
+                ("is_active", models.BooleanField(db_index=True, default=True)),
+                (
+                    "price",
+                    models.DecimalField(
+                        blank=True, decimal_places=2, max_digits=12, null=True
+                    ),
+                ),
+                (
+                    "created_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "deleted_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "updated_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+            ],
+            options={
+                "verbose_name_plural": "stone categories",
+                "ordering": ["name"],
+                "abstract": False,
+                "constraints": [
+                    models.UniqueConstraint(
+                        condition=models.Q(("deleted_at__isnull", True)),
+                        fields=("name",),
+                        name="gems_stonecategory_unique_name",
+                    )
+                ],
+            },
+        ),
+        migrations.CreateModel(
             name="StoneType",
             fields=[
                 (
@@ -95,19 +166,10 @@ class Migration(migrations.Migration):
                 ("is_active", models.BooleanField(db_index=True, default=True)),
                 (
                     "category",
-                    models.CharField(
-                        choices=[
-                            ("precious", "Precious"),
-                            ("semi_precious", "Semi-precious"),
-                            ("diamond", "Diamond"),
-                        ],
-                        max_length=20,
-                    ),
-                ),
-                (
-                    "price",
-                    models.DecimalField(
-                        blank=True, decimal_places=2, max_digits=12, null=True
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="stone_types",
+                        to="gems.stonecategory",
                     ),
                 ),
                 (

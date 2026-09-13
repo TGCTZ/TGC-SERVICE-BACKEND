@@ -31,7 +31,7 @@ stage of the stone's journey and onto one of the four worklists.
 
 `orders.add_stone` is Django's automatic `add_<model>` permission for `Stone`.
 It is named after the row it creates, not the stage it serves - that stage is
-**preliminary identification**, and it belongs to the bench, not to reception.
+**identification**, and it belongs to the bench, not to reception.
 
 `superadmin` is resolved as `Permission.objects.all()` rather than a literal
 list, so a newly added model is covered without editing the file. It is not a

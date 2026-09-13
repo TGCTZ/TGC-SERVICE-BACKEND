@@ -40,6 +40,14 @@ class Migration(migrations.Migration):
                     models.DecimalField(decimal_places=3, max_digits=10),
                 ),
                 (
+                    "weight_unit_snapshot",
+                    models.CharField(
+                        choices=[("carat", "Carat"), ("gram", "Gram")],
+                        default="carat",
+                        max_length=10,
+                    ),
+                ),
+                (
                     "color_snapshot",
                     models.CharField(blank=True, default="", max_length=100),
                 ),

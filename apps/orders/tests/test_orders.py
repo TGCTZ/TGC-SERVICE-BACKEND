@@ -1,12 +1,15 @@
-"""Order intake, preliminary identification and status transitions."""
+"""Order intake, identification and status transitions."""
+
+from decimal import Decimal
 
 import pytest
 
+from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import StoneStatus
+from apps.gems.enums import StoneStatus, WeightUnit
 from apps.gems.tests.factories import StoneTypeFactory
-from apps.orders.models import Customer, Order, StatusHistory
-from apps.orders.selectors import preliminary_identification_worklist
+from apps.orders.models import Customer, Order, StatusHistory, Stone
+from apps.orders.selectors import identification_worklist
 from apps.orders.services import add_stone, create_order, transition_stone
 from apps.orders.tests.factories import CustomerFactory, OrderFactory, StoneFactory
 
@@ -110,10 +113,10 @@ def test_preliminary_worklist_holds_only_incomplete_orders():
     stone_type = StoneTypeFactory()
 
     add_stone(order, stone_type=stone_type)
-    assert order in preliminary_identification_worklist()
+    assert order in identification_worklist()
 
     add_stone(order, stone_type=stone_type)
-    assert order not in preliminary_identification_worklist()
+    assert order not in identification_worklist()
 
 
 def test_order_create_endpoint_delegates_to_the_service(admin_user, auth_client):
@@ -371,7 +374,7 @@ def test_a_duplicate_phone_names_the_existing_customer(admin_user, auth_client):
 
 
 def test_a_gemmologist_may_identify_a_stone(gemmologist_user, auth_client):
-    """Preliminary identification is the bench's work, so the bench can do it."""
+    """Identification is the bench's work, so the bench can do it."""
     order = OrderFactory(stone_count=1)
 
     response = auth_client(gemmologist_user).post(
@@ -418,3 +421,121 @@ def test_a_receptionist_may_still_hand_a_stone_over(viewer_user, auth_client):
     )
 
     assert response.status_code == 200, response.data
+
+
+def test_identification_does_not_record_a_weight(admin_user, auth_client):
+    """Identification assigns a type; the bench weighs the stone later.
+
+    A weight in the payload is ignored rather than refused - the field does not
+    exist here any more, and 400-ing a client that has not caught up would block
+    an identification over a value we discard anyway.
+    """
+    order = OrderFactory(stone_count=1)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/orders/{order.pk}/stones/",
+        {"stone_type": StoneTypeFactory().pk, "weight": "2.500"},
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["weight"] is None
+
+    stone = Stone.objects.get(pk=response.data["id"])
+    assert stone.weight is None
+    assert stone.weight_unit == WeightUnit.CARAT
+
+
+def test_identification_filter_splits_the_list_in_two(admin_user, auth_client):
+    """Pending and complete are disjoint, and together are the whole list."""
+    stone_type = StoneTypeFactory()
+    pending = OrderFactory(stone_count=2)
+    add_stone(pending, stone_type=stone_type)
+    complete = OrderFactory(stone_count=1)
+    add_stone(complete, stone_type=stone_type)
+
+    client = auth_client(admin_user)
+
+    def refs(params=""):
+        response = client.get(f"/api/v1/orders/{params}")
+        assert response.status_code == 200, response.data
+        return {row["reference_number"] for row in response.data["results"]}
+
+    assert refs("?identification=pending") == {pending.reference_number}
+    assert refs("?identification=complete") == {complete.reference_number}
+    assert refs() == {pending.reference_number, complete.reference_number}
+
+
+def test_an_unknown_identification_value_is_ignored(admin_user, auth_client):
+    """A stale link degrades to the plain list rather than erroring."""
+    OrderFactory(stone_count=1)
+
+    response = auth_client(admin_user).get("/api/v1/orders/?identification=nonsense")
+
+    assert response.status_code == 200, response.data
+    assert response.data["count"] == 1
+
+
+def test_a_billed_stone_cannot_be_retyped(settings, admin_user, auth_client):
+    """The type is what priced the bill, so changing it would falsify the bill."""
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("30000.00")))
+    generate_bill_for_order(order)
+    stone.refresh_from_db()
+
+    response = auth_client(admin_user).patch(
+        f"/api/v1/stones/{stone.pk}/", {"stone_type": StoneTypeFactory().pk}
+    )
+
+    assert response.status_code == 400
+    assert "priced the bill" in str(response.data)
+
+    original = stone.stone_type_id
+    stone.refresh_from_db()
+    assert stone.stone_type_id == original
+
+
+def test_a_billed_stone_still_accepts_its_weight(settings, admin_user, auth_client):
+    """Weight arrives after billing by design - the bench weighs at the findings."""
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("30000.00")))
+    generate_bill_for_order(order)
+    stone.refresh_from_db()
+
+    response = auth_client(admin_user).patch(
+        f"/api/v1/stones/{stone.pk}/", {"weight": "4.250"}
+    )
+
+    assert response.status_code == 200, response.data
+    stone.refresh_from_db()
+    assert stone.weight == Decimal("4.250")
+
+
+def test_a_received_stone_can_still_be_retyped(admin_user, auth_client):
+    """The lock starts at billing, not before."""
+    order = OrderFactory(stone_count=1)
+    stone = add_stone(order, stone_type=StoneTypeFactory())
+    wanted = StoneTypeFactory()
+
+    response = auth_client(admin_user).patch(
+        f"/api/v1/stones/{stone.pk}/", {"stone_type": wanted.pk}
+    )
+
+    assert response.status_code == 200, response.data
+    stone.refresh_from_db()
+    assert stone.stone_type_id == wanted.pk
+
+
+def test_a_billed_stone_cannot_be_deleted(settings, admin_user, auth_client):
+    """Deletion bypasses the service, so the viewset repeats the guard."""
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("30000.00")))
+    generate_bill_for_order(order)
+
+    response = auth_client(admin_user).delete(f"/api/v1/stones/{stone.pk}/")
+
+    assert response.status_code == 400
+    stone.refresh_from_db()
+    assert stone.deleted_at is None

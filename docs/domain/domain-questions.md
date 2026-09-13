@@ -12,7 +12,7 @@
 > code; the rest still ride on the defaults below pending team answers.
 >
 > - **B1 / B6 ✅** — **no production module** in the current build; a stone goes
->   preliminary identification → billing → full identification → certificate.
+>   identification → billing → findings → certificate.
 > - **B2 ✅** — pricing is **flat per stone type** (`StoneType.price`); weight
 >   does not change the price.
 > - **B3 ✅** — weight unit is **carat/gram** (`WeightUnit`); no `SiUnit`.
@@ -37,11 +37,11 @@ Customer brings stones
       ↓
 RECEPTION       → an Order is created, containing one or more Stones
       ↓
-PRELIMINARY     → a gemmologist assigns each stone's type (fixes the price)
+IDENTIFY        → a gemmologist assigns each stone's type (fixes the price)
       ↓
 BILLING         → one Bill per Order; GePG control number; customer pays
       ↓
-FULL IDENTIFY   → after payment, the gemmologist records + finalizes the report
+FINDINGS        → after payment, the gemmologist records + finalizes the report
       ↓
 CERTIFICATE     → a certificate is issued per stone (downloadable as a PDF)
 ```
@@ -74,7 +74,7 @@ or is it strictly **one production step per stone**?
 - *If one:* a Stone has at most one Production record.
 
 **Answer:** ✅ Moot — the **production module was removed**; there is no Production
-record. A stone goes preliminary identification → billing → full identification → certificate.
+record. A stone goes identification → billing → findings → certificate.
 
 ---
 
@@ -128,7 +128,7 @@ Draft based on the workflow — **please correct/complete**:
 ### B6. Can a stone **skip** stages?
 
 **Answer:** ✅ Moot — with no production stage, the pipeline is
-preliminary identification → billing → full identification → certificate. `on_hold` / `cancelled`
+identification → billing → findings → certificate. `on_hold` / `cancelled`
 remain available side states.
 
 ---

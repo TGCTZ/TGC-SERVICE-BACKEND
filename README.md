@@ -4,7 +4,7 @@ The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
 A customer brings stones in; a gemmologist identifies each one's type, which
 prices it; the order is billed through the GePG government payment gateway;
-once settled the gemmologist records the full identification; and the stone is
+once settled the gemmologist records the findings; and the stone is
 finally certified with a printable PDF certificate.
 
 ```

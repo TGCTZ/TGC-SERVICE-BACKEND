@@ -33,6 +33,7 @@ class CertificateSerializer(AuditFieldsMixin):
             "certificate_number",
             "stone_type_snapshot",
             "weight_snapshot",
+            "weight_unit_snapshot",
             "color_snapshot",
             "origin_snapshot",
             "gemmologist",

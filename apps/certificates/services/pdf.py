@@ -12,7 +12,7 @@ from weasyprint import HTML
 from django.conf import settings
 from django.template.loader import render_to_string
 
-from apps.gems.enums import CertificateStatus
+from apps.gems.enums import CertificateStatus, WeightUnit
 
 from ..models import Certificate
 
@@ -37,6 +37,7 @@ def certificate_context(certificate: Certificate) -> dict:
 
     return {
         "certificate": certificate,
+        "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
         "is_revoked": certificate.status == CertificateStatus.REVOKED,
         "lab_name": settings.CERTIFICATE_LAB_NAME,
         "lab_address": settings.CERTIFICATE_LAB_ADDRESS,

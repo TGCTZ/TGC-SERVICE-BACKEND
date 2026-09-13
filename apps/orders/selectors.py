@@ -14,19 +14,23 @@ from django.db.models import Count, F
 from .models import Order
 
 
-def preliminary_identification_worklist():
+def annotate_identified(queryset):
+    """Annotate each order with how many of its stones have been identified.
+
+    The alias is ``identified`` rather than ``identified_count``: the latter is
+    a property on ``Order``, and an annotation of that name would silently
+    shadow it on every row returned.
+    """
+    return queryset.annotate(identified=Count("stones"))
+
+
+def identification_worklist():
     """Orders with stones still to identify.
 
     The customer said how many stones they brought; the bench has typed fewer
-    than that so far. Typing a stone is preliminary identification - it is what
+    than that so far. Typing a stone is its identification - it is what
     fixes the price, so nothing can be billed until this queue empties.
 
-    The alias is ``identified`` rather than ``identified_count``: the latter is a
-    property on ``Order``, and an annotation of that name would silently shadow
-    it on every row this returns.
     """
-    return (
-        Order.objects.select_related("customer")
-        .annotate(identified=Count("stones"))
-        .filter(identified__lt=F("stone_count"))
-    )
+    queryset = annotate_identified(Order.objects.select_related("customer"))
+    return queryset.filter(identified__lt=F("stone_count"))

@@ -1,7 +1,7 @@
 """Every enum the TGC domain uses.
 
 They live together at L2, below the apps that own the corresponding tables,
-because several of them are read across app boundaries: the full-identification
+because several of them are read across app boundaries: the findings
 worklist in ``identification`` filters on ``BillStatus.PAID``, and the
 certification worklist does the same. Keeping the enums here lets those apps sit
 at the same layer without importing one another - the join itself
@@ -21,7 +21,7 @@ class StoneStatus(models.TextChoices):
     """
 
     RECEIVED = ("received", "Received")
-    UNDER_IDENTIFICATION = ("under_identification", "Under full identification")
+    UNDER_IDENTIFICATION = ("under_identification", "Under identification")
     BILLED = ("billed", "Billed")
     PAID = ("paid", "Paid")
     CERTIFIED = ("certified", "Certified")
@@ -29,14 +29,6 @@ class StoneStatus(models.TextChoices):
     COLLECTED = ("collected", "Collected")
     ON_HOLD = ("on_hold", "On hold")
     CANCELLED = ("cancelled", "Cancelled")
-
-
-class StoneCategory(models.TextChoices):
-    """Stone classification; drives pricing tiers."""
-
-    PRECIOUS = ("precious", "Precious")
-    SEMI_PRECIOUS = ("semi_precious", "Semi-precious")
-    DIAMOND = ("diamond", "Diamond")
 
 
 class ColorGroup(models.TextChoices):
