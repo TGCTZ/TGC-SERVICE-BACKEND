@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -35,7 +34,6 @@ class Migration(migrations.Migration):
                     models.DateTimeField(blank=True, db_index=True, null=True),
                 ),
                 ("certificate_number", models.CharField(max_length=30)),
-                ("verification_token", models.CharField(max_length=64)),
                 ("stone_type_snapshot", models.CharField(max_length=100)),
                 (
                     "weight_snapshot",
@@ -53,8 +51,6 @@ class Migration(migrations.Migration):
                     "gemmologist",
                     models.CharField(blank=True, default="", max_length=100),
                 ),
-                ("qr_code", models.CharField(blank=True, default="", max_length=100)),
-                ("pdf_file", models.CharField(blank=True, default="", max_length=100)),
                 (
                     "status",
                     models.CharField(
@@ -133,58 +129,12 @@ class Migration(migrations.Migration):
                 ],
             },
         ),
-        migrations.CreateModel(
-            name="CertificateAccessLog",
-            fields=[
-                (
-                    "id",
-                    models.BigAutoField(
-                        auto_created=True,
-                        primary_key=True,
-                        serialize=False,
-                        verbose_name="ID",
-                    ),
-                ),
-                ("accessed_at", models.DateTimeField(auto_now_add=True)),
-                ("ip_address", models.GenericIPAddressField(blank=True, null=True)),
-                (
-                    "user_agent",
-                    models.CharField(blank=True, default="", max_length=255),
-                ),
-                (
-                    "certificate",
-                    models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE,
-                        related_name="access_logs",
-                        to="certificates.certificate",
-                    ),
-                ),
-            ],
-            options={
-                "ordering": ["-accessed_at"],
-            },
-        ),
         migrations.AddConstraint(
             model_name="certificate",
             constraint=models.UniqueConstraint(
                 condition=models.Q(("deleted_at__isnull", True)),
                 fields=("certificate_number",),
                 name="certificates_certificate_unique_certificate_number",
-            ),
-        ),
-        migrations.AddConstraint(
-            model_name="certificate",
-            constraint=models.UniqueConstraint(
-                condition=models.Q(("deleted_at__isnull", True)),
-                fields=("verification_token",),
-                name="certificates_certificate_unique_verification_token",
-            ),
-        ),
-        migrations.AddIndex(
-            model_name="certificateaccesslog",
-            index=models.Index(
-                fields=["certificate", "accessed_at"],
-                name="certificate_certifi_26c89d_idx",
             ),
         ),
     ]

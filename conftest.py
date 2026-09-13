@@ -59,6 +59,22 @@ def viewer_user(db, roles):
 
 
 @pytest.fixture
+def gemmologist_user(db, roles):
+    """A user holding the gemmologist role - the bench.
+
+    Preliminary and full identification are both this role's work, so it is the
+    positive case wherever ``viewer_user`` (reception) is the negative one.
+    """
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    account = UserFactory()
+    account.groups.add(Group.objects.get(name="gemmologist"))
+    return account
+
+
+@pytest.fixture
 def auth_client(api_client):
     """Factory fixture returning a client authenticated as a given user."""
     from rest_framework_simplejwt.tokens import RefreshToken

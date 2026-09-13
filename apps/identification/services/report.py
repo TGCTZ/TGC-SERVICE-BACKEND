@@ -11,7 +11,7 @@ from ..models import IdentificationReport
 
 
 def _assert_payment_settled(stone) -> None:
-    """Refuse findings until the stone's order is paid for.
+    """Refuse full identification until the stone's order is paid for.
 
     The gate lives here rather than in the view because it is a business rule,
     and an API exposes more than one route to a report. Reached by attribute
@@ -23,18 +23,20 @@ def _assert_payment_settled(stone) -> None:
     """
     bill = getattr(stone.order, "bill", None)
     if bill is None or bill.status != BillStatus.PAID:
-        raise ServiceError("The bill must be paid before recording findings.")
+        raise ServiceError(
+            "The bill must be paid before recording the full identification."
+        )
 
 
 @transaction.atomic
 def create_report(*, stone, user=None, **fields) -> IdentificationReport:
     """Create an identification report for a stone.
 
-    Findings are recorded after payment, so the stone's status is deliberately
-    left alone - the pipeline moves it, not the report.
+    The full identification happens after payment, so the stone's status is
+    deliberately left alone - the pipeline moves it, not the report.
 
     Args:
-        stone: The stone the findings belong to.
+        stone: The stone being identified.
         user: The gemmologist, recorded as the identifier.
         **fields: Any report field - species, colour, refractive index and so on.
     """

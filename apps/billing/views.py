@@ -88,7 +88,7 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
     @extend_schema(responses=OrderSerializer)
     @action(detail=False, methods=["get"])
     def worklist(self, request):
-        """Orders with every stone registered and no bill yet."""
+        """Orders with every stone identified and no bill yet."""
         queryset = billing_worklist()
         page = self.paginate_queryset(queryset)
         serializer = OrderSerializer(

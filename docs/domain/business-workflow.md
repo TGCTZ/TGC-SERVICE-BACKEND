@@ -15,19 +15,21 @@
 ## 1. The process at a glance
 
 ```
- ┌────────────┐   ┌──────────────┐   ┌──────────┐   ┌────────────┐   ┌──────────────┐
- │ RECEPTION  │──▶│ TYPE         │──▶│ BILLING  │──▶│ FINDINGS   │──▶│ CERTIFICATE  │
- │            │   │ IDENTIFY     │   │ & PAYMENT│   │ (examine)  │   │  & HANDOVER  │
- └────────────┘   └──────────────┘   └──────────┘   └────────────┘   └──────────────┘
-   receptionist     gemmologist        accountant     gemmologist       receptionist
+ ┌────────────┐   ┌──────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────────┐
+ │ RECEPTION  │──▶│ PRELIMINARY  │──▶│ BILLING  │──▶│ FULL         │──▶│ CERTIFICATE  │
+ │            │   │ IDENTIFY     │   │ & PAYMENT│   │ IDENTIFY     │   │  & HANDOVER  │
+ │            │   │ (type→price) │   │          │   │ (examine)    │   │              │
+ └────────────┘   └──────────────┘   └──────────┘   └──────────────┘   └──────────────┘
+   receptionist     gemmologist        accountant      gemmologist       receptionist
 ```
 
 - An **Order** groups one or many **Stones** brought by one **Customer**.
 - Each **Stone** flows through the pipeline **independently** — one stone may be
-  certified while another in the same order is still awaiting findings.
-- **Findings are recorded after payment.** The gemmologist first assigns only the
-  stone's **type** (which fixes the price); the customer pays; then the full
-  gemmological findings are recorded and the report is finalized.
+  certified while another in the same order is still awaiting identification.
+- **Identification happens in two stages, split by payment.** *Preliminary
+  identification* assigns only the stone's **type**, which fixes the price; the
+  customer pays; then *full identification* records the complete gemmological
+  findings and the report is finalized. Both stages are the gemmologist's.
 - Billing happens once **per order**; certificates are issued **per stone**.
 
 ---
@@ -38,8 +40,8 @@ The four seeded roles (C5 ✅ resolved — see [permissions.md](../engineering/p
 
 | Role | Responsible for |
 | --- | --- |
-| **Receptionist** | Registers customers, creates orders, logs stones, hands over finished certificates. |
-| **Gemmologist** | Identifies each stone's type, then (after payment) records findings and finalizes the report. |
+| **Receptionist** | Registers customers, creates orders, hands over finished certificates. Does **not** identify stones. |
+| **Gemmologist** | Preliminary identification (type, which fixes the price), then after payment the full identification, and finalizes the report. |
 | **Accountant** | Generates bills, handles GePG, confirms payment. |
 | **Administrator** | Manages reference data (lookups, prices) and users. |
 
@@ -50,30 +52,34 @@ The four seeded roles (C5 ✅ resolved — see [permissions.md](../engineering/p
 ### Stage 1 — Reception
 **Who:** Receptionist
 
-1. Register the **Customer**.
-2. Create an **Order** for the visit, recording only **how many stones** the
+1. Create an **Order** for the visit, recording only **how many stones** the
    customer submitted (`stone_count`).
+2. The **Customer** is chosen or registered *within* that same step: the
+   receptionist searches by name or phone, picks the record if the customer has
+   been here before, and fills in their details only if they have not. A
+   customer is never registered on their own — they exist because an order is
+   being received.
 
 The receptionist does **not** examine or measure stones — no type, weight, or
 other property is recorded here. Individual stone records are created later, at
-identification.
+preliminary identification.
 
 **Result:** an Order with a `stone_count`; no `Stone` records yet.
 
 ---
 
-### Stage 2 — Type identification
+### Stage 2 — Preliminary identification
 **Who:** Gemmologist
 
-1. Take a physical stone and **register it** on the order (`add_stone`),
-   assigning only its **stone type**. This creates the `Stone` record
-   (`received`) and, via the type, **fixes the price**. The system caps
-   registrations at the order's `stone_count`.
-2. Full gemmological findings are **not** recorded yet — they come after payment
+1. Take a physical stone and **identify its type**
+   (`POST /orders/{id}/stones/`). This creates the `Stone` record (`received`)
+   and, via the type, **fixes the price**. The system caps this at the order's
+   `stone_count`.
+2. The **full identification** is **not** recorded yet — it comes after payment
    (Stage 4).
 
 **Result:** each submitted stone becomes a `Stone` record with a known type (and
-therefore a known price); weight and findings are still blank.
+therefore a known price); weight and the full findings are still blank.
 
 ---
 
@@ -92,11 +98,11 @@ therefore a known price); weight and findings are still blank.
 > question C2.
 
 **Result:** the order is billed and, once settled, marked paid — which unlocks
-findings.
+full identification.
 
 ---
 
-### Stage 4 — Findings
+### Stage 4 — Full identification
 **Who:** Gemmologist
 
 1. For each **paid** stone, record the full findings on its **Identification
@@ -115,10 +121,12 @@ advances toward certification.
 ---
 
 ### Stage 5 — Certificate & Handover
-**Who:** Receptionist (issue/handover), system (verification)
+**Who:** Receptionist (issue/handover)
 
 1. A **Certificate is issued per stone**, carrying its identification results.
-2. Each certificate has a **QR code** linking to a public verification page.
+2. Each certificate **downloads as a PDF** for printing and handover. There is
+   no public verification page: the document itself is the deliverable, and a
+   revoked certificate still downloads, watermarked REVOKED.
 3. The customer collects the certified stones; handover is recorded.
 
 > **(assumption)** Whether payment must be **complete before** a certificate is
@@ -169,16 +177,16 @@ collected
 | To status | `billed` |
 | Changed by | gemmologist J. Doe |
 | Changed at | 2026-08-27 14:05 |
-| Note | "type identified: Ruby" |
+| Note | "Preliminarily identified: Ruby" |
 
 ---
 
 ## 5. Key business rules (confirmed)
 
 1. **Reception records only a stone count** (`stone_count`); stones are created
-   later, at type identification, one record per physical stone.
-2. A **report is produced per stone**, and **findings are recorded after
-   payment** (type first → pay → findings → finalize).
+   later, at preliminary identification, one record per physical stone.
+2. A **report is produced per stone**, and **full identification happens after
+   payment** (preliminary → pay → full → finalize).
 3. Reference data (colors, species, treatments, prices, …) is **admin-managed**;
    staff select from fixed lists, not free text.
 4. **One Bill per Order** — the customer pays once for the whole batch.

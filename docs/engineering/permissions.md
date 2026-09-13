@@ -25,9 +25,13 @@ stage of the stone's journey and onto one of the four worklists.
 |---|---|---|
 | `superadmin` | - | Every permission, resolved dynamically at run time |
 | `administrator` | Back office | Full CRUD across the domain, users, roles, audit |
-| `receptionist` | Front desk | Customers and orders; registers and types stones |
-| `gemmologist` | The bench | Findings, finalize, and issuing certificates |
+| `receptionist` | Front desk | Customers, orders, handover. Does **not** identify stones |
+| `gemmologist` | The bench | Both identification stages, finalize, and issuing certificates |
 | `accountant` | Accounts | Bills, payments, service providers, and pricing |
+
+`orders.add_stone` is Django's automatic `add_<model>` permission for `Stone`.
+It is named after the row it creates, not the stage it serves - that stage is
+**preliminary identification**, and it belongs to the bench, not to reception.
 
 `superadmin` is resolved as `Permission.objects.all()` rather than a literal
 list, so a newly added model is covered without editing the file. It is not a
@@ -101,6 +105,13 @@ An action that is not listed falls back to the method map, so ordinary CRUD and
 | `POST /bills/generate/` | `billing.generate_bill` |
 | `POST /certificates/` | `certificates.issue_certificate` |
 | `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
+| `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |
+
+`pdf` is deliberately absent from `action_permissions`: it is a **read** of data
+the detail endpoint already returns in full, so the method-map fallback gives it
+`view_certificate` and no role needs a new grant. Bespoke permissions are
+reserved for verbs that change state — issuing, revoking, transitioning — where
+"may read this" and "may do this" genuinely differ.
 
 For checks outside a DRF view - a management command, a webhook - use
 `require_permission(user, "gems.change_stonetype")`. A `None` user means a

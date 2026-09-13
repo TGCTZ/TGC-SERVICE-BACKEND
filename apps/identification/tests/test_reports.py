@@ -1,4 +1,4 @@
-"""Findings, the payment gate and the finalize lock."""
+"""Full identification, the payment gate and the finalize lock."""
 
 from decimal import Decimal
 
@@ -14,7 +14,7 @@ from apps.gems.tests.factories import (
     StoneTypeFactory,
 )
 from apps.identification.models import IdentificationReport, InstrumentUsed
-from apps.identification.selectors import findings_worklist
+from apps.identification.selectors import full_identification_worklist
 from apps.identification.services import create_report, finalize_report, update_report
 from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
@@ -53,7 +53,7 @@ def test_create_report_allocates_a_number(paid_stone, user):
     assert not report.is_finalized
 
 
-def test_findings_are_refused_before_payment(billed_stone):
+def test_identification_is_refused_before_payment(billed_stone):
     """Work starts only once the customer has paid.
 
     The gate lives in the service rather than the view, because an API offers
@@ -63,7 +63,7 @@ def test_findings_are_refused_before_payment(billed_stone):
         create_report(stone=billed_stone)
 
 
-def test_findings_are_refused_when_the_order_has_no_bill():
+def test_identification_is_refused_when_the_order_has_no_bill():
     """A stone that was never billed cannot be worked on either."""
     order = OrderFactory(stone_count=1)
     stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("1000.00")))
@@ -117,16 +117,20 @@ def test_a_report_cannot_be_finalized_twice(paid_stone, user):
         finalize_report(report, user=user)
 
 
-def test_findings_worklist_holds_paid_unfinalized_stones(paid_stone, billed_stone, user):
+def test_full_identification_worklist_holds_paid_unfinalized_stones(
+    paid_stone, billed_stone, user
+):
     """The queue is exactly the bench's inbox."""
-    assert paid_stone in findings_worklist()
-    assert billed_stone not in findings_worklist()
+    assert paid_stone in full_identification_worklist()
+    assert billed_stone not in full_identification_worklist()
 
     report = create_report(stone=paid_stone, user=user)
-    assert paid_stone in findings_worklist(), "a draft is still work in progress"
+    assert paid_stone in full_identification_worklist(), (
+        "a draft is still work in progress"
+    )
 
     finalize_report(report, user=user)
-    assert paid_stone not in findings_worklist()
+    assert paid_stone not in full_identification_worklist()
 
 
 def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_client):
@@ -226,7 +230,9 @@ def test_instruments_cannot_be_added_to_a_finalized_report(
     assert InstrumentUsed.objects.filter(report=report).count() == 1
 
 
-def test_findings_worklist_endpoint_lists_stones(paid_stone, admin_user, auth_client):
+def test_full_identification_worklist_endpoint_lists_stones(
+    paid_stone, admin_user, auth_client
+):
     """The queue endpoint returns stones, not reports."""
     response = auth_client(admin_user).get("/api/v1/identification-reports/worklist/")
 

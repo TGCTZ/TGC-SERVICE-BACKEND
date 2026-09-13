@@ -1,4 +1,4 @@
-"""Stone registration and status transitions."""
+"""Preliminary identification of stones, and status transitions."""
 
 from django.db import transaction
 
@@ -48,33 +48,34 @@ def transition_stone(stone: Stone, to_status: str, *, user=None, note: str = "")
 def add_stone(
     order: Order, *, stone_type, weight=None, weight_unit=WeightUnit.CARAT, user=None
 ) -> Stone:
-    """Add a stone to an order as ``received``, typed for pricing.
+    """Record the preliminary identification of a stone: its type.
 
-    Only the type is required at registration: it is what the bill is priced
-    from. Weight and the gemmological findings come later, after payment.
+    Only the type is required here, because it is what the bill is priced from.
+    The full identification - weight and the gemmological findings - comes later,
+    after payment.
 
     The label is the next letter of the alphabet, and the order cannot hold more
     stones than the customer said they brought.
 
     Args:
-        order: The order to register against.
+        order: The order the stone belongs to.
         stone_type: The ``gems.StoneType`` that prices this stone.
-        weight: Optional at registration; usually recorded during findings.
+        weight: Optional here; usually recorded during full identification.
         weight_unit: Carats unless stated otherwise.
         user: The acting user.
 
     Raises:
-        ServiceError: If every submitted stone is already registered.
+        ServiceError: If every submitted stone has already been identified.
     """
-    registered = order.stones.count()
-    if registered >= order.stone_count:
+    identified = order.stones.count()
+    if identified >= order.stone_count:
         raise ServiceError(
-            f"All {order.stone_count} stone(s) for {order.reference_number} are "
-            f"already registered."
+            f"All {order.stone_count} stone(s) for {order.reference_number} have "
+            f"already been identified."
         )
 
     # A, B, C... Breaks above 26 stones, which no order has yet reached.
-    label = chr(65 + registered)
+    label = chr(65 + identified)
 
     stone = Stone(
         order=order,
@@ -92,7 +93,7 @@ def add_stone(
         stone=stone,
         to_status=StoneStatus.RECEIVED,
         changed_by=user,
-        note="Registered",
+        note="Preliminarily identified",
     )
     return stone
 
@@ -100,7 +101,7 @@ def add_stone(
 def update_stone(
     stone: Stone, *, stone_type=None, weight=None, weight_unit=None, user=None
 ) -> Stone:
-    """Update a stone's recorded properties during identification."""
+    """Update a stone's recorded properties during full identification."""
     if stone_type is not None:
         stone.stone_type = stone_type
     if weight is not None:

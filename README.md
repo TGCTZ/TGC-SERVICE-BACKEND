@@ -2,12 +2,13 @@
 
 The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
-A customer brings stones in; they are registered and typed, billed through the
-GePG government payment gateway, identified by a gemmologist once the bill is
-settled, and finally certified with a publicly verifiable certificate.
+A customer brings stones in; a gemmologist identifies each one's type, which
+prices it; the order is billed through the GePG government payment gateway;
+once settled the gemmologist records the full identification; and the stone is
+finally certified with a printable PDF certificate.
 
 ```
-received -> billed -> paid -> findings -> finalized -> certified
+received -> billed -> paid -> identified -> finalized -> certified
 ```
 
 Each arrow is a service with its own guard, and each stage has a worklist that
@@ -29,6 +30,15 @@ repository in `TGC-SERVICE-FRONTEND`.
 | Quality | `ruff` (lint + format + import sort), `pre-commit` |
 
 ## Quick start
+
+Certificate PDFs are rendered by WeasyPrint, which needs system libraries
+present **before** `uv sync` — a missing one raises `OSError` at import time and
+takes the whole app down, not just the PDF endpoint. On Debian/Ubuntu:
+
+```bash
+sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+  libcairo2 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+```
 
 ```bash
 uv sync
@@ -97,8 +107,8 @@ apps/
   gems/            L2 - domain enums and the stone reference tables
   orders/          L3 - customers, orders, stones, status trail
   billing/         L4 - bills, payments, the GePG gateway
-  identification/  L4 - gemmological findings
-  certificates/    L5 - certificates and public verification
+  identification/  L4 - full gemmological identification
+  certificates/    L5 - certificates and their PDF documents
 docs/              engineering, domain and GePG documentation
 api.http           a runnable request collection for the whole pipeline
 ```

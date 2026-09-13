@@ -1,12 +1,12 @@
-"""Order intake, stone registration and status transitions."""
+"""Order intake, preliminary identification and status transitions."""
 
 import pytest
 
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import StoneStatus
 from apps.gems.tests.factories import StoneTypeFactory
-from apps.orders.models import Order, StatusHistory
-from apps.orders.selectors import registration_worklist
+from apps.orders.models import Customer, Order, StatusHistory
+from apps.orders.selectors import preliminary_identification_worklist
 from apps.orders.services import add_stone, create_order, transition_stone
 from apps.orders.tests.factories import CustomerFactory, OrderFactory, StoneFactory
 
@@ -35,7 +35,7 @@ def test_reference_numbers_do_not_reuse_a_deleted_one():
 
 
 def test_add_stone_labels_stones_in_sequence():
-    """Stones are lettered in registration order."""
+    """Stones are lettered in the order they are identified."""
     order = OrderFactory(stone_count=3)
     stone_type = StoneTypeFactory()
 
@@ -63,7 +63,7 @@ def test_add_stone_refuses_more_than_the_customer_submitted():
 
 
 def test_add_stone_records_the_first_history_entry():
-    """A registered stone starts its trail with an entry from nowhere."""
+    """A newly identified stone starts its trail with an entry from nowhere."""
     order = OrderFactory(stone_count=1)
     stone = add_stone(order, stone_type=StoneTypeFactory())
 
@@ -104,16 +104,16 @@ def test_transition_without_a_user_is_attributed_to_the_system():
     assert entry.changed_by is None
 
 
-def test_registration_worklist_holds_only_incomplete_orders():
-    """The queue empties as the last stone is registered."""
+def test_preliminary_worklist_holds_only_incomplete_orders():
+    """The queue empties as the last stone is identified."""
     order = OrderFactory(stone_count=2)
     stone_type = StoneTypeFactory()
 
     add_stone(order, stone_type=stone_type)
-    assert order in registration_worklist()
+    assert order in preliminary_identification_worklist()
 
     add_stone(order, stone_type=stone_type)
-    assert order not in registration_worklist()
+    assert order not in preliminary_identification_worklist()
 
 
 def test_order_create_endpoint_delegates_to_the_service(admin_user, auth_client):
@@ -134,7 +134,7 @@ def test_order_create_endpoint_delegates_to_the_service(admin_user, auth_client)
     assert Order.objects.get(pk=response.data["id"]).stone_count == 2
 
 
-def test_add_stone_endpoint_registers_and_caps(admin_user, auth_client):
+def test_add_stone_endpoint_identifies_and_caps(admin_user, auth_client):
     """The cap surfaces as a 400 carrying the service's message."""
     order = OrderFactory(stone_count=1)
     stone_type = StoneTypeFactory()
@@ -150,7 +150,7 @@ def test_add_stone_endpoint_registers_and_caps(admin_user, auth_client):
         f"/api/v1/orders/{order.pk}/stones/", {"stone_type": stone_type.pk}
     )
     assert second.status_code == 400
-    assert "already registered" in str(second.data)
+    assert "already been identified" in str(second.data)
 
 
 def test_transition_endpoint_requires_the_transition_permission(admin_user, auth_client):
@@ -158,7 +158,7 @@ def test_transition_endpoint_requires_the_transition_permission(admin_user, auth
 
     Regression test for the whole point of ActionPermissions: the transition
     route is a POST, so the method-based map would ask for ``add_stone`` and let
-    anyone who can register a stone also move it to certified.
+    anyone who can identify a stone also move it to certified.
     """
     from django.contrib.auth.models import Permission
 
@@ -249,3 +249,172 @@ def test_status_history_is_read_only(admin_user, auth_client):
 
     assert write.status_code in (403, 405)
     assert StatusHistory.objects.count() == before
+
+
+def test_an_order_can_register_its_customer(admin_user, auth_client):
+    """Reception meets most customers while receiving their first order."""
+    response = auth_client(admin_user).post(
+        "/api/v1/orders/",
+        {
+            "customer_data": {
+                "first_name": "Asha",
+                "last_name": "Mwinyi",
+                "phone": "0754123456",
+            },
+            "stone_count": 2,
+            "received_date": "2026-09-13",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["customer_detail"]["full_name"] == "Asha Mwinyi"
+    assert Customer.objects.filter(phone="0754123456").count() == 1
+
+
+def test_an_order_refuses_both_a_customer_and_new_details(admin_user, auth_client):
+    """Sending both means the client does not know whose order this is."""
+    before = Order.objects.count()
+
+    response = auth_client(admin_user).post(
+        "/api/v1/orders/",
+        {
+            "customer": CustomerFactory().pk,
+            "customer_data": {
+                "first_name": "Asha",
+                "last_name": "Mwinyi",
+                "phone": "0754123456",
+            },
+            "stone_count": 1,
+            "received_date": "2026-09-13",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert Order.objects.count() == before
+
+
+def test_an_order_needs_a_customer_one_way_or_the_other(admin_user, auth_client):
+    """Neither field given is the ordinary missing-required-field case."""
+    response = auth_client(admin_user).post(
+        "/api/v1/orders/",
+        {"stone_count": 1, "received_date": "2026-09-13"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "customer" in response.data
+
+
+def test_registering_a_customer_needs_the_customer_permission(user, auth_client, roles):
+    """The nested write must not route around orders.add_customer."""
+    from django.contrib.auth.models import Permission
+
+    user.user_permissions.add(
+        Permission.objects.get(codename="add_order", content_type__app_label="orders"),
+        Permission.objects.get(codename="view_order", content_type__app_label="orders"),
+    )
+
+    response = auth_client(user).post(
+        "/api/v1/orders/",
+        {
+            "customer_data": {
+                "first_name": "Asha",
+                "last_name": "Mwinyi",
+                "phone": "0754123456",
+            },
+            "stone_count": 1,
+            "received_date": "2026-09-13",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert not Customer.objects.filter(phone="0754123456").exists()
+
+
+def test_a_failed_order_leaves_no_orphan_customer(monkeypatch):
+    """The customer is created inside the order's transaction, not before it."""
+    import apps.orders.services.order as order_service
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("reference allocation failed")
+
+    monkeypatch.setattr(order_service, "generate_reference_number", boom)
+
+    with pytest.raises(RuntimeError):
+        create_order(
+            customer_data={
+                "first_name": "Asha",
+                "last_name": "Mwinyi",
+                "phone": "0754123456",
+            },
+            stone_count=1,
+        )
+
+    assert not Customer.objects.filter(phone="0754123456").exists()
+
+
+def test_a_duplicate_phone_names_the_existing_customer(admin_user, auth_client):
+    """An opaque integrity error would tell reception nothing and offer no way out."""
+    existing = CustomerFactory(first_name="Asha", last_name="Mwinyi", phone="0754123456")
+
+    response = auth_client(admin_user).post(
+        "/api/v1/customers/",
+        {"first_name": "Aisha", "last_name": "M", "phone": "0754123456"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert existing.full_name in str(response.data["phone"])
+
+
+def test_a_gemmologist_may_identify_a_stone(gemmologist_user, auth_client):
+    """Preliminary identification is the bench's work, so the bench can do it."""
+    order = OrderFactory(stone_count=1)
+
+    response = auth_client(gemmologist_user).post(
+        f"/api/v1/orders/{order.pk}/stones/", {"stone_type": StoneTypeFactory().pk}
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["label"] == "A"
+
+
+def test_a_receptionist_may_no_longer_identify_a_stone(viewer_user, auth_client):
+    """Reception records how many stones arrived, not what they are.
+
+    Typing a stone fixes its price, so it belongs to the gemmologist. Reception
+    keeps `view_stone` and `transition_stone` for handover.
+    """
+    order = OrderFactory(stone_count=1)
+
+    response = auth_client(viewer_user).post(
+        f"/api/v1/orders/{order.pk}/stones/", {"stone_type": StoneTypeFactory().pk}
+    )
+
+    assert response.status_code == 403
+    assert not order.stones.exists()
+
+
+def test_the_preliminary_worklist_belongs_to_the_bench(
+    gemmologist_user, viewer_user, auth_client
+):
+    """The queue is gated on the verb that works it, not on viewing orders."""
+    assert (
+        auth_client(gemmologist_user).get("/api/v1/orders/worklist/").status_code == 200
+    )
+    assert auth_client(viewer_user).get("/api/v1/orders/worklist/").status_code == 403
+
+
+def test_a_receptionist_may_still_hand_a_stone_over(viewer_user, auth_client):
+    """Narrowing reception's stone permissions must not break handover."""
+    stone = StoneFactory()
+
+    response = auth_client(viewer_user).post(
+        f"/api/v1/stones/{stone.pk}/transition/",
+        {"to_status": StoneStatus.COLLECTED, "note": "Collected at the front desk"},
+    )
+
+    assert response.status_code == 200, response.data

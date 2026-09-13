@@ -20,7 +20,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def billable_order(settings):
-    """An order whose three stones are all registered and priced."""
+    """An order whose three stones are all identified and priced."""
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=3)
     stone_type = StoneTypeFactory(price=Decimal("50000.00"))
@@ -204,7 +204,7 @@ def test_a_notification_for_an_unknown_bill_returns_a_failure_ack(billable_order
     assert not Payment.objects.filter(trx_id="TRX-GHOST-1").exists()
 
 
-def test_billing_worklist_holds_only_fully_registered_unbilled_orders(settings):
+def test_billing_worklist_holds_only_fully_identified_unbilled_orders(settings):
     """An order enters the queue when its last stone is typed, and leaves when billed."""
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=2)

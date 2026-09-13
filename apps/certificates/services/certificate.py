@@ -1,7 +1,5 @@
 """Certificate issuance and revocation."""
 
-import secrets
-
 from django.db import transaction
 from django.utils import timezone
 
@@ -60,7 +58,6 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         certificate_number=generate_reference_number(
             Certificate, "certificate_number", "CERT"
         ),
-        verification_token=secrets.token_hex(32),
         stone_type_snapshot=stone.stone_type.name,
         weight_snapshot=stone.weight,
         color_snapshot=report.color.name if report.color else "",
@@ -86,9 +83,9 @@ def issue_certificate(stone, *, user=None) -> Certificate:
 def revoke_certificate(certificate: Certificate, *, user=None) -> Certificate:
     """Withdraw a certificate.
 
-    The row stays, and so does its number: a revoked certificate must still
-    resolve at its public verification URL, because the whole point is to tell
-    whoever is holding the paper copy that it no longer stands.
+    The row stays, and so does its number, so the certificate still downloads -
+    watermarked REVOKED. That is the whole point: whoever is holding the paper
+    copy has to be able to learn that it no longer stands.
 
     Raises:
         ServiceError: If the certificate is already revoked.

@@ -34,6 +34,13 @@ upgrade in its first eighteen months.
 | `requests` | 2.34.2 | Outbound HTTP to the GePG gateway |
 | `cryptography` | 50.0.1 | PKCS#12 loading and SHA256withRSA signing for GePG |
 | `defusedxml` | 0.7.1 | Parsing untrusted XML from the payment callbacks |
+| `weasyprint` | 66+ | Rendering the certificate PDF from an HTML template |
+
+> **`weasyprint` needs system libraries**, and a missing one raises `OSError` at
+> *import* time — which takes the whole app down, not just the PDF endpoint. On
+> Debian/Ubuntu: `libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libcairo2
+> libgdk-pixbuf-2.0-0 libffi8 shared-mime-info`. Install them in any Dockerfile
+> or CI image before `uv sync`.
 
 ### Why each one
 

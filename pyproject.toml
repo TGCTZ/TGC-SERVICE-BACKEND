@@ -17,6 +17,7 @@ dependencies = [
     "pillow>=12.3.0",
     "psycopg[binary]>=3.3.5",
     "requests>=2.32",
+    "weasyprint>=66",
 ]
 
 [dependency-groups]

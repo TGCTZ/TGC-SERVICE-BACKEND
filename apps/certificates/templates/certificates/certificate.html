@@ -1,0 +1,116 @@
+{% comment %}
+The certificate document, rendered to PDF by WeasyPrint.
+
+CSS is inline rather than a static file on purpose: nothing is collected in dev
+and `staticfiles/` does not exist, so a `{% static %}` reference here would be a
+runtime landmine. Everything shown comes from the frozen snapshot columns, so
+the document keeps saying what it said on the day it was issued.
+{% endcomment %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ certificate.certificate_number }}</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 18mm;
+        @bottom-left {
+          content: "{{ certificate.certificate_number }}";
+          font: 8pt "DejaVu Sans", sans-serif;
+          color: #6b7280;
+        }
+        @bottom-right {
+          content: "Page " counter(page) " of " counter(pages);
+          font: 8pt "DejaVu Sans", sans-serif;
+          color: #6b7280;
+        }
+      }
+
+      body {
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 10pt;
+        color: #111827;
+        line-height: 1.5;
+      }
+
+      .lab { text-align: center; border-bottom: 2pt solid #111827; padding-bottom: 6mm; }
+      .lab h1 { font-size: 15pt; letter-spacing: .5pt; margin: 0; text-transform: uppercase; }
+      .lab p { margin: 1mm 0 0; font-size: 9pt; color: #4b5563; }
+
+      .title { text-align: center; margin: 9mm 0 7mm; }
+      .title h2 { font-size: 13pt; letter-spacing: 2pt; margin: 0; text-transform: uppercase; }
+      .title .number { font-size: 16pt; font-weight: bold; margin-top: 3mm; letter-spacing: 1pt; }
+      .title .issued { font-size: 9pt; color: #4b5563; margin-top: 1mm; }
+
+      table { width: 100%; border-collapse: collapse; }
+      .findings th, .findings td { border: .5pt solid #d1d5db; padding: 2.5mm 3mm; text-align: left; }
+      .findings th { width: 38%; background: #f3f4f6; font-weight: bold; }
+
+      h3 { font-size: 9pt; text-transform: uppercase; letter-spacing: 1pt;
+           color: #4b5563; margin: 8mm 0 2mm; }
+
+      .provenance td { padding: 1.2mm 0; font-size: 9pt; }
+      .provenance td:first-child { color: #4b5563; width: 38%; }
+
+      .signature { margin-top: 16mm; width: 70mm; }
+      .signature .rule { border-bottom: .5pt solid #111827; height: 12mm; }
+      .signature .who { font-size: 9pt; margin-top: 1.5mm; }
+      .signature .role { font-size: 8pt; color: #6b7280; }
+
+      /* Revoked: a band the eye cannot skip, plus a watermark across the page. */
+      .revoked-band {
+        margin: 6mm 0; padding: 3mm 4mm; border: 1pt solid #b91c1c;
+        background: #fef2f2; color: #b91c1c; font-weight: bold; text-align: center;
+      }
+      .watermark {
+        position: absolute; top: 105mm; left: 0; right: 0; text-align: center;
+        font-size: 76pt; font-weight: bold; color: #b91c1c; opacity: .15;
+        transform: rotate(-30deg); letter-spacing: 6pt;
+      }
+    </style>
+  </head>
+
+  <body>
+    {% if is_revoked %}<div class="watermark">REVOKED</div>{% endif %}
+
+    <div class="lab">
+      <h1>{{ lab_name }}</h1>
+      {% if lab_address %}<p>{{ lab_address }}</p>{% endif %}
+    </div>
+
+    <div class="title">
+      <h2>Certificate of Identification</h2>
+      <div class="number">{{ certificate.certificate_number }}</div>
+      <div class="issued">Issued {{ certificate.issued_at|date:"j F Y" }}</div>
+    </div>
+
+    {% if is_revoked %}
+      <div class="revoked-band">
+        This certificate was withdrawn and no longer stands.
+      </div>
+    {% endif %}
+
+    <table class="findings">
+      <tr><th>Stone type</th><td>{{ certificate.stone_type_snapshot }}</td></tr>
+      <tr><th>Weight</th><td>{{ certificate.weight_snapshot }} ct</td></tr>
+      <tr><th>Colour</th><td>{{ certificate.color_snapshot|default:"—" }}</td></tr>
+      <tr><th>Origin</th><td>{{ certificate.origin_snapshot|default:"—" }}</td></tr>
+    </table>
+
+    <h3>Provenance</h3>
+    <table class="provenance">
+      <tr><td>Order reference</td><td>{{ order_reference }}</td></tr>
+      <tr><td>Stone</td><td>{{ stone_label }}</td></tr>
+      <tr><td>Customer</td><td>{{ customer_name }}</td></tr>
+      <tr><td>Report number</td><td>{{ report_number }}</td></tr>
+      <tr><td>Gemmologist</td><td>{{ certificate.gemmologist|default:"—" }}</td></tr>
+    </table>
+
+    <div class="signature">
+      <div class="rule"></div>
+      <div class="who">{{ certificate.issued_by|default:"—" }}</div>
+      <div class="role">For and on behalf of {{ lab_name }}</div>
+    </div>
+  </body>
+</html>

@@ -1,29 +1,26 @@
 """API views for the certificates domain."""
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.core.permissions import StrictModelPermissions
+from django.http import HttpResponse
+
 from apps.core.viewsets import BaseModelViewSet
+from apps.gems.enums import CertificateStatus
 from apps.orders.models import Stone
 from apps.orders.serializers import StoneSerializer
 
-from .models import Certificate, CertificateAccessLog
-from .selectors import certificate_by_token, certification_worklist
-from .serializers import (
-    CertificateAccessLogSerializer,
-    CertificateSerializer,
-    IssueCertificateSerializer,
-    PublicCertificateSerializer,
-)
-from .services import issue_certificate, revoke_certificate
+from .models import Certificate
+from .selectors import certification_worklist
+from .serializers import CertificateSerializer, IssueCertificateSerializer
+from .services import issue_certificate, render_certificate_pdf, revoke_certificate
 
 
 class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
-    """Certificates, plus issuance, revocation and public verification."""
+    """Certificates, plus issuance, revocation and PDF download."""
 
     queryset = Certificate.objects.select_related(
         "stone",
@@ -51,22 +48,17 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "create": ["certificates.issue_certificate"],
         "revoke": ["certificates.revoke_certificate"],
         "worklist": ["certificates.issue_certificate"],
-        # The public endpoint carries its own AllowAny, but the map still has to
-        # name it or the parent would ask for view_certificate.
-        "verify": [],
+        # `pdf` is deliberately absent: ActionPermissions falls back to the HTTP
+        # method map, so a GET resolves to certificates.view_certificate. A
+        # download is a read of data the detail endpoint already returns, and
+        # the project reserves bespoke permissions for verbs that change state.
     }
-
-    def get_permissions(self):
-        """The verification endpoint is public; everything else is not."""
-        if self.action == "verify":
-            return [AllowAny()]
-        return super().get_permissions()
 
     @extend_schema(request=IssueCertificateSerializer, responses=CertificateSerializer)
     def create(self, request, *args, **kwargs):
         """Issue a certificate for a stone.
 
-        Delegates wholly to the service: the number, token and snapshots are
+        Delegates wholly to the service: the number and the snapshots are
         minted together, so there is nothing here for a client to supply beyond
         which stone to certify.
         """
@@ -102,47 +94,27 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
         return self.get_paginated_response(serializer.data)
 
-    @extend_schema(responses=PublicCertificateSerializer)
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path=r"verify/(?P<token>[0-9a-f]{64})",
-        authentication_classes=[],
-    )
-    def verify(self, request, token=None):
-        """Confirm a certificate from its token. Public, and logged.
+    @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """Download this certificate as a PDF.
 
-        Anyone holding the printed certificate can check it, so there is no
-        authentication. Every hit is recorded, because who checked a certificate
-        and when is itself part of the audit trail.
+        Rendered on demand rather than stored. The body is frozen snapshot
+        columns, so re-rendering is deterministic; the one mutable input is
+        ``status``, and a revoked certificate has to pick up its watermark at
+        download time - which a stored file could not do without an
+        invalidation step.
         """
-        certificate = certificate_by_token(token)
-        if certificate is None:
-            return Response(
-                {"detail": "No certificate matches that token."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        certificate = self.get_object()
+        suffix = "-revoked" if certificate.status == CertificateStatus.REVOKED else ""
+        filename = f"{certificate.certificate_number}{suffix}.pdf"
 
-        CertificateAccessLog.objects.create(
-            certificate=certificate,
-            ip_address=request.META.get("REMOTE_ADDR"),
-            user_agent=request.META.get("HTTP_USER_AGENT", "")[:255],
+        # HttpResponse rather than FileResponse: the bytes are already in memory,
+        # and ATOMIC_REQUESTS makes a streaming response the more awkward of the
+        # two. Returning a bare HttpResponse also bypasses DRF content
+        # negotiation, so the client's `Accept: application/json` is harmless.
+        response = HttpResponse(
+            render_certificate_pdf(certificate), content_type="application/pdf"
         )
-        return Response(PublicCertificateSerializer(certificate).data)
-
-
-class CertificateAccessLogViewSet(viewsets.ReadOnlyModelViewSet):
-    """Read-only view of public verification hits.
-
-    Not a ``BaseModelViewSet``: an append-only ledger has nothing to
-    soft-delete and nothing to restore.
-    """
-
-    queryset = CertificateAccessLog.objects.select_related("certificate")
-    serializer_class = CertificateAccessLogSerializer
-    permission_classes = [StrictModelPermissions]
-
-    filter_fields = ("certificate",)
-    ordering_fields = ("id", "accessed_at")
-    ordering = ["-accessed_at"]
-    date_filter_fields = ("accessed_at",)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

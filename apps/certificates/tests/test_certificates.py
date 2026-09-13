@@ -1,4 +1,4 @@
-"""Certificate issuance, its three guards, revocation and public verification."""
+"""Certificate issuance, its three guards, revocation and PDF download."""
 
 from decimal import Decimal
 
@@ -6,9 +6,13 @@ import pytest
 
 from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
-from apps.certificates.models import Certificate, CertificateAccessLog
+from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
-from apps.certificates.services import issue_certificate, revoke_certificate
+from apps.certificates.services import (
+    certificate_context,
+    issue_certificate,
+    revoke_certificate,
+)
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import CertificateStatus, StoneStatus
 from apps.gems.tests.factories import ColorFactory, OriginFactory, StoneTypeFactory
@@ -51,7 +55,6 @@ def test_issuing_freezes_the_findings(certifiable_stone, user):
     certificate = issue_certificate(certifiable_stone, user=user)
 
     assert certificate.certificate_number.startswith("CERT-")
-    assert len(certificate.verification_token) == 64
     assert certificate.stone_type_snapshot == certifiable_stone.stone_type.name
     assert certificate.weight_snapshot == Decimal("2.500")
     assert certificate.color_snapshot == "Red"
@@ -222,93 +225,57 @@ def test_certificate_fields_are_not_client_writable(
     assert certificate.status == CertificateStatus.ISSUED
 
 
-def test_public_verification_needs_no_authentication(certifiable_stone, client):
-    """Anyone holding the printed certificate can check it."""
+def test_pdf_download_returns_a_pdf(certifiable_stone, admin_user, auth_client):
+    """The PDF is how a certificate leaves the system."""
     certificate = issue_certificate(certifiable_stone)
 
-    response = client.get(
-        f"/api/v1/certificates/verify/{certificate.verification_token}/"
-    )
+    response = auth_client(admin_user).get(f"/api/v1/certificates/{certificate.pk}/pdf/")
 
     assert response.status_code == 200, response.content
-    assert response.data["certificate_number"] == certificate.certificate_number
-    assert response.data["is_valid"] is True
+    assert response["Content-Type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    assert certificate.certificate_number in response["Content-Disposition"]
 
 
-def test_public_verification_exposes_only_the_document(certifiable_stone, client):
-    """The customer, the order and the audit trail are nobody else's business."""
+def test_pdf_download_requires_the_view_permission(
+    certifiable_stone, viewer_user, auth_client
+):
+    """Reception holds no certificate permissions, so it cannot pull documents."""
     certificate = issue_certificate(certifiable_stone)
 
-    response = client.get(
-        f"/api/v1/certificates/verify/{certificate.verification_token}/"
-    )
+    response = auth_client(viewer_user).get(f"/api/v1/certificates/{certificate.pk}/pdf/")
 
-    assert set(response.data) == {
-        "certificate_number",
-        "status",
-        "is_valid",
-        "issued_at",
-        "stone_type_snapshot",
-        "weight_snapshot",
-        "color_snapshot",
-        "origin_snapshot",
-        "gemmologist",
-    }
+    assert response.status_code == 403
 
 
-def test_a_revoked_certificate_verifies_but_does_not_stand(certifiable_stone, client):
-    """It must still resolve, so the holder learns it was withdrawn."""
+def test_a_revoked_certificate_still_downloads(
+    certifiable_stone, admin_user, auth_client
+):
+    """Refusing would leave staff unable to reconcile paperwork."""
     certificate = issue_certificate(certifiable_stone)
     revoke_certificate(certificate)
 
-    response = client.get(
-        f"/api/v1/certificates/verify/{certificate.verification_token}/"
-    )
+    response = auth_client(admin_user).get(f"/api/v1/certificates/{certificate.pk}/pdf/")
 
     assert response.status_code == 200
-    assert response.data["status"] == CertificateStatus.REVOKED
-    assert response.data["is_valid"] is False
+    assert "-revoked.pdf" in response["Content-Disposition"]
 
 
-def test_verification_is_logged(certifiable_stone, client):
-    """Who checked a certificate, and when, is part of the trail."""
-    certificate = issue_certificate(certifiable_stone)
+def test_the_document_says_what_it_said_when_issued(certifiable_stone, user):
+    """Renaming a colour afterwards must not rewrite a document already handed over.
 
-    client.get(
-        f"/api/v1/certificates/verify/{certificate.verification_token}/",
-        HTTP_USER_AGENT="Mozilla/5.0 (test)",
-    )
-
-    log = CertificateAccessLog.objects.get(certificate=certificate)
-    assert log.user_agent == "Mozilla/5.0 (test)"
-    assert log.ip_address is not None
-
-
-def test_an_unknown_token_is_a_404_and_logs_nothing(client):
-    """A guessed token must not create a log entry."""
-    response = client.get(f"/api/v1/certificates/verify/{'0' * 64}/")
-
-    assert response.status_code == 404
-    assert not CertificateAccessLog.objects.exists()
-
-
-def test_listing_certificates_does_not_n_plus_one(
-    settings, admin_user, auth_client, django_assert_max_num_queries, user
-):
-    """Every relation a certificate renders is joined up front.
-
-    Rows are created with an actor so ``created_by``/``updated_by`` are set: a
-    factory-built row leaves them null, and the audit labels then short-circuit
-    without a lookup, hiding the very N+1 this is meant to catch.
+    Asserted against the template context rather than the PDF bytes: the
+    guarantee is about which values reach the page, and parsing a PDF to prove
+    it would test WeasyPrint instead.
     """
-    for _ in range(5):
-        stone = _paid_stone(settings)
-        finalize_report(create_report(stone=stone, user=user), user=user)
-        issue_certificate(stone, user=user)
+    certificate = issue_certificate(certifiable_stone, user=user)
+    report = certificate.report
+    report.color.name = "Crimson"
+    report.color.save()
 
-    client = auth_client(admin_user)
-    with django_assert_max_num_queries(8):
-        response = client.get("/api/v1/certificates/")
+    context = certificate_context(certificate)
 
-    assert response.status_code == 200
-    assert response.data["count"] == 5
+    assert context["certificate"].color_snapshot == "Red"
+    assert context["order_reference"] == certifiable_stone.order.reference_number
+    assert context["customer_name"] == certifiable_stone.order.customer.full_name
+    assert context["is_revoked"] is False

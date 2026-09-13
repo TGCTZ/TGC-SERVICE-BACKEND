@@ -68,7 +68,7 @@ one is a trap the API itself sets:
 
 - Unique columns carry a `{{$timestamp}}`, so a second run does not collide with
   the first on `name` or `phone`.
-- Stones are registered against the stone type the collection created itself,
+- Stones are identified against the stone type the collection created itself,
   never a hardcoded id — ids drift as rows come and go.
 - The payment notification carries a **per-run transaction id**, captured once
   at sign-in as `{{run}}`. A fixed `trx_id` makes every run after the first look
@@ -197,7 +197,7 @@ through its service and leaves an audit trail:
 POST /api/v1/orders/{id}/stones/       register the next stone (labels A, B, C…)
 POST /api/v1/stones/{id}/transition/   {to_status, note}
 POST /api/v1/bills/generate/           {order}
-GET  /api/v1/orders/worklist-registration/
+GET  /api/v1/orders/worklist/
 GET  /api/v1/bills/worklist/
 ```
 

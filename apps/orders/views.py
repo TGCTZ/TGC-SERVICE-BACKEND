@@ -3,13 +3,14 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.permissions import StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 
 from .models import Customer, Order, StatusHistory, Stone
-from .selectors import registration_worklist
+from .selectors import preliminary_identification_worklist
 from .serializers import (
     AddStoneSerializer,
     CustomerSerializer,
@@ -40,7 +41,7 @@ class CustomerViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
 
 class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
-    """CRUD over orders, plus stone registration."""
+    """CRUD over orders, plus preliminary identification of their stones."""
 
     # Every row serialises its customer, and identified_count counts the stones.
     queryset = Order.objects.select_related("customer").prefetch_related("stones")
@@ -56,12 +57,32 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     ordering_fields = ("id", "reference_number", "received_date", "created_at")
     date_filter_fields = ("created_at", "updated_at", "received_date")
 
-    action_permissions = {"add_stone": ["orders.add_stone"]}
+    # Both entries name the same permission on purpose: the preliminary queue
+    # exists to be worked, not browsed, so whoever may identify a stone is
+    # exactly who should see the queue of stones waiting to be identified. This
+    # follows the billing and certification worklists, which gate on their
+    # workflow verb rather than on `view`.
+    action_permissions = {
+        "add_stone": ["orders.add_stone"],
+        "worklist": ["orders.add_stone"],
+    }
 
     def perform_create(self, serializer):
-        """Delegate to the service, which allocates the reference number."""
+        """Delegate to the service, which allocates the reference number.
+
+        A nested ``customer_data`` registers the customer in the same
+        transaction. The permission check below is load-bearing:
+        ``StrictModelPermissions`` only asks for ``orders.add_order`` on this
+        endpoint, so without it the nested write would be a way to create a
+        customer without holding ``orders.add_customer``.
+        """
+        customer_data = serializer.validated_data.get("customer_data")
+        if customer_data and not self.request.user.has_perm("orders.add_customer"):
+            raise PermissionDenied("You may not register new customers.")
+
         order = create_order(
-            customer=serializer.validated_data["customer"],
+            customer=serializer.validated_data.get("customer"),
+            customer_data=customer_data,
             stone_count=serializer.validated_data.get("stone_count", 0),
             received_date=serializer.validated_data.get("received_date"),
             user=self.request.user,
@@ -71,7 +92,7 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @extend_schema(request=AddStoneSerializer, responses=StoneSerializer)
     @action(detail=True, methods=["post"], url_path="stones")
     def add_stone(self, request, pk=None):
-        """Register the next stone against this order.
+        """Record the preliminary identification of the next stone.
 
         A dedicated action rather than ``POST /stones/``: the service owns the
         label sequence and the cap at ``order.stone_count``, and a bare create
@@ -88,10 +109,10 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
 
     @extend_schema(responses=OrderSerializer)
-    @action(detail=False, methods=["get"], url_path="worklist-registration")
-    def worklist_registration(self, request):
-        """Orders with stones still to register."""
-        queryset = self.filter_queryset(registration_worklist())
+    @action(detail=False, methods=["get"])
+    def worklist(self, request):
+        """Orders with stones still to identify - the bench's intake queue."""
+        queryset = self.filter_queryset(preliminary_identification_worklist())
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)

@@ -14,14 +14,19 @@ from django.db.models import Count, F
 from .models import Order
 
 
-def registration_worklist():
-    """Orders with stones still to register.
+def preliminary_identification_worklist():
+    """Orders with stones still to identify.
 
-    The customer said how many stones they brought; reception has typed fewer
-    than that so far.
+    The customer said how many stones they brought; the bench has typed fewer
+    than that so far. Typing a stone is preliminary identification - it is what
+    fixes the price, so nothing can be billed until this queue empties.
+
+    The alias is ``identified`` rather than ``identified_count``: the latter is a
+    property on ``Order``, and an annotation of that name would silently shadow
+    it on every row this returns.
     """
     return (
         Order.objects.select_related("customer")
-        .annotate(registered=Count("stones"))
-        .filter(registered__lt=F("stone_count"))
+        .annotate(identified=Count("stones"))
+        .filter(identified__lt=F("stone_count"))
     )

@@ -134,8 +134,8 @@ nobody looks for it, and a second screen would soon hold a slightly different
 copy.
 
 ```python
-def findings_worklist():
-    """Stones waiting for findings: bill settled, report not finalized."""
+def full_identification_worklist():
+    """Stones waiting for full identification: bill paid, report not finalized."""
     return Stone.objects.filter(order__bill__status=BillStatus.PAID).exclude(
         report__is_finalized=True
     )
@@ -159,7 +159,7 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 ```
 
 Without it the custom workflow permissions are decorative - anyone who can
-register a stone could also certify one. An action that is not listed falls back
+identify a stone could also certify one. An action that is not listed falls back
 to the method map.
 
 ## 23. A query-count test must stamp the actor

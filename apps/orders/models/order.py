@@ -37,7 +37,7 @@ class Order(BaseModel):
 
     @property
     def identified_count(self) -> int:
-        """How many of the submitted stones have been registered so far."""
+        """How many of the submitted stones have been identified so far."""
         return self.stones.count()
 
     def __str__(self) -> str:

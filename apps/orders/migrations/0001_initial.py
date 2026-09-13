@@ -190,7 +190,7 @@ class Migration(migrations.Migration):
                     models.CharField(
                         choices=[
                             ("received", "Received"),
-                            ("under_identification", "Under identification"),
+                            ("under_identification", "Under full identification"),
                             ("billed", "Billed"),
                             ("paid", "Paid"),
                             ("certified", "Certified"),
@@ -273,7 +273,7 @@ class Migration(migrations.Migration):
                         blank=True,
                         choices=[
                             ("received", "Received"),
-                            ("under_identification", "Under identification"),
+                            ("under_identification", "Under full identification"),
                             ("billed", "Billed"),
                             ("paid", "Paid"),
                             ("certified", "Certified"),
@@ -291,7 +291,7 @@ class Migration(migrations.Migration):
                     models.CharField(
                         choices=[
                             ("received", "Received"),
-                            ("under_identification", "Under identification"),
+                            ("under_identification", "Under full identification"),
                             ("billed", "Billed"),
                             ("paid", "Paid"),
                             ("certified", "Certified"),

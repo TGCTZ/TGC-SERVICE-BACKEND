@@ -61,14 +61,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         + _perms("billing", BILLING_MODELS, CRUD)
         + _perms("identification", IDENTIFICATION_MODELS, CRUD)
         + _perms("certificates", CERTIFICATE_MODELS, CRUD)
-        + ["certificates.view_certificateaccesslog"]
         + ["orders.transition_stone", "orders.view_statushistory"]
         + [
             "billing.generate_bill",
             "identification.finalize_report",
             *_perms("certificates", CERTIFICATE_MODELS, ("add", "view")),
-            "certificates.issue_certificate",
-            "certificates.view_certificateaccesslog",
             "certificates.issue_certificate",
             "certificates.revoke_certificate",
         ]
@@ -76,31 +73,41 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         + ["auth.view_permission", "auditlog.view_logentry", "audit.view_systemlog"]
         + list(MODULE_GATES.values())
     ),
-    # Front desk: registers customers and their orders, and reads the stone
-    # catalogue to type an incoming stone.
+    # Front desk: registers customers and their orders, and hands finished
+    # certificates back. Identifying a stone is the bench's job, not reception's,
+    # so `add_stone` and `change_stone` deliberately are not here - reception
+    # records only how many stones arrived.
     "receptionist": [
         *_perms("gems", GEMS_MODELS, READ),
         *_perms("orders", ("customer", "order"), CRUD),
         "billing.view_bill",
-        *_perms("orders", ("stone",), ("add", "change", "view")),
+        *_perms("orders", ("stone",), READ),
+        # Kept: handover moves a stone to collected.
         "orders.transition_stone",
         "orders.view_statushistory",
         MODULE_GATES["orders"],
         MODULE_GATES["reference"],
     ],
-    # The bench: records findings against the reference tables it reads.
+    # The bench: identifies each stone's type (preliminary, which fixes the
+    # price), then after payment records the full identification against the
+    # reference tables it reads.
     "gemmologist": [
         *_perms("gems", GEMS_MODELS, READ),
         *_perms("orders", ("order", "stone"), READ),
         "billing.view_bill",
+        # Preliminary identification. Django names this permission after the row
+        # it creates, not the stage it belongs to.
+        "orders.add_stone",
         "orders.change_stone",
         "orders.transition_stone",
         *_perms("identification", IDENTIFICATION_MODELS, CRUD),
         "identification.finalize_report",
         *_perms("certificates", CERTIFICATE_MODELS, ("add", "view")),
         "certificates.issue_certificate",
-        "certificates.view_certificateaccesslog",
         "orders.view_statushistory",
+        # The orders module too: the preliminary queue and the stone it writes
+        # both live under /orders/.
+        MODULE_GATES["orders"],
         MODULE_GATES["identification"],
         MODULE_GATES["reference"],
     ],

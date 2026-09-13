@@ -44,7 +44,7 @@ class OrderFactory(DjangoModelFactory):
 
 
 class StoneFactory(DjangoModelFactory):
-    """A registered stone."""
+    """An identified stone."""
 
     class Meta:
         model = Stone

@@ -15,6 +15,26 @@ class CustomerSerializer(AuditFieldsMixin):
 
     full_name = serializers.CharField(read_only=True)
 
+    def validate_phone(self, value):
+        """Refuse a phone already on file, naming who holds it.
+
+        The model has a partial unique index on ``phone``, but an IntegrityError
+        reaches the client as an opaque "conflicts with existing data" - which
+        tells reception nothing and offers no way out. Checking here turns it
+        into a field error naming the existing customer, so the UI can offer to
+        use that record instead of asking for the same details again.
+        """
+        existing = Customer.objects.filter(phone=value)
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+
+        match = existing.first()
+        if match is not None:
+            raise serializers.ValidationError(
+                f"Already registered to {match.full_name}. Pick that customer instead."
+            )
+        return value
+
     class Meta:
         model = Customer
         fields = (
@@ -32,6 +52,10 @@ class CustomerSerializer(AuditFieldsMixin):
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
+        # Drop the UniqueValidator DRF infers from the model's partial unique
+        # index: it fires before validate_phone and reports a message that names
+        # nobody. The check below replaces it, and the index still backstops.
+        extra_kwargs = {"phone": {"validators": []}}
 
 
 class StoneSerializer(AuditFieldsMixin):
@@ -65,10 +89,44 @@ class StoneSerializer(AuditFieldsMixin):
 
 
 class OrderSerializer(AuditFieldsMixin):
-    """An order, with its customer and progress counters."""
+    """An order, with its customer and progress counters.
 
+    The project's one nested write. Every other nested serializer here is
+    read-only, and this is the exception because reception meets most customers
+    for the first time while receiving their order: send ``customer`` for
+    somebody on file, or ``customer_data`` to register them alongside the order.
+    """
+
+    customer = serializers.PrimaryKeyRelatedField(
+        queryset=Customer.objects.all(), required=False
+    )
     customer_detail = CustomerSerializer(source="customer", read_only=True)
+    customer_data = CustomerSerializer(required=False, write_only=True)
     identified_count = serializers.IntegerField(read_only=True)
+
+    def validate(self, attrs):
+        """Require exactly one of ``customer`` and ``customer_data``.
+
+        Both together is an error rather than a precedence rule: it means the
+        client is confused about which customer this order belongs to, and
+        silently picking one would attach the order to the wrong person.
+        """
+        # On PATCH, an untouched customer is not a missing one.
+        if self.instance is not None and "customer_data" not in attrs:
+            return attrs
+
+        has_ref = attrs.get("customer") is not None
+        has_data = bool(attrs.get("customer_data"))
+
+        if has_ref and has_data:
+            raise serializers.ValidationError(
+                "Send either an existing customer or new customer details, not both."
+            )
+        if not has_ref and not has_data and self.instance is None:
+            raise serializers.ValidationError(
+                {"customer": "Select a customer or enter their details."}
+            )
+        return attrs
 
     class Meta:
         model = Order
@@ -77,6 +135,7 @@ class OrderSerializer(AuditFieldsMixin):
             "reference_number",
             "customer",
             "customer_detail",
+            "customer_data",
             "received_date",
             "stone_count",
             "identified_count",
@@ -115,7 +174,7 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 
 
 class AddStoneSerializer(serializers.Serializer):
-    """Payload for registering one stone against an order."""
+    """Payload for the preliminary identification of one stone."""
 
     stone_type = serializers.PrimaryKeyRelatedField(queryset=StoneType.objects.all())
     weight = serializers.DecimalField(

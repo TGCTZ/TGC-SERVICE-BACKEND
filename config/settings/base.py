@@ -57,8 +57,8 @@ LOCAL_APPS = [
     "apps.gems",  # L2 - domain enums and stone reference tables
     "apps.orders",  # L3 - customers, orders and stones
     "apps.billing",  # L4 - bills, payments and the GePG gateway
-    "apps.identification",  # L4 - gemmological findings
-    "apps.certificates",  # L5 - certificates and public verification
+    "apps.identification",  # L4 - full gemmological identification
+    "apps.certificates",  # L5 - certificates and their PDF documents
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -183,6 +183,11 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
 }
+
+# Printed on every certificate PDF. Environment-driven so a second lab, or a
+# rename, needs no code change.
+CERTIFICATE_LAB_NAME = env("CERTIFICATE_LAB_NAME", default="Tanzania Gemmological Centre")
+CERTIFICATE_LAB_ADDRESS = env("CERTIFICATE_LAB_ADDRESS", default="")
 
 # Models are registered explicitly in apps.core.audit by walking BaseModel
 # subclasses, so auditlog must not blanket-register everything itself.

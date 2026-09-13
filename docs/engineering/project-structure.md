@@ -62,11 +62,11 @@ layer. The rule is one line long and worth enforcing in review:
 | L2 | `apps.gems` | Every domain enum, and the stone reference tables. |
 | L3 | `apps.orders` | Customers, orders, stones, and the stone status trail. |
 | L4 | `apps.billing` | Bills, payments, and the GePG payment gateway. |
-| L4 | `apps.identification` | Gemmological findings recorded against a stone. |
-| L5 | `apps.certificates` | Certificates and their public verification. |
+| L4 | `apps.identification` | Full gemmological identification, per stone. |
+| L5 | `apps.certificates` | Certificates and their PDF documents. |
 
 `apps.billing` and `apps.identification` sit at the same layer and must not
-import one another. Where one needs the other's state - the findings queue is
+import one another. Where one needs the other's state - the full-identification queue is
 gated on the bill being paid - it is reached by ORM traversal
 (`stone.order.bill`) with the enum coming from `apps.gems` at L2. That is the
 reason every domain enum lives in `gems` rather than beside the model it

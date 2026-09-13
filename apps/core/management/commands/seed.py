@@ -145,19 +145,19 @@ class Command(BaseCommand):
             stone_count = random.randint(1, 4)
             order = create_order(customer=customer, stone_count=stone_count)
             # A spread of progress, so every worklist has something in it on a
-            # fresh database: some orders half-registered, some ready to bill,
+            # fresh database: some orders half-identified, some ready to bill,
             # some already billed and paid.
-            registered = random.randint(0, stone_count)
-            for _ in range(registered):
+            identified = random.randint(0, stone_count)
+            for _ in range(identified):
                 add_stone(order, stone_type=random.choice(stone_types))
-            if registered == stone_count and billed < 4:
+            if identified == stone_count and billed < 4:
                 bill = generate_bill_for_order(order, service_provider=provider)
                 billed += 1
                 if billed <= 2:
                     simulate_payment(bill)
                     # Carry the first order all the way to a certificate, so the
-                    # findings and certification queues both have content and at
-                    # least one certificate exists to verify.
+                    # full-identification and certification queues both have
+                    # content and at least one certificate exists.
                     for stone in order.stones.all():
                         stone.refresh_from_db()
                         # Weight is recorded at the bench, not at reception.

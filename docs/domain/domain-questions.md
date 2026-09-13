@@ -12,7 +12,7 @@
 > code; the rest still ride on the defaults below pending team answers.
 >
 > - **B1 / B6 ✅** — **no production module** in the current build; a stone goes
->   type-identification → billing → findings → certificate.
+>   preliminary identification → billing → full identification → certificate.
 > - **B2 ✅** — pricing is **flat per stone type** (`StoneType.price`); weight
 >   does not change the price.
 > - **B3 ✅** — weight unit is **carat/gram** (`WeightUnit`); no `SiUnit`.
@@ -37,13 +37,13 @@ Customer brings stones
       ↓
 RECEPTION       → an Order is created, containing one or more Stones
       ↓
-TYPE IDENTIFY   → a gemmologist assigns each stone's type (fixes the price)
+PRELIMINARY     → a gemmologist assigns each stone's type (fixes the price)
       ↓
 BILLING         → one Bill per Order; GePG control number; customer pays
       ↓
-FINDINGS        → after payment, the gemmologist records + finalizes the report
+FULL IDENTIFY   → after payment, the gemmologist records + finalizes the report
       ↓
-CERTIFICATE     → a certificate is issued per stone (with QR verification)
+CERTIFICATE     → a certificate is issued per stone (downloadable as a PDF)
 ```
 
 ---
@@ -56,7 +56,7 @@ CERTIFICATE     → a certificate is issued per stone (with QR verification)
 | A2 | Is a gemmological report produced per stone or per order? | **Per stone** — each stone gets its own identification report. |
 | A3 | Is the reference data (colors, species, treatments, etc.) fixed or user-editable during data entry? | **Stable, admin-managed lookup lists** — staff choose from dropdowns; they are not added ad hoc during data entry. |
 | A4 | Is billing per order or per stone? | **One Bill per Order** — the customer pays once for the whole batch. |
-| A5 | Is a certificate issued per order or per stone? | **Per stone** — each stone gets its own certificate and QR verification. |
+| A5 | Is a certificate issued per order or per stone? | **Per stone** — each stone gets its own certificate, downloadable as a PDF. |
 | A6 | What determines a stone's price? | **Stone type only** — a flat price per type (weight does not affect it). *(Refined from the original "type and weight" — see B2.)* |
 | A7 | Does each stone carry its own status, or does the whole order move together? | **Each stone has its own status** and progresses independently through the pipeline. |
 | A8 | Are the workflow stages fixed or editable by staff? | **Fixed stages defined in code** — they rarely change; developers manage them. |
@@ -74,7 +74,7 @@ or is it strictly **one production step per stone**?
 - *If one:* a Stone has at most one Production record.
 
 **Answer:** ✅ Moot — the **production module was removed**; there is no Production
-record. A stone goes type-identification → billing → findings → certificate.
+record. A stone goes preliminary identification → billing → full identification → certificate.
 
 ---
 
@@ -128,7 +128,7 @@ Draft based on the workflow — **please correct/complete**:
 ### B6. Can a stone **skip** stages?
 
 **Answer:** ✅ Moot — with no production stage, the pipeline is
-type-identification → billing → findings → certificate. `on_hold` / `cancelled`
+preliminary identification → billing → full identification → certificate. `on_hold` / `cancelled`
 remain available side states.
 
 ---
@@ -142,7 +142,10 @@ What identifies a customer — name + phone, a national/tax ID, a company?
 Can the **same customer** return for multiple orders (so we keep a customer
 record), or is customer info captured **fresh per order**?
 
-**Answer:**
+**Answer:** *(resolved)* A persistent `Customer` record, identified by **phone**
+— the one column carrying a uniqueness constraint. The same customer returns
+across orders, and reception finds them by searching name or phone while
+receiving the order rather than registering them again.
 
 ---
 
@@ -158,8 +161,9 @@ record), or is customer info captured **fresh per order**?
 
 ### C3. Certificate re-issuance & revocation
 - Can a certificate be **re-issued** (e.g. lost copy, correction)?
-- Can a certificate be **revoked/invalidated** after issue? If so, the public QR
-  verification must reflect that.
+- Can a certificate be **revoked/invalidated** after issue? *(Revocation is
+  implemented: the record and its number survive, and the PDF keeps downloading
+  with a REVOKED watermark so a printed copy can be reconciled.)*
 
 **Answer:**
 
