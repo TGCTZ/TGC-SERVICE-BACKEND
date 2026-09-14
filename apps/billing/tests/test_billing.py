@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from apps.billing.dev import simulate_payment
-from apps.billing.models import BillItem, Payment
+from apps.billing.models import Bill, BillItem, Payment
 from apps.billing.selectors import billing_worklist
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
@@ -294,3 +294,54 @@ def test_listing_bills_does_not_n_plus_one(
 
     assert response.status_code == 200
     assert response.data["count"] == 5
+
+
+def test_preview_prices_an_order_without_creating_anything():
+    """The figures shown before anyone commits to them.
+
+    Shares the pricing rule with generation rather than reimplementing it: the
+    fee is per stone *category*, so a preview built from ``stone_type.price``
+    would disagree with the bill it previews.
+    """
+    from apps.billing.services import preview_bill_for_order
+
+    order = OrderFactory(stone_count=2)
+    stone_type = StoneTypeFactory(category__price=Decimal("30000.00"))
+    add_stone(order, stone_type=stone_type)
+    add_stone(order, stone_type=stone_type)
+
+    preview = preview_bill_for_order(order)
+
+    assert len(preview["items"]) == 2
+    assert preview["total"] == Decimal("60000.00")
+    assert preview["blockers"] == []
+    assert not Bill.objects.filter(order=order).exists(), "preview must not write"
+
+    # And it agrees with what generation actually charges.
+    bill = generate_bill_for_order(order)
+    assert bill.total_amount == preview["total"]
+
+
+def test_preview_names_the_reason_an_order_cannot_be_billed():
+    """An unpriced tier is reported per line, not raised.
+
+    Generation refuses outright, but the screen needs to say *which* stone is
+    the problem rather than just failing.
+    """
+    from apps.billing.services import preview_bill_for_order
+
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=None))
+
+    preview = preview_bill_for_order(order)
+
+    assert preview["items"][0]["amount"] is None
+    assert any("No price set" in reason for reason in preview["blockers"])
+
+
+def test_preview_endpoint_requires_the_generate_permission(viewer_user, auth_client):
+    """Seeing what a customer will be charged is the billing clerk's job."""
+    order = OrderFactory(stone_count=1)
+    response = auth_client(viewer_user).get(f"/api/v1/bills/preview/?order={order.pk}")
+
+    assert response.status_code == 403

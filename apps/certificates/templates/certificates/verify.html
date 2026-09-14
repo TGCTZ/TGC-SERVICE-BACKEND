@@ -1,0 +1,149 @@
+{% comment %}
+  The page a phone lands on after scanning a certificate's QR code.
+
+  Self-contained and offline-capable: inline CSS, no images, no fonts, no
+  JavaScript. It is read on a phone, in a shop, possibly on a bad connection,
+  by somebody deciding whether to trust a piece of paper.
+
+  Deliberately says nothing about the customer - see verify.py.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Verify {{ certificate_number }}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .card {
+      max-width: 34rem;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .banner {
+      padding: 20px 16px;
+      text-align: center;
+      color: #fff;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .banner.valid { background: #16a34a; }
+    .banner.revoked { background: #dc2626; }
+    .banner.unknown { background: #64748b; }
+    .banner .number {
+      display: block;
+      margin-top: 6px;
+      font-size: 1.25rem;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .body { padding: 16px; }
+    .note {
+      margin: 0 0 16px;
+      color: #475569;
+      font-size: 0.95rem;
+    }
+    dl { margin: 0; }
+    .pair {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .pair:last-child { border-bottom: none; }
+    dt { color: #64748b; font-size: 0.85rem; }
+    dd { margin: 0; text-align: right; font-weight: 600; }
+    .lab {
+      max-width: 34rem;
+      margin: 16px auto 0;
+      text-align: center;
+      color: #64748b;
+      font-size: 0.8rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #020617; color: #f8fafc; }
+      .card { background: #0f172a; border-color: #334155; }
+      .pair { border-bottom-color: #1e293b; }
+      .note, dt, .lab { color: #94a3b8; }
+    }
+  </style>
+</head>
+<body>
+
+{% if not found %}
+  <div class="card">
+    <div class="banner unknown">
+      Not found
+      <span class="number">{{ certificate_number }}</span>
+    </div>
+    <div class="body">
+      <p class="note">
+        No certificate with this number has been issued. Check the number as
+        printed, and contact the laboratory if it appears on a document you are
+        holding.
+      </p>
+    </div>
+  </div>
+{% else %}
+  <div class="card">
+    <div class="banner {% if is_revoked %}revoked{% else %}valid{% endif %}">
+      {% if is_revoked %}Revoked — this certificate no longer stands{% else %}Valid certificate{% endif %}
+      <span class="number">{{ certificate_number }}</span>
+    </div>
+    <div class="body">
+      {% if is_revoked %}
+        <p class="note">
+          This certificate was issued by the laboratory and has since been
+          withdrawn. It should not be relied on. Contact the laboratory for the
+          current position.
+        </p>
+      {% else %}
+        <p class="note">
+          This certificate was issued by the laboratory and stands as recorded
+          below. The findings are as they were on the date of issue.
+        </p>
+      {% endif %}
+
+      <dl>
+        <div class="pair"><dt>Report number</dt><dd>{{ report_number }}</dd></div>
+        <div class="pair"><dt>Issued</dt><dd>{{ certificate.issued_at|date:"j F Y" }}</dd></div>
+        <div class="pair"><dt>Stone type</dt><dd>{{ certificate.stone_type_snapshot }}</dd></div>
+        <div class="pair">
+          <dt>Weight</dt>
+          <dd>{{ certificate.weight_snapshot }} {{ weight_unit }}</dd>
+        </div>
+        {% if certificate.species_snapshot %}
+          <div class="pair"><dt>Species</dt><dd>{{ certificate.species_snapshot }}</dd></div>
+        {% endif %}
+        {% if certificate.variety_snapshot %}
+          <div class="pair"><dt>Variety</dt><dd>{{ certificate.variety_snapshot }}</dd></div>
+        {% endif %}
+        {% if certificate.color_snapshot %}
+          <div class="pair"><dt>Colour</dt><dd>{{ certificate.color_snapshot }}</dd></div>
+        {% endif %}
+        {% if certificate.origin_snapshot %}
+          <div class="pair"><dt>Origin</dt><dd>{{ certificate.origin_snapshot }}</dd></div>
+        {% endif %}
+      </dl>
+    </div>
+  </div>
+{% endif %}
+
+<p class="lab">{{ lab_name }}</p>
+
+</body>
+</html>

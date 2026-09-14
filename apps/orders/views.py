@@ -16,6 +16,7 @@ from .selectors import annotate_identified, identification_worklist
 from .serializers import (
     AddStoneSerializer,
     CustomerSerializer,
+    HoldOrderSerializer,
     OrderSerializer,
     StatusHistorySerializer,
     StoneSerializer,
@@ -25,6 +26,8 @@ from .services import (
     add_stone,
     assert_stone_retypeable,
     create_order,
+    hold_order,
+    release_order,
     transition_stone,
     update_stone,
 )
@@ -63,7 +66,7 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """
 
     # Every row serialises its customer, and identified_count counts the stones.
-    queryset = Order.objects.select_related("customer").prefetch_related("stones")
+    queryset = Order.objects.select_related("customer", "bill").prefetch_related("stones")
     serializer_class = OrderSerializer
 
     search_fields = (
@@ -97,6 +100,8 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     action_permissions = {
         "add_stone": ["orders.add_stone"],
         "worklist": ["orders.add_stone"],
+        "hold": ["orders.hold_order"],
+        "release": ["orders.hold_order"],
     }
 
     def perform_create(self, serializer):
@@ -141,6 +146,33 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
 
     @extend_schema(responses=OrderSerializer)
+    @extend_schema(request=HoldOrderSerializer, responses=OrderSerializer)
+    @action(detail=True, methods=["post"])
+    def hold(self, request, pk=None):
+        """Pause or withdraw the whole order.
+
+        The one piece of an order's state that is written rather than derived:
+        a customer asking the lab to stop is a fact about the visit, not about
+        any stone in it.
+        """
+        payload = HoldOrderSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        order = hold_order(
+            self.get_object(),
+            status=payload.validated_data["hold_status"],
+            reason=payload.validated_data["reason"],
+            user=request.user,
+        )
+        return Response(self.get_serializer(order).data)
+
+    @extend_schema(request=None, responses=OrderSerializer)
+    @action(detail=True, methods=["post"])
+    def release(self, request, pk=None):
+        """Return a held or cancelled order to active work."""
+        order = release_order(self.get_object(), user=request.user)
+        return Response(self.get_serializer(order).data)
+
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Orders with stones still to identify - the bench's intake queue."""

@@ -1,6 +1,6 @@
 """API views for the billing domain."""
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,12 +14,13 @@ from .models import Bill, BillItem, Payment, ServiceProvider
 from .selectors import billing_worklist
 from .serializers import (
     BillItemSerializer,
+    BillPreviewSerializer,
     BillSerializer,
     GenerateBillSerializer,
     PaymentSerializer,
     ServiceProviderSerializer,
 )
-from .services import generate_bill_for_order
+from .services import generate_bill_for_order, preview_bill_for_order
 
 
 class ServiceProviderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
@@ -62,6 +63,7 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
 
     action_permissions = {
         "generate": ["billing.generate_bill"],
+        "preview": ["billing.generate_bill"],
         "worklist": ["billing.generate_bill"],
     }
 
@@ -84,6 +86,28 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
             user=request.user,
         )
         return Response(self.get_serializer(bill).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("order", int, description="Order to price.", required=True)
+        ],
+        responses=BillPreviewSerializer,
+    )
+    @action(detail=False, methods=["get"])
+    def preview(self, request):
+        """What billing this order would charge, without creating anything.
+
+        Its own endpoint rather than letting the client price the stones: the
+        fee is per stone *category*, so a UI reading ``stone_type.price`` would
+        show a total the bill then disagrees with.
+        """
+        order = Order.objects.filter(pk=request.query_params.get("order")).first()
+        if order is None:
+            return Response(
+                {"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(BillPreviewSerializer(preview_bill_for_order(order)).data)
 
     @extend_schema(responses=OrderSerializer)
     @action(detail=False, methods=["get"])

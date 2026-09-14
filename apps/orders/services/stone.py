@@ -129,14 +129,25 @@ _UNSET = object()
 
 
 def update_stone(
-    stone: Stone, *, stone_type=None, weight=_UNSET, weight_unit=None, user=None
+    stone: Stone,
+    *,
+    stone_type=None,
+    weight=_UNSET,
+    weight_unit=None,
+    photo=_UNSET,
+    user=None,
 ) -> Stone:
     """Update a stone's recorded properties during the findings stage.
 
+    ``photo`` uses the same ``_UNSET`` sentinel as ``weight`` so that passing
+    ``None`` clears the image, while omitting it leaves the existing one alone -
+    a plain default of ``None`` would silently wipe the photograph on every
+    partial update that did not mention it.
+
     Raises:
         ServiceError: If the stone has been billed and the caller is trying to
-            change its type. Weight stays writable at every status - the bench
-            records it after payment.
+            change its type. Weight and the photograph stay writable at every
+            status - the bench records both after payment.
     """
     if stone_type is not None:
         assert_stone_retypeable(stone)
@@ -145,6 +156,8 @@ def update_stone(
         stone.weight = weight
     if weight_unit:
         stone.weight_unit = weight_unit
+    if photo is not _UNSET:
+        stone.photo = photo
     if user is not None:
         stone.updated_by = user
 
@@ -153,6 +166,7 @@ def update_stone(
             "stone_type",
             "weight",
             "weight_unit",
+            "photo",
             "updated_at",
             "updated_by",
         ]

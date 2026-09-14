@@ -24,6 +24,14 @@ class Stone(BaseModel):
     status = models.CharField(
         max_length=20, choices=StoneStatus.choices, default=StoneStatus.RECEIVED
     )
+    # The bench photograph, printed on the certificate.
+    #
+    # On the stone rather than the report because it is a picture of the stone,
+    # not a finding about it: it survives a report being revised, and a stone
+    # can be photographed at intake before anyone has looked at it. Left
+    # editable after billing, unlike the stone's type - a photograph does not
+    # price anything, and the bench takes it late.
+    photo = models.ImageField(upload_to="stones/", blank=True, null=True)
 
     class Meta:
         ordering = ["order", "label"]

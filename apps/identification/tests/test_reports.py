@@ -1,5 +1,6 @@
 """Findings, the payment gate and the finalize lock."""
 
+import re
 from decimal import Decimal
 
 import pytest
@@ -46,10 +47,12 @@ def billed_stone(settings):
 
 
 def test_create_report_allocates_a_number(paid_stone, user):
-    """The service, not the client, mints RPT-YYYY-NNNN."""
+    """The service, not the client, mints TGC/<fy-start>/<fy-end>/NNNN."""
     report = create_report(stone=paid_stone, user=user)
 
-    assert report.report_number.startswith("RPT-")
+    # The shape the lab already issues on paper; the year pair is a financial
+    # year, so it is asserted as a shape rather than against today's calendar.
+    assert re.fullmatch(r"TGC/\d{4}/\d{4}/\d{4}", report.report_number)
     assert report.identified_by == user
     assert not report.is_finalized
 
@@ -143,7 +146,7 @@ def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_cl
     )
 
     assert response.status_code == 201, response.data
-    assert response.data["report_number"].startswith("RPT-")
+    assert re.fullmatch(r"TGC/\d{4}/\d{4}/\d{4}", response.data["report_number"])
     assert response.data["identified_by_label"] is not None
 
 

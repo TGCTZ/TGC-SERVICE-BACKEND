@@ -38,6 +38,61 @@ def _price_for(stone) -> Decimal:
     return category.price
 
 
+def preview_bill_for_order(order) -> dict:
+    """Price an order without creating anything.
+
+    What ``generate_bill_for_order`` *would* charge, so the UI can show the
+    customer the figures before anyone commits to them. Shares
+    :func:`_price_for` with the real thing rather than reimplementing the rule,
+    because the fee is per *category* and not per stone type - a preview that
+    read ``stone_type.price`` would quietly disagree with the bill it previews.
+
+    Unpriced categories are reported per line rather than raised, so the screen
+    can say *which* stone is the problem. Generation still refuses outright.
+
+    Args:
+        order: The order to price.
+
+    Returns:
+        ``items`` (one row per stone, ``amount`` null when unpriced),
+        ``total`` over the priced ones, ``currency``, and ``blockers`` -
+        the human-readable reasons this order cannot be billed yet.
+    """
+    stones = list(order.stones.select_related("stone_type__category"))
+
+    items, total, blockers = [], Decimal("0"), []
+
+    if Bill.objects.filter(order=order).exists():
+        blockers.append(f"Order {order.reference_number} already has a bill.")
+    if not stones:
+        blockers.append("Order has no stones to bill.")
+
+    for stone in stones:
+        category = stone.stone_type.category
+        amount = category.price if category else None
+        if amount is None:
+            blockers.append(f"No price set for stone category '{category}'.")
+        else:
+            total += amount
+
+        items.append(
+            {
+                "stone": stone.id,
+                "label": stone.label,
+                "description": stone.stone_type.name,
+                "category": str(category) if category else "",
+                "amount": amount,
+            }
+        )
+
+    return {
+        "items": items,
+        "total": total,
+        "currency": Bill._meta.get_field("currency").default,
+        "blockers": blockers,
+    }
+
+
 @transaction.atomic
 def _create_local_bill(order, service_provider, user) -> Bill:
     """Create the bill and its snapshotted line items; mark stones billed."""

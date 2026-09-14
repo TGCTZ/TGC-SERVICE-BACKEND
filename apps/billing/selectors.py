@@ -12,7 +12,7 @@ def billing_worklist():
     price available for each one - and no bill exists yet.
     """
     return (
-        Order.objects.select_related("customer")
+        Order.objects.select_related("customer", "bill")
         .annotate(identified=Count("stones"))
         .filter(bill__isnull=True, stone_count__gt=0, identified=F("stone_count"))
     )

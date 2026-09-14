@@ -2,6 +2,8 @@
 
 from rest_framework import serializers
 
+from django.contrib.auth import get_user_model
+
 from apps.core.serializers import AuditFieldsMixin
 from apps.gems.enums import WeightUnit
 from apps.gems.serializers import (
@@ -49,6 +51,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
         source="stone.order.reference_number", read_only=True
     )
     identified_by_label = serializers.SerializerMethodField()
+    verified_by_label = serializers.SerializerMethodField()
 
     # Weight is measured at the bench alongside the dimensions, so it belongs on
     # this form - but it lives on the Stone, which is what the certificate
@@ -106,6 +109,8 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "is_finalized",
             "identified_by",
             "identified_by_label",
+            "verified_by",
+            "verified_by_label",
             "identified_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
@@ -116,9 +121,27 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "report_number",
             "is_finalized",
             "identified_by",
+            "verified_by",
             "identified_at",
         )
 
     def get_identified_by_label(self, obj) -> str | None:
         """The gemmologist's display name, or None if unattributed."""
         return str(obj.identified_by) if obj.identified_by_id else None
+
+    def get_verified_by_label(self, obj) -> str | None:
+        """The second gemmologist's display name, or None if only one signed."""
+        return str(obj.verified_by) if obj.verified_by_id else None
+
+
+class FinalizeReportSerializer(serializers.Serializer):
+    """Payload for finalizing a report.
+
+    ``verified_by`` is the second gemmologist. Optional, because a report can
+    still be closed when only one person saw the stone - the certificate then
+    prints a single name rather than an empty second line.
+    """
+
+    verified_by = serializers.PrimaryKeyRelatedField(
+        queryset=get_user_model().objects.all(), required=False, allow_null=True
+    )

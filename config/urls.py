@@ -30,6 +30,9 @@ urlpatterns = [
     # Gateway callbacks: server-to-server XML, registered with GePG out of band,
     # so deliberately outside the versioned API. See apps/billing/webhooks.py.
     path("gepg/", include("apps.billing.urls_webhooks")),
+    # Printed on every certificate, so it is deliberately not under /api/v1/:
+    # a document issued today may be scanned long after the API is versioned on.
+    path("verify/", include("apps.certificates.urls_public")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/schema/swagger-ui/",

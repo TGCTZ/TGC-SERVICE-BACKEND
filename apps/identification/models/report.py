@@ -84,6 +84,21 @@ class IdentificationReport(BaseModel):
         related_name="+",
     )
     identified_at = models.DateTimeField(null=True, blank=True)
+    # The second gemmologist, named on the certificate beside the first.
+    #
+    # The printed report claims it was "examined by at least two qualified
+    # Gemmologists", so the claim needs somebody standing behind it. Nullable
+    # because a report can be drafted before the second opinion exists;
+    # `finalize_report` is where it is asked for. PROTECT rather than SET_NULL:
+    # unlike `identified_by` this name is a signature, and a certificate must
+    # not quietly lose one of the two people who signed it.
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="reports_verified",
+    )
 
     class Meta:
         ordering = ["-created_at"]

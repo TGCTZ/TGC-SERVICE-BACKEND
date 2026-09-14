@@ -3,11 +3,12 @@
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
-from apps.gems.enums import StoneStatus
+from apps.gems.enums import OrderHold, OrderStage, StoneStatus
 from apps.gems.models import StoneType
 from apps.gems.serializers import StoneTypeSerializer
 
 from .models import Customer, Order, StatusHistory, Stone
+from .selectors import order_stage
 
 
 class CustomerSerializer(AuditFieldsMixin):
@@ -82,6 +83,7 @@ class StoneSerializer(AuditFieldsMixin):
             "stone_type_detail",
             "weight",
             "weight_unit",
+            "photo",
             "status",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
@@ -101,6 +103,17 @@ class OrderSerializer(AuditFieldsMixin):
         queryset=Customer.objects.all(), required=False
     )
     customer_detail = CustomerSerializer(source="customer", read_only=True)
+    # The bill raised against this order, if any.
+    #
+    # Exposed so a screen can tell "ready to bill" from "already billed"
+    # without a second request. `apps.orders` sits below `apps.billing`, so
+    # this reads the reverse relation rather than importing it.
+    bill_number = serializers.SerializerMethodField()
+    control_number = serializers.SerializerMethodField()
+    # Where the order has got to, derived from its stones and its bill.
+    stage = serializers.SerializerMethodField()
+    stage_label = serializers.SerializerMethodField()
+    held_by_label = serializers.SerializerMethodField()
     customer_data = CustomerSerializer(required=False, write_only=True)
     identified_count = serializers.IntegerField(read_only=True)
 
@@ -139,10 +152,58 @@ class OrderSerializer(AuditFieldsMixin):
             "received_date",
             "stone_count",
             "identified_count",
+            "bill_number",
+            "control_number",
+            "stage",
+            "stage_label",
+            "hold_status",
+            "hold_reason",
+            "held_by",
+            "held_by_label",
+            "held_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         # The reference number is allocated by the service, never supplied.
-        read_only_fields = (*AuditFieldsMixin.AUDIT_FIELDS, "reference_number")
+        read_only_fields = (
+            *AuditFieldsMixin.AUDIT_FIELDS,
+            "reference_number",
+            "bill_number",
+            "control_number",
+            "stage",
+            "stage_label",
+            "hold_status",
+            "hold_reason",
+            "held_by",
+            "held_by_label",
+            "held_at",
+        )
+
+    def get_bill_number(self, obj) -> str | None:
+        """This order's bill number, or None if it has not been billed."""
+        bill = getattr(obj, "bill", None)
+        return bill.bill_number if bill is not None else None
+
+    def get_control_number(self, obj) -> str | None:
+        """The number the customer quotes when paying, once GePG has issued one.
+
+        Allocated by the gateway in response to the bill submission, not minted
+        here - so it stays null on a bill whose submission failed, which is
+        exactly the case worth seeing from the orders list.
+        """
+        bill = getattr(obj, "bill", None)
+        return (bill.control_number or None) if bill is not None else None
+
+    def get_stage(self, obj) -> str:
+        """The stage code, for a client to style and filter on."""
+        return order_stage(obj)
+
+    def get_stage_label(self, obj) -> str:
+        """The stage in words, so a client need not mirror the enum."""
+        return OrderStage(order_stage(obj)).label
+
+    def get_held_by_label(self, obj) -> str | None:
+        """Who paused or withdrew the order, or None if it is active."""
+        return str(obj.held_by) if obj.held_by_id else None
 
 
 class StatusHistorySerializer(serializers.ModelSerializer):
@@ -190,3 +251,17 @@ class TransitionSerializer(serializers.Serializer):
     note = serializers.CharField(
         max_length=255, required=False, allow_blank=True, default=""
     )
+
+
+class HoldOrderSerializer(serializers.Serializer):
+    """Payload for pausing or withdrawing an order.
+
+    ``reason`` is required rather than optional: a held order that says nothing
+    about why is a question for whoever finds it next, and the person who knows
+    the answer is the one filling this in.
+    """
+
+    hold_status = serializers.ChoiceField(
+        choices=[OrderHold.ON_HOLD, OrderHold.CANCELLED]
+    )
+    reason = serializers.CharField(max_length=500)

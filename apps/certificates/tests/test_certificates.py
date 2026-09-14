@@ -14,8 +14,25 @@ from apps.certificates.services import (
     revoke_certificate,
 )
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import CertificateStatus, StoneStatus, WeightUnit
-from apps.gems.tests.factories import ColorFactory, OriginFactory, StoneTypeFactory
+from apps.gems.enums import (
+    CertificateStatus,
+    NatureType,
+    OpticCharacter,
+    StoneStatus,
+    Transparency,
+    Treatment,
+    WeightUnit,
+)
+from apps.gems.tests.factories import (
+    ColorFactory,
+    InstrumentFactory,
+    OriginFactory,
+    ShapeCutFactory,
+    SpeciesFactory,
+    StoneTypeFactory,
+    VarietyFactory,
+)
+from apps.identification.models import InstrumentUsed
 from apps.identification.services import create_report, finalize_report
 from apps.orders.models import StatusHistory
 from apps.orders.services import add_stone, update_stone
@@ -284,3 +301,164 @@ def test_the_document_says_what_it_said_when_issued(certifiable_stone, user):
     assert context["order_reference"] == certifiable_stone.order.reference_number
     assert context["customer_name"] == certifiable_stone.order.customer.full_name
     assert context["is_revoked"] is False
+
+
+# ---------------------------------------------------------------------------
+# The full snapshot set, the QR, and public verification
+# ---------------------------------------------------------------------------
+def test_certificate_freezes_every_finding_it_prints(settings, user):
+    """The document keeps its own copy of each word, not a live reference.
+
+    The point of the whole snapshot block: editing the lookup rows afterwards
+    must not change what an issued certificate says.
+    """
+    stone = _paid_stone(settings)
+    species = SpeciesFactory(name="Corundum")
+    variety = VarietyFactory(name="Ruby")
+    shape = ShapeCutFactory(name="Oval")
+    report = create_report(
+        stone=stone,
+        user=user,
+        species=species,
+        variety=variety,
+        shape_cut=shape,
+        color=ColorFactory(name="Pigeon blood"),
+        origin=OriginFactory(name="Mogok"),
+        transparency=Transparency.TRANSPARENT,
+        optic_character=OpticCharacter.DR,
+        treatment=Treatment.HEATED,
+        nature_type=NatureType.NATURAL,
+        refractive_index="1.762-1.770",
+        dimensions="8.1 x 6.0 x 4.2 mm",
+        conclusion="Natural ruby, heated.",
+    )
+    finalize_report(report, user=user)
+
+    certificate = issue_certificate(stone, user=user)
+
+    assert certificate.species_snapshot == "Corundum"
+    assert certificate.variety_snapshot == "Ruby"
+    assert certificate.shape_cut_snapshot == "Oval"
+    assert certificate.origin_snapshot == "Mogok"
+    assert certificate.refractive_index_snapshot == "1.762-1.770"
+    assert certificate.dimensions_snapshot == "8.1 x 6.0 x 4.2 mm"
+    assert certificate.comments_snapshot == "Natural ruby, heated."
+    assert certificate.report_number_snapshot == report.report_number
+
+    # Enum labels, not stored codes - the document is read by a customer.
+    assert certificate.transparency_snapshot == "Transparent"
+    assert certificate.treatment_snapshot == "Heated"
+    assert "refractive" in certificate.optic_character_snapshot.lower()
+
+    # Now rewrite the world the findings came from.
+    species.name = "Renamed later"
+    species.save()
+    variety.name = "Also renamed"
+    variety.save()
+
+    certificate.refresh_from_db()
+    assert certificate.species_snapshot == "Corundum"
+    assert certificate.variety_snapshot == "Ruby"
+
+
+def test_certificate_names_both_gemmologists(settings, user, admin_user):
+    """Two signatories, because the document claims two examined the stone."""
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+    finalize_report(report, user=user, verified_by=admin_user)
+
+    certificate = issue_certificate(stone, user=user)
+
+    assert certificate.gemmologist == (user.get_full_name() or user.username)
+    assert certificate.gemmologist_two == (
+        admin_user.get_full_name() or admin_user.username
+    )
+
+
+def test_the_second_gemmologist_must_be_someone_else(settings, user):
+    """A second opinion from the same head is not a second opinion."""
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+
+    with pytest.raises(ServiceError, match="different person"):
+        finalize_report(report, user=user, verified_by=user)
+
+
+def test_certificate_snapshots_the_instruments_used(settings, user):
+    """Instruments print as words on the document, so they freeze as words."""
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+    instrument = InstrumentFactory(name="Refractometer")
+    InstrumentUsed.objects.create(
+        report=report, instrument=instrument, reading="1.762-1.770"
+    )
+    finalize_report(report, user=user)
+
+    certificate = issue_certificate(stone, user=user)
+
+    assert certificate.instruments_snapshot == [
+        {"name": "Refractometer", "reading": "1.762-1.770"}
+    ]
+
+    instrument.name = "Renamed instrument"
+    instrument.save()
+    certificate.refresh_from_db()
+    assert certificate.instruments_snapshot[0]["name"] == "Refractometer"
+
+
+def test_certificate_context_carries_a_qr_and_the_lab_marks(settings, user):
+    """The QR is built at render time and points at the public verify URL."""
+    settings.CERTIFICATE_VERIFY_BASE_URL = "https://tgc.example"
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+    finalize_report(report, user=user)
+    certificate = issue_certificate(stone, user=user)
+
+    context = certificate_context(certificate)
+
+    assert context["verify_url"] == (
+        f"https://tgc.example/verify/{certificate.certificate_number}/"
+    )
+    assert context["qr_code"].startswith("data:image/png;base64,")
+    # Assets are optional: a lab that has not supplied its stamp still gets a
+    # certificate, so the key is present and may be None.
+    assert "official_stamp" in context
+
+
+def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, client):
+    """Whoever holds the paper can check it without an account."""
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+    finalize_report(report, user=user)
+    certificate = issue_certificate(stone, user=user)
+
+    response = client.get(f"/verify/{certificate.certificate_number}/")
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Valid certificate" in body
+    assert certificate.certificate_number in body
+    # The public page identifies the stone, never its owner.
+    assert stone.order.customer.full_name not in body
+
+
+def test_verify_page_says_so_when_a_certificate_is_revoked(settings, user, client):
+    """The whole reason a revoked certificate keeps its number and its row."""
+    stone = _paid_stone(settings)
+    report = create_report(stone=stone, user=user)
+    finalize_report(report, user=user)
+    certificate = issue_certificate(stone, user=user)
+    revoke_certificate(certificate, user=user)
+
+    response = client.get(f"/verify/{certificate.certificate_number}/")
+
+    assert response.status_code == 200
+    assert "no longer stands" in response.content.decode()
+
+
+def test_verify_page_answers_plainly_for_an_unknown_number(client):
+    """A 404 page would tell whoever scanned it nothing useful."""
+    response = client.get("/verify/CERT-2026-9999/")
+
+    assert response.status_code == 404
+    assert "Not found" in response.content.decode()

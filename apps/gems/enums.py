@@ -113,6 +113,46 @@ class BillStatus(models.TextChoices):
     EXPIRED = ("expired", "Expired")
 
 
+class OrderHold(models.TextChoices):
+    """A decision made about a whole order, rather than about its stones.
+
+    The one piece of an order's state that cannot be derived from its stones and
+    its bill: "the customer asked us to pause" and "the customer withdrew" are
+    facts about the visit, not about any stone. Everything else an order's stage
+    can say is a function of what its stones have done, and stays derived.
+    """
+
+    ACTIVE = ("active", "Active")
+    ON_HOLD = ("on_hold", "On hold")
+    CANCELLED = ("cancelled", "Cancelled")
+
+
+class OrderStage(models.TextChoices):
+    """Where a whole order has got to, derived rather than stored.
+
+    An order carries no status column, deliberately: progress is per-stone, and
+    two stones from one visit can sit at different stages. But a list of orders
+    still has to answer "where is this one?", and the honest summary is the
+    stage its *least advanced* stone has reached - an order is not ready to
+    collect while one of its stones is still on the bench.
+
+    Derived by :func:`apps.orders.selectors.order_stage`, so nothing can drift
+    out of step with the stone statuses and bill it is computed from.
+    """
+
+    IDENTIFYING = ("identifying", "Awaiting identification")
+    READY_TO_BILL = ("ready_to_bill", "Ready to bill")
+    AWAITING_PAYMENT = ("awaiting_payment", "Awaiting payment")
+    PART_PAID = ("part_paid", "Partly paid")
+    IN_FINDINGS = ("in_findings", "Findings in progress")
+    CERTIFIED = ("certified", "Certified")
+    READY_FOR_COLLECTION = ("ready_for_collection", "Ready for collection")
+    COLLECTED = ("collected", "Collected")
+    ON_HOLD = ("on_hold", "On hold")
+    CANCELLED = ("cancelled", "Cancelled")
+    EMPTY = ("empty", "No stones yet")
+
+
 class CertificateStatus(models.TextChoices):
     """Validity state of a certificate.
 

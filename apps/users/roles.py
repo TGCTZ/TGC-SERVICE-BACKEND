@@ -62,7 +62,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         + _perms("billing", BILLING_MODELS, CRUD)
         + _perms("identification", IDENTIFICATION_MODELS, CRUD)
         + _perms("certificates", CERTIFICATE_MODELS, CRUD)
-        + ["orders.transition_stone", "orders.view_statushistory"]
+        + ["orders.transition_stone", "orders.hold_order", "orders.view_statushistory"]
         + [
             "billing.generate_bill",
             "identification.finalize_report",
@@ -83,6 +83,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         *_perms("orders", ("customer", "order"), CRUD),
         "billing.view_bill",
         *_perms("orders", ("stone",), READ),
+        # Pausing or withdrawing a visit is reception's call: the customer says
+        # so at the desk, not at the bench.
+        "orders.hold_order",
         # Kept: handover moves a stone to collected.
         "orders.transition_stone",
         "orders.view_statushistory",

@@ -188,6 +188,18 @@ SPECTACULAR_SETTINGS = {
 # rename, needs no code change.
 CERTIFICATE_LAB_NAME = env("CERTIFICATE_LAB_NAME", default="Tanzania Gemmological Centre")
 CERTIFICATE_LAB_ADDRESS = env("CERTIFICATE_LAB_ADDRESS", default="")
+CERTIFICATE_MINISTRY_NAME = env("CERTIFICATE_MINISTRY_NAME", default="Ministry of Minerals")
+
+# Where the QR code printed on a certificate points.
+#
+# An absolute URL, because a certificate can be rendered with no request in
+# hand - a background job, a management command, a test - and a QR that resolves
+# only from inside the office is a QR that does not work. The legacy system
+# built this from ``request.build_absolute_uri`` and silently emitted no QR at
+# all whenever the request was None.
+CERTIFICATE_VERIFY_BASE_URL = env(
+    "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
+)
 
 # Models are registered explicitly in apps.core.audit by walking BaseModel
 # subclasses, so auditlog must not blanket-register everything itself.

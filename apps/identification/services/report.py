@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import generate_tgc_report_number
 from apps.gems.enums import BillStatus
 from apps.orders.services import update_stone
 
@@ -61,8 +61,11 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
 
     report = IdentificationReport(
         stone=stone,
-        report_number=generate_reference_number(
-            IdentificationReport, "report_number", "RPT"
+        # TGC/<fy-start>/<fy-end>/<seq> - this is the number printed on the
+        # certificate as REPORT NO, and it is what the lab already issues on
+        # paper, so it is allocated in that shape rather than translated later.
+        report_number=generate_tgc_report_number(
+            IdentificationReport, "report_number"
         ),
         **fields,
     )
@@ -110,19 +113,42 @@ def update_report(
     return report
 
 
-def finalize_report(report: IdentificationReport, *, user=None) -> IdentificationReport:
-    """Lock a report against further edits.
+def finalize_report(
+    report: IdentificationReport, *, user=None, verified_by=None
+) -> IdentificationReport:
+    """Lock a report against further edits, naming both gemmologists.
 
     One-way: there is no un-finalize service. A mistake after this point is
     corrected by revoking the certificate, not by quietly rewriting the findings.
 
+    ``verified_by`` is the second signatory. Asked for here rather than while the
+    report is being written because it is a sign-off, not a finding - and this is
+    the moment the document stops being a draft. Optional at the service level so
+    a report can still be closed when only one gemmologist saw the stone; the
+    certificate then prints one name.
+
+    Args:
+        report: The report to lock.
+        user: The gemmologist finalizing it, recorded as the identifier.
+        verified_by: The second gemmologist, who checked the findings.
+
     Raises:
-        ServiceError: If the report is already finalized.
+        ServiceError: If the report is already finalized, or if the same person
+            is named as both gemmologists.
     """
     if report.is_finalized:
         raise ServiceError("Report is already finalized.")
+
+    # A second opinion from the same head is not a second opinion. Caught here
+    # rather than in the serializer because it is the rule the document's own
+    # "examined by at least two qualified Gemmologists" claim rests on.
+    if verified_by is not None and user is not None and verified_by.pk == user.pk:
+        raise ServiceError("The second gemmologist must be a different person.")
+
     report.is_finalized = True
     report.identified_at = timezone.now()
+    if verified_by is not None:
+        report.verified_by = verified_by
     if user is not None:
         report.identified_by = user
         report.updated_by = user
@@ -131,6 +157,7 @@ def finalize_report(report: IdentificationReport, *, user=None) -> Identificatio
             "is_finalized",
             "identified_at",
             "identified_by",
+            "verified_by",
             "updated_at",
             "updated_by",
         ]

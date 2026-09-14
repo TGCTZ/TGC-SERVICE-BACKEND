@@ -11,7 +11,11 @@ from apps.orders.serializers import StoneSerializer
 
 from .models import IdentificationReport, InstrumentUsed
 from .selectors import findings_worklist
-from .serializers import IdentificationReportSerializer, InstrumentUsedSerializer
+from .serializers import (
+    FinalizeReportSerializer,
+    IdentificationReportSerializer,
+    InstrumentUsedSerializer,
+)
 from .services import create_report, finalize_report, update_report
 
 
@@ -28,6 +32,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "shape_cut",
         "color",
         "identified_by",
+        "verified_by",
     ).prefetch_related("instruments_used", "instruments_used__instrument")
     serializer_class = IdentificationReportSerializer
 
@@ -80,11 +85,19 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             serializer.instance, user=self.request.user, **fields
         )
 
-    @extend_schema(request=None, responses=IdentificationReportSerializer)
+    @extend_schema(
+        request=FinalizeReportSerializer, responses=IdentificationReportSerializer
+    )
     @action(detail=True, methods=["post"])
     def finalize(self, request, pk=None):
-        """Lock this report against further edits."""
-        report = finalize_report(self.get_object(), user=request.user)
+        """Lock this report against further edits, naming the second gemmologist."""
+        payload = FinalizeReportSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        report = finalize_report(
+            self.get_object(),
+            user=request.user,
+            verified_by=payload.validated_data.get("verified_by"),
+        )
         return Response(self.get_serializer(report).data)
 
     @extend_schema(responses=StoneSerializer)
