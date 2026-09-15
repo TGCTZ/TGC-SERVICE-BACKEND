@@ -13,9 +13,9 @@ from apps.core.viewsets import BaseModelViewSet
 from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 
+from .dev import simulate_payment
 from .models import Bill, BillItem, Payment, ServiceProvider
 from .selectors import billing_worklist
-from .dev import simulate_payment
 from .serializers import (
     BillItemSerializer,
     BillPreviewSerializer,
@@ -114,9 +114,7 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
         payload = SimulatePaymentSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
-        bill = simulate_payment(
-            self.get_object(), payload.validated_data.get("amount")
-        )
+        bill = simulate_payment(self.get_object(), payload.validated_data.get("amount"))
         return Response(self.get_serializer(bill).data)
 
     @extend_schema(

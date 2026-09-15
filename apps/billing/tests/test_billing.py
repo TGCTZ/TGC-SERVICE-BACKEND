@@ -355,9 +355,7 @@ def test_simulate_payment_endpoint_settles_a_bill(settings, admin_user, auth_cli
     add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
     bill = generate_bill_for_order(order)
 
-    response = auth_client(admin_user).post(
-        f"/api/v1/bills/{bill.pk}/simulate-payment/"
-    )
+    response = auth_client(admin_user).post(f"/api/v1/bills/{bill.pk}/simulate-payment/")
 
     assert response.status_code == 200, response.data
     assert response.data["status"] == "paid"
@@ -402,9 +400,7 @@ def test_simulate_payment_is_invisible_outside_simulation(
     add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
     bill = generate_bill_for_order(order)
 
-    response = auth_client(admin_user).post(
-        f"/api/v1/bills/{bill.pk}/simulate-payment/"
-    )
+    response = auth_client(admin_user).post(f"/api/v1/bills/{bill.pk}/simulate-payment/")
 
     assert response.status_code == 404
     bill.refresh_from_db()

@@ -158,9 +158,7 @@ class BillPreviewItemSerializer(serializers.Serializer):
     category = serializers.CharField()
     # Null when the stone's category carries no fee - a configuration gap the
     # screen names rather than hides.
-    amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, allow_null=True
-    )
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2, allow_null=True)
 
 
 class BillPreviewSerializer(serializers.Serializer):

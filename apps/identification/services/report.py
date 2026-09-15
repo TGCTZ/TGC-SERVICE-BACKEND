@@ -64,9 +64,7 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
         # TGC/<fy-start>/<fy-end>/<seq> - this is the number printed on the
         # certificate as REPORT NO, and it is what the lab already issues on
         # paper, so it is allocated in that shape rather than translated later.
-        report_number=generate_tgc_report_number(
-            IdentificationReport, "report_number"
-        ),
+        report_number=generate_tgc_report_number(IdentificationReport, "report_number"),
         **fields,
     )
     if user is not None:

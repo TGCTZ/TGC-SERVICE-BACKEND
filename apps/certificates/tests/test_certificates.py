@@ -8,11 +8,8 @@ from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
-from apps.certificates.services import (
-    certificate_context,
-    issue_certificate,
-    revoke_certificate,
-)
+from apps.certificates.services import issue_certificate, revoke_certificate
+from apps.certificates.services.pdf import certificate_context
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import (
     CertificateStatus,

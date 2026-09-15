@@ -113,10 +113,6 @@ the detail endpoint already returns in full, so the method-map fallback gives it
 reserved for verbs that change state — issuing, revoking, transitioning — where
 "may read this" and "may do this" genuinely differ.
 
-For checks outside a DRF view - a management command, a webhook - use
-`require_permission(user, "gems.change_stonetype")`. A `None` user means a
-trusted system caller and is allowed through deliberately.
-
 ## Module gates
 
 Some permissions guard a whole UI section rather than a table: `module_orders`,

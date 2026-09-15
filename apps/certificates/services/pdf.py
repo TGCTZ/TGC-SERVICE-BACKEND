@@ -63,7 +63,11 @@ def certificate_context(certificate: Certificate) -> dict:
             certificate.report_number_snapshot or certificate.report.report_number
         ),
         "instruments": certificate.instruments_snapshot or [],
-        "photo": photo_data_uri(certificate.photo_snapshot) or photo_data_uri(stone.photo),
+        # The frozen copy, falling back to the stone's live photograph for
+        # certificates issued before snapshotting existed.
+        "photo": (
+            photo_data_uri(certificate.photo_snapshot) or photo_data_uri(stone.photo)
+        ),
         "verify_url": verify_url,
         "qr_code": qr_data_uri(verify_url),
         **lab_assets(),

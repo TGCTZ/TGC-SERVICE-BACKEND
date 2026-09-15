@@ -77,9 +77,7 @@ class StoneSerializer(AuditFieldsMixin):
     customer_name = serializers.CharField(
         source="order.customer.full_name", read_only=True
     )
-    customer_phone = serializers.CharField(
-        source="order.customer.phone", read_only=True
-    )
+    customer_phone = serializers.CharField(source="order.customer.phone", read_only=True)
 
     class Meta:
         model = Stone

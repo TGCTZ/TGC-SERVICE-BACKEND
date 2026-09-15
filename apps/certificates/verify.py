@@ -70,8 +70,7 @@ class CertificateVerifyView(View):
                 "is_revoked": is_revoked,
                 "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
                 "report_number": (
-                    certificate.report_number_snapshot
-                    or certificate.report.report_number
+                    certificate.report_number_snapshot or certificate.report.report_number
                 ),
                 "lab_name": settings.CERTIFICATE_LAB_NAME,
             },

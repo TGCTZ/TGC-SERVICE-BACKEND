@@ -57,12 +57,13 @@ reasoning.
 Set `GEPG_SIMULATE=True` in `.env`. Bill submission then skips the network and
 returns a plausible control number, and:
 
-```bash
-uv run python manage.py simulate_payment BILL-2026-0004
-```
+the Bills screen grows a **Simulate payment** action on each row. It settles a
+bill by feeding a fake notification through the **real** handler, so the whole
+path - parse, record, settle, transition the stones - is exercised. It takes an
+amount, so a part-paid bill can be produced as well as a settled one.
 
-settles a bill by feeding a fake notification through the **real** handler, so
-the whole path - parse, record, settle, transition the stones - is exercised.
+Behind it: `POST /api/v1/bills/{id}/simulate-payment/`, which answers 404 unless
+the server has **both** `DEBUG` and `GEPG_SIMULATE` on.
 
 ## Gaps to be aware of
 

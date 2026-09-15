@@ -144,9 +144,7 @@ def _every_stone_within(statuses) -> Exists:
     Phrased as "no stone is outside the set", which is the only way to ask
     `all()` of a relation in SQL. Negate the result to invert it.
     """
-    return Exists(
-        Stone.objects.filter(order=OuterRef("pk")).exclude(status__in=statuses)
-    )
+    return Exists(Stone.objects.filter(order=OuterRef("pk")).exclude(status__in=statuses))
 
 
 def orders_at_stage(queryset, stage: str):
@@ -187,20 +185,19 @@ def orders_at_stage(queryset, stage: str):
 
     if stage == OrderStage.ON_HOLD:
         return queryset.filter(
-            held
-            | (
-                ~cancelled
-                & ~exception_stone_cancelled
-                & exception_stone_held
-            )
+            held | (~cancelled & ~exception_stone_cancelled & exception_stone_held)
         )
 
     # Everything past this point is an order nobody has stopped, and none of
     # whose stones is parked.
-    running = queryset.filter(
-        hold_status=OrderHold.ACTIVE,
-        **{},
-    ).exclude(exception_stone_cancelled).exclude(exception_stone_held)
+    running = (
+        queryset.filter(
+            hold_status=OrderHold.ACTIVE,
+            **{},
+        )
+        .exclude(exception_stone_cancelled)
+        .exclude(exception_stone_held)
+    )
 
     counted = annotate_identified(running)
 
@@ -234,7 +231,7 @@ def orders_at_stage(queryset, stage: str):
         within = ~Q(_every_stone_within(_AT_OR_BEYOND[stage]))
         # Exclude the stages above this one, which are strictly more advanced.
         beyond = Q()
-        for finer, statuses in _AT_OR_BEYOND.items():
+        for statuses in _AT_OR_BEYOND.values():
             if len(statuses) < len(_AT_OR_BEYOND[stage]):
                 beyond |= ~Q(_every_stone_within(statuses))
         return paid.filter(within).exclude(beyond)

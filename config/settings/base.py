@@ -188,7 +188,9 @@ SPECTACULAR_SETTINGS = {
 # rename, needs no code change.
 CERTIFICATE_LAB_NAME = env("CERTIFICATE_LAB_NAME", default="Tanzania Gemmological Centre")
 CERTIFICATE_LAB_ADDRESS = env("CERTIFICATE_LAB_ADDRESS", default="")
-CERTIFICATE_MINISTRY_NAME = env("CERTIFICATE_MINISTRY_NAME", default="Ministry of Minerals")
+CERTIFICATE_MINISTRY_NAME = env(
+    "CERTIFICATE_MINISTRY_NAME", default="Ministry of Minerals"
+)
 
 # Where the QR code printed on a certificate points.
 #

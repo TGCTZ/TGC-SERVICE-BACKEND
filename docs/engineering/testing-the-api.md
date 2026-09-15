@@ -235,12 +235,13 @@ payloads for all three cases worth checking:
 Set `GEPG_SIMULATE=True` in `.env` to work offline: bill submission skips the
 network and returns a fake control number.
 
-```bash
-uv run python manage.py simulate_payment BILL-2026-0004
-```
+With it on, the Bills screen grows a **Simulate payment** action on each row.
+It settles a bill by feeding a fake notification through the *real* handler, so
+the whole path is exercised - and it takes an amount, so a part-paid bill can be
+produced too.
 
-settles a bill by feeding a fake notification through the *real* handler, so the
-whole path is exercised.
+The endpoint behind it is `POST /api/v1/bills/{id}/simulate-payment/`, which
+answers 404 unless the server has **both** `DEBUG` and `GEPG_SIMULATE` on.
 
 > **Known gap:** nothing verifies that a request actually came from GePG.
 > `GEPG_PUBLIC_CERT_PATH` is configured but never read, so a forged

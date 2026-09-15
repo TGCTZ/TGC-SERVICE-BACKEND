@@ -187,7 +187,7 @@ role act on? This drives the permissions layer.
 accountant, administrator — seeded by `python manage.py setup_roles`. Action-level
 custom permissions (`finalize_report`, `generate_bill`, `issue_certificate`, …)
 are defined on the models. The role→permission mapping lives in
-`apps/accounts/roles.py`; see
+`apps/users/roles.py`; see
 [`../engineering/permissions.md`](../engineering/permissions.md).
 
 **Still needed from the team:** confirm/adjust which actions each role may

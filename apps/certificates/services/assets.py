@@ -13,7 +13,7 @@ right trade for a file that has to be reproducible years later.
 import base64
 import logging
 import mimetypes
-from functools import lru_cache
+from functools import cache
 from io import BytesIO
 from pathlib import Path
 
@@ -44,7 +44,7 @@ def _encode(data: bytes, mime: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-@lru_cache(maxsize=None)
+@cache
 def asset_data_uri(name: str) -> str | None:
     """Return one of the lab's marks as a ``data:`` URI, or None if absent.
 
