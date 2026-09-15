@@ -12,7 +12,11 @@ from apps.core.permissions import StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 
 from .models import Customer, Order, StatusHistory, Stone
-from .selectors import annotate_identified, identification_worklist
+from .selectors import (
+    annotate_identified,
+    identification_worklist,
+    orders_at_stage,
+)
 from .serializers import (
     AddStoneSerializer,
     CustomerSerializer,
@@ -85,12 +89,22 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     # follows the billing and certification worklists, which gate on their
     # workflow verb rather than on `view`.
     def get_queryset(self):
-        """Narrow to orders awaiting identification, or to those finished."""
-        queryset = super().get_queryset()
-        wanted = str(
-            getattr(self.request, "query_params", {}).get("identification", "")
-        ).lower()
+        """Narrow by identification progress, or by the order's derived stage.
 
+        Both live here rather than in ``filter_fields`` for the same reason: the
+        whitelist filter backend matches fields, and neither of these is one.
+        ``identification`` compares two columns; ``stage`` is computed from the
+        stones and the bill by :func:`order_stage`, and
+        :func:`orders_at_stage` re-expresses that derivation as SQL.
+        """
+        queryset = super().get_queryset()
+        params = getattr(self.request, "query_params", {})
+
+        stage = str(params.get("stage", "")).lower()
+        if stage:
+            return orders_at_stage(queryset, stage)
+
+        wanted = str(params.get("identification", "")).lower()
         if wanted == "pending":
             return annotate_identified(queryset).filter(identified__lt=F("stone_count"))
         if wanted == "complete":

@@ -9,11 +9,11 @@ service that acts on it.
 ``billing_worklist`` joins to the bill and therefore lands with ``apps.billing``.
 """
 
-from django.db.models import Count, F
+from django.db.models import Count, Exists, F, OuterRef, Q
 
 from apps.gems.enums import BillStatus, OrderHold, OrderStage, StoneStatus
 
-from .models import Order
+from .models import Order, Stone
 
 
 def annotate_identified(queryset):
@@ -114,3 +114,130 @@ def order_stage(order) -> str:
             return rank[status]
 
     return OrderStage.IN_FINDINGS
+
+
+# The stone statuses each "finished" stage tolerates. An order is *at* a stage
+# when every one of its stones has reached it or gone beyond - the same
+# least-advanced rule `order_stage` applies, expressed as a set.
+_AT_OR_BEYOND = {
+    OrderStage.COLLECTED: {StoneStatus.COLLECTED},
+    OrderStage.READY_FOR_COLLECTION: {
+        StoneStatus.COLLECTED,
+        StoneStatus.READY_FOR_COLLECTION,
+    },
+    OrderStage.CERTIFIED: {
+        StoneStatus.COLLECTED,
+        StoneStatus.READY_FOR_COLLECTION,
+        StoneStatus.CERTIFIED,
+    },
+}
+
+
+def _has_stone_at(status) -> Exists:
+    """Whether the order has any stone sitting at ``status``."""
+    return Exists(Stone.objects.filter(order=OuterRef("pk"), status=status))
+
+
+def _every_stone_within(statuses) -> Exists:
+    """Whether every stone has reached one of ``statuses``.
+
+    Phrased as "no stone is outside the set", which is the only way to ask
+    `all()` of a relation in SQL. Negate the result to invert it.
+    """
+    return Exists(
+        Stone.objects.filter(order=OuterRef("pk")).exclude(status__in=statuses)
+    )
+
+
+def orders_at_stage(queryset, stage: str):
+    """Narrow ``queryset`` to the orders whose derived stage is ``stage``.
+
+    The stage is not a column - it is computed by :func:`order_stage` from the
+    stones and the bill, deliberately, so that it can never drift out of step
+    with them. Filtering therefore means expressing that derivation as SQL
+    rather than reading a field.
+
+    The alternative was a denormalised ``stage`` column kept in step by every
+    service that touches a stone. That is one write to forget - and the forgotten
+    one would leave an order claiming to be ready for collection while a stone
+    sits on the bench, silently, until a customer is told to come in.
+
+    Each branch here mirrors one branch of ``order_stage``, **in the same
+    order**, by excluding everything the branches above it would have caught.
+    ``test_stage_filter_agrees_with_the_derivation`` asserts the two never
+    disagree; change one and that test fails.
+
+    Args:
+        queryset: Orders to narrow.
+        stage: An :class:`~apps.gems.enums.OrderStage` value.
+
+    Returns:
+        The narrowed queryset, or it unchanged if ``stage`` is not a known one.
+    """
+    if stage not in OrderStage.values:
+        return queryset
+
+    held = Q(hold_status=OrderHold.ON_HOLD)
+    cancelled = Q(hold_status=OrderHold.CANCELLED)
+    exception_stone_cancelled = Q(_has_stone_at(StoneStatus.CANCELLED))
+    exception_stone_held = Q(_has_stone_at(StoneStatus.ON_HOLD))
+
+    if stage == OrderStage.CANCELLED:
+        return queryset.filter(cancelled | (~held & exception_stone_cancelled))
+
+    if stage == OrderStage.ON_HOLD:
+        return queryset.filter(
+            held
+            | (
+                ~cancelled
+                & ~exception_stone_cancelled
+                & exception_stone_held
+            )
+        )
+
+    # Everything past this point is an order nobody has stopped, and none of
+    # whose stones is parked.
+    running = queryset.filter(
+        hold_status=OrderHold.ACTIVE,
+        **{},
+    ).exclude(exception_stone_cancelled).exclude(exception_stone_held)
+
+    counted = annotate_identified(running)
+
+    if stage == OrderStage.EMPTY:
+        return counted.filter(identified=0)
+
+    # A stone short of what the customer brought. `stone_count` of 0 with no
+    # stones is EMPTY, caught above.
+    has_stones = counted.filter(identified__gt=0)
+
+    if stage == OrderStage.IDENTIFYING:
+        return has_stones.filter(identified__lt=F("stone_count"))
+
+    full = has_stones.filter(identified__gte=F("stone_count"))
+
+    if stage == OrderStage.READY_TO_BILL:
+        return full.filter(bill__isnull=True)
+
+    billed = full.filter(bill__isnull=False)
+
+    if stage == OrderStage.PART_PAID:
+        return billed.filter(bill__status=BillStatus.PARTIALLY_PAID)
+    if stage == OrderStage.AWAITING_PAYMENT:
+        return billed.exclude(bill__status=BillStatus.PARTIALLY_PAID).exclude(
+            bill__status=BillStatus.PAID
+        )
+
+    paid = billed.filter(bill__status=BillStatus.PAID)
+
+    if stage in _AT_OR_BEYOND:
+        within = ~Q(_every_stone_within(_AT_OR_BEYOND[stage]))
+        # Exclude the stages above this one, which are strictly more advanced.
+        beyond = Q()
+        for finer, statuses in _AT_OR_BEYOND.items():
+            if len(statuses) < len(_AT_OR_BEYOND[stage]):
+                beyond |= ~Q(_every_stone_within(statuses))
+        return paid.filter(within).exclude(beyond)
+
+    # IN_FINDINGS: paid, but some stone has not yet reached certified.
+    return paid.filter(_every_stone_within(_AT_OR_BEYOND[OrderStage.CERTIFIED]))

@@ -44,6 +44,22 @@ def transition_stone(stone: Stone, to_status: str, *, user=None, note: str = "")
     return stone
 
 
+def next_stone_label(order) -> str:
+    """The label the next stone identified against this order will carry.
+
+    A, B, C... Breaks above 26 stones, which no order has yet reached.
+
+    Extracted so the screen can *show* the label before it is allocated rather
+    than reimplementing the rule - a dialog that says "this will be stone C" and
+    a service that writes "D" is the kind of disagreement nobody notices until a
+    customer is holding the paperwork.
+
+    Args:
+        order: The order the stone would belong to.
+    """
+    return chr(65 + order.stones.count())
+
+
 @transaction.atomic
 def add_stone(order: Order, *, stone_type, user=None) -> Stone:
     """Record the identification of a stone: its type.
@@ -70,8 +86,7 @@ def add_stone(order: Order, *, stone_type, user=None) -> Stone:
             f"already been identified."
         )
 
-    # A, B, C... Breaks above 26 stones, which no order has yet reached.
-    label = chr(65 + identified)
+    label = next_stone_label(order)
 
     stone = Stone(
         order=order,

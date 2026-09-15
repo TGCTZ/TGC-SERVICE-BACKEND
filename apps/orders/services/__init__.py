@@ -5,6 +5,7 @@ from .stone import (
     RETYPEABLE_STATUSES,
     add_stone,
     assert_stone_retypeable,
+    next_stone_label,
     transition_stone,
     update_stone,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "add_stone",
     "assert_stone_retypeable",
     "create_order",
+    "next_stone_label",
     "hold_order",
     "release_order",
     "transition_stone",

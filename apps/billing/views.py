@@ -5,6 +5,9 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.conf import settings
+from django.http import Http404
+
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 from apps.orders.models import Order
@@ -12,6 +15,7 @@ from apps.orders.serializers import OrderSerializer
 
 from .models import Bill, BillItem, Payment, ServiceProvider
 from .selectors import billing_worklist
+from .dev import simulate_payment
 from .serializers import (
     BillItemSerializer,
     BillPreviewSerializer,
@@ -19,6 +23,7 @@ from .serializers import (
     GenerateBillSerializer,
     PaymentSerializer,
     ServiceProviderSerializer,
+    SimulatePaymentSerializer,
 )
 from .services import generate_bill_for_order, preview_bill_for_order
 
@@ -64,6 +69,8 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
     action_permissions = {
         "generate": ["billing.generate_bill"],
         "preview": ["billing.generate_bill"],
+        # Simulating a settlement is the same authority as raising the bill.
+        "simulate_payment": ["billing.generate_bill"],
         "worklist": ["billing.generate_bill"],
     }
 
@@ -86,6 +93,31 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
             user=request.user,
         )
         return Response(self.get_serializer(bill).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=SimulatePaymentSerializer, responses=BillSerializer)
+    @action(detail=True, methods=["post"], url_path="simulate-payment")
+    def simulate_payment(self, request, pk=None):
+        """Pay this bill with a fabricated GePG notification. Development only.
+
+        Answers **404** rather than 403 when simulation is off, so the route does
+        not advertise its own existence on a deployment that must never have it.
+        Both flags are required: ``DEBUG`` alone is not enough, because a staging
+        box pointed at the real gateway would then be able to forge settlements.
+
+        The payload goes through the same handler the live webhook calls, so this
+        exercises the real path - parse, record, settle, transition - rather than
+        writing a paid bill directly.
+        """
+        if not (settings.DEBUG and getattr(settings, "GEPG_SIMULATE", False)):
+            raise Http404
+
+        payload = SimulatePaymentSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        bill = simulate_payment(
+            self.get_object(), payload.validated_data.get("amount")
+        )
+        return Response(self.get_serializer(bill).data)
 
     @extend_schema(
         parameters=[

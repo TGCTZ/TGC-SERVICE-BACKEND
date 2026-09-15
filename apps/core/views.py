@@ -1,4 +1,4 @@
-"""Health-check endpoints for load balancers and orchestrators."""
+"""Health-check endpoints, and the deployment facts a client needs."""
 
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.conf import settings
 from django.db import connections
 from django.db.migrations.executor import MigrationExecutor
 
@@ -91,3 +92,29 @@ class ReadinessView(APIView):
         except Exception as exc:  # any failure at all means "not ready"
             return f"error: {exc.__class__.__name__}"
         return "ok" if not pending else f"{len(pending)} unapplied"
+
+
+class ConfigView(APIView):
+    """Deployment facts a client needs in order to render itself correctly.
+
+    Deliberately narrow: flags about *this deployment*, not about the user.
+    Anything user-shaped belongs on ``/auth/me``.
+
+    Authenticated, because knowing whether a box is in simulation mode tells an
+    outsider something about it that they have no business knowing.
+    """
+
+    def get(self, request, *args, **kwargs) -> Response:
+        """Report what this deployment allows.
+
+        ``simulate_payments`` requires **both** ``DEBUG`` and ``GEPG_SIMULATE``.
+        DEBUG alone is not enough: a staging box pointed at the real gateway
+        would otherwise show a button that forges settlements.
+        """
+        return Response(
+            {
+                "simulate_payments": bool(
+                    settings.DEBUG and getattr(settings, "GEPG_SIMULATE", False)
+                ),
+            }
+        )

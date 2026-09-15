@@ -753,3 +753,152 @@ def test_hold_endpoint_reports_the_new_stage(admin_user, auth_client):
     assert response.data["stage_label"] == "On hold"
     assert response.data["hold_reason"] == "Customer travelling."
     assert response.data["held_by_label"] is not None
+
+
+def test_next_stone_label_matches_what_add_stone_allocates():
+    """The dialog shows this before the stone exists, so it must not drift.
+
+    A screen that says "this will be stone C" while the service writes "D" is a
+    disagreement nobody notices until a customer is holding the paperwork.
+    """
+    from apps.orders.services import next_stone_label
+
+    order = OrderFactory(stone_count=3)
+    stone_type = StoneTypeFactory()
+
+    for expected in ("A", "B", "C"):
+        assert next_stone_label(order) == expected
+        assert add_stone(order, stone_type=stone_type).label == expected
+
+
+def test_next_stone_label_is_null_once_the_order_is_full(admin_user, auth_client):
+    """Nothing further can be identified, so there is no next label to name."""
+    order = OrderFactory(stone_count=1)
+    client = auth_client(admin_user)
+
+    before = client.get(f"/api/v1/orders/{order.pk}/")
+    assert before.data["next_stone_label"] == "A"
+
+    add_stone(order, stone_type=StoneTypeFactory())
+
+    after = client.get(f"/api/v1/orders/{order.pk}/")
+    assert after.data["next_stone_label"] is None
+
+
+def test_stage_filter_agrees_with_the_derivation(settings, user):
+    """The SQL filter and `order_stage` must never disagree.
+
+    The stage is derived, not stored, so filtering means expressing that
+    derivation twice - once in Python for display, once in SQL for the queryset.
+    Two expressions of one rule is exactly the drift that a stored column was
+    rejected to avoid, so it is pinned here: build one order at every stage, then
+    assert each filter returns precisely the orders the derivation places there.
+    """
+    from apps.billing.dev import simulate_payment
+    from apps.gems.enums import OrderHold, OrderStage
+    from apps.orders.models import Order
+    from apps.orders.selectors import order_stage, orders_at_stage
+    from apps.orders.services import hold_order
+
+    settings.GEPG_SIMULATE = True
+    priced = lambda: StoneTypeFactory(category__price=Decimal("1000.00"))  # noqa: E731
+
+    # empty
+    OrderFactory(stone_count=2)
+
+    # identifying — one of two stones typed
+    partial = OrderFactory(stone_count=2)
+    add_stone(partial, stone_type=priced())
+
+    # ready_to_bill
+    ready = OrderFactory(stone_count=1)
+    add_stone(ready, stone_type=priced())
+
+    # awaiting_payment
+    unpaid = OrderFactory(stone_count=1)
+    add_stone(unpaid, stone_type=priced())
+    generate_bill_for_order(unpaid)
+
+    # part_paid
+    partly = OrderFactory(stone_count=1)
+    add_stone(partly, stone_type=priced())
+    simulate_payment(generate_bill_for_order(partly), Decimal("400.00"))
+
+    # in_findings — paid, stones not certified
+    findings = OrderFactory(stone_count=1)
+    add_stone(findings, stone_type=priced())
+    simulate_payment(generate_bill_for_order(findings))
+
+    # certified — paid and every stone certified
+    certified = OrderFactory(stone_count=2)
+    first = add_stone(certified, stone_type=priced())
+    second = add_stone(certified, stone_type=priced())
+    simulate_payment(generate_bill_for_order(certified))
+    transition_stone(first, StoneStatus.CERTIFIED, user=user)
+    transition_stone(second, StoneStatus.CERTIFIED, user=user)
+
+    # collected — strictly beyond certified
+    collected = OrderFactory(stone_count=1)
+    only = add_stone(collected, stone_type=priced())
+    simulate_payment(generate_bill_for_order(collected))
+    transition_stone(only, StoneStatus.COLLECTED, user=user)
+
+    # on_hold, at the order level
+    paused = OrderFactory(stone_count=1)
+    add_stone(paused, stone_type=priced())
+    hold_order(paused, status=OrderHold.ON_HOLD, reason="Customer away.", user=user)
+
+    # cancelled, at the order level
+    dropped = OrderFactory(stone_count=1)
+    add_stone(dropped, stone_type=priced())
+    hold_order(dropped, status=OrderHold.CANCELLED, reason="Withdrew.", user=user)
+
+    # on_hold via a single parked stone, with the order itself still active
+    stone_held = OrderFactory(stone_count=1)
+    transition_stone(
+        add_stone(stone_held, stone_type=priced()), StoneStatus.ON_HOLD, user=user
+    )
+
+    everything = Order.objects.select_related("bill").prefetch_related("stones")
+    by_stage: dict[str, set[int]] = {}
+    for row in everything:
+        by_stage.setdefault(order_stage(row), set()).add(row.pk)
+
+    # Every stage the fixtures produced is reachable, and the filter is exact.
+    assert len(by_stage) >= 9, f"fixtures covered only {sorted(by_stage)}"
+
+    for stage in OrderStage.values:
+        expected = by_stage.get(stage, set())
+        actual = set(orders_at_stage(everything, stage).values_list("pk", flat=True))
+        assert actual == expected, (
+            f"{stage}: filter returned {sorted(actual)}, "
+            f"derivation says {sorted(expected)}"
+        )
+
+
+def test_orders_endpoint_filters_by_stage(settings, admin_user, auth_client):
+    """The filter reaches the list endpoint, and paginates like any other."""
+    settings.GEPG_SIMULATE = True
+    ready = OrderFactory(stone_count=1)
+    add_stone(ready, stone_type=StoneTypeFactory(category__price=Decimal("1000.00")))
+
+    unpaid = OrderFactory(stone_count=1)
+    add_stone(unpaid, stone_type=StoneTypeFactory(category__price=Decimal("1000.00")))
+    generate_bill_for_order(unpaid)
+
+    client = auth_client(admin_user)
+
+    response = client.get("/api/v1/orders/?stage=ready_to_bill")
+    assert response.status_code == 200, response.data
+    references = {row["reference_number"] for row in response.data["results"]}
+    assert ready.reference_number in references
+    assert unpaid.reference_number not in references
+
+    awaiting = client.get("/api/v1/orders/?stage=awaiting_payment")
+    assert unpaid.reference_number in {
+        row["reference_number"] for row in awaiting.data["results"]
+    }
+
+    # An unknown stage narrows nothing rather than erroring or returning empty.
+    everything = client.get("/api/v1/orders/?stage=not-a-stage")
+    assert everything.data["count"] >= 2

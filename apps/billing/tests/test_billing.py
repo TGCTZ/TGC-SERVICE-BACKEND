@@ -345,3 +345,79 @@ def test_preview_endpoint_requires_the_generate_permission(viewer_user, auth_cli
     response = auth_client(viewer_user).get(f"/api/v1/bills/preview/?order={order.pk}")
 
     assert response.status_code == 403
+
+
+def test_simulate_payment_endpoint_settles_a_bill(settings, admin_user, auth_client):
+    """The dev-only button, going through the real notification handler."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/"
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "paid"
+    assert Decimal(response.data["amount_paid"]) == Decimal("5000.00")
+
+
+def test_simulate_payment_endpoint_accepts_a_part_payment(
+    settings, admin_user, auth_client
+):
+    """The only route to PARTIALLY_PAID, which nothing else can produce offline."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/", {"amount": "2000.00"}
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "partially_paid"
+
+    # A second call tops it up rather than being swallowed as a redelivery.
+    again = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/", {"amount": "3000.00"}
+    )
+    assert again.data["status"] == "paid"
+
+
+def test_simulate_payment_is_invisible_outside_simulation(
+    settings, admin_user, auth_client
+):
+    """404, not 403: the route must not advertise itself where it must not exist.
+
+    Both flags are required. DEBUG alone would let a staging box pointed at the
+    real gateway forge settlements.
+    """
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = False
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/"
+    )
+
+    assert response.status_code == 404
+    bill.refresh_from_db()
+    assert bill.status == "pending"
+
+
+def test_config_reports_whether_simulation_is_available(
+    settings, admin_user, auth_client
+):
+    """What the UI reads to decide whether to offer the button at all."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    assert auth_client(admin_user).get("/api/v1/config/").data["simulate_payments"]
+
+    settings.GEPG_SIMULATE = False
+    assert not auth_client(admin_user).get("/api/v1/config/").data["simulate_payments"]

@@ -17,6 +17,9 @@ class CertificateSerializer(AuditFieldsMixin):
     customer_name = serializers.CharField(
         source="stone.order.customer.full_name", read_only=True
     )
+    customer_phone = serializers.CharField(
+        source="stone.order.customer.phone", read_only=True
+    )
     report_number = serializers.CharField(source="report.report_number", read_only=True)
     issued_by_label = serializers.SerializerMethodField()
 
@@ -28,6 +31,7 @@ class CertificateSerializer(AuditFieldsMixin):
             "stone_label",
             "order_reference",
             "customer_name",
+            "customer_phone",
             "report",
             "report_number",
             "certificate_number",

@@ -18,6 +18,7 @@ from io import BytesIO
 from pathlib import Path
 
 import qrcode
+from PIL import Image, ImageOps
 
 from django.conf import settings
 
@@ -76,8 +77,23 @@ def lab_assets() -> dict[str, str | None]:
     return {name: asset_data_uri(name) for name in ASSETS}
 
 
+#: Longest edge, in pixels, of a photograph embedded in a certificate.
+#:
+#: The photo prints into a box about 40mm across. At 300dpi that is roughly
+#: 470px, so 900 leaves generous headroom for print while cutting a modern
+#: phone photo - 4000px and several megabytes - down to something a document
+#: can carry. The bytes are embedded per certificate, so the full-resolution
+#: original turned a 250KB document into a 1.9MB one for detail no printer
+#: could resolve.
+PHOTO_MAX_EDGE = 900
+
+
 def photo_data_uri(image_field) -> str | None:
     """Return an uploaded image as a ``data:`` URI, or None if there is none.
+
+    Downscaled to :data:`PHOTO_MAX_EDGE` and re-encoded as JPEG. The original
+    upload is left untouched on disk - this only governs what goes into the
+    document.
 
     Reads through the storage backend rather than ``.path``, so this keeps
     working when media moves off the local disk - ``.path`` raises
@@ -98,8 +114,28 @@ def photo_data_uri(image_field) -> str | None:
         logger.warning("Certificate photo unreadable: %s", image_field.name)
         return None
 
-    mime = mimetypes.guess_type(image_field.name)[0] or "image/jpeg"
-    return _encode(data, mime)
+    try:
+        with Image.open(BytesIO(data)) as original:
+            # Bake in the EXIF orientation before anything else. A phone writes
+            # the sensor's pixels and a "rotate me" tag; re-encoding drops the
+            # tag, so without this a portrait photograph prints on its side.
+            image = ImageOps.exif_transpose(original)
+
+            # Flatten next: a PNG or a phone HEIC can carry transparency, and
+            # JPEG has no alpha channel to put it in.
+            if image.mode not in ("RGB", "L"):
+                image = image.convert("RGB")
+            image.thumbnail((PHOTO_MAX_EDGE, PHOTO_MAX_EDGE), Image.LANCZOS)
+
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=85, optimize=True)
+            return _encode(buffer.getvalue(), "image/jpeg")
+    except (OSError, ValueError):
+        # Not something Pillow recognises. Embed it as uploaded rather than
+        # dropping the photograph from the document entirely.
+        logger.warning("Certificate photo could not be resized: %s", image_field.name)
+        mime = mimetypes.guess_type(image_field.name)[0] or "image/jpeg"
+        return _encode(data, mime)
 
 
 def verification_url(certificate_number: str) -> str:

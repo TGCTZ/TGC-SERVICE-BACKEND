@@ -1,5 +1,7 @@
 """Serializers for the billing domain."""
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
@@ -173,3 +175,16 @@ class BillPreviewSerializer(serializers.Serializer):
     currency = serializers.CharField()
     #: Reasons the order cannot be billed. Empty means it can.
     blockers = serializers.ListField(child=serializers.CharField())
+
+
+class SimulatePaymentSerializer(serializers.Serializer):
+    """Payload for the development-only payment simulation.
+
+    ``amount`` is optional and defaults to the balance outstanding. Pass less to
+    reach ``PARTIALLY_PAID``, which nothing else in the system can produce
+    offline.
+    """
+
+    amount = serializers.DecimalField(
+        max_digits=15, decimal_places=2, min_value=Decimal("0.01"), required=False
+    )

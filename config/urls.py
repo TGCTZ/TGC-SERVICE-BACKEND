@@ -17,9 +17,12 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.core.views import ConfigView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.core.urls")),
+    path("api/v1/config/", ConfigView.as_view(), name="config"),
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.gems.urls")),
     path("api/v1/", include("apps.orders.urls")),

@@ -219,14 +219,14 @@
       justify-content: center;
       padding: 1.5mm;
       margin-bottom: 2mm;
-      min-height: 38mm;
+      min-height: 30mm;
     }
 
     /* max-* rather than fixed width AND height: forcing both squashes every
        photograph that is not exactly the box's aspect ratio. */
     .photo img {
       max-width: 100%;
-      max-height: 52mm;
+      max-height: 40mm;
       object-fit: contain;
     }
 
@@ -257,8 +257,12 @@
     }
 
     /* ---------- QR and verification ---------- */
+    /* Follows the instruments rather than being pushed to the bottom: with
+       three instruments recorded rather than ten, `margin-top: auto` left a
+       hand-width hole in the middle of the column. The statement holds the
+       bottom edge instead. */
     .verify {
-      margin-top: auto;
+      margin-top: 3mm;
       text-align: center;
     }
 
@@ -276,7 +280,7 @@
     }
 
     .statement {
-      margin-top: 2mm;
+      margin-top: auto;
       border: 1px solid #ccc;
       padding: 1.5mm;
       font-size: 6.5pt;

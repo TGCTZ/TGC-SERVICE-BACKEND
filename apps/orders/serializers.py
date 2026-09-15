@@ -9,6 +9,7 @@ from apps.gems.serializers import StoneTypeSerializer
 
 from .models import Customer, Order, StatusHistory, Stone
 from .selectors import order_stage
+from .services import next_stone_label
 
 
 class CustomerSerializer(AuditFieldsMixin):
@@ -71,6 +72,14 @@ class StoneSerializer(AuditFieldsMixin):
     order_reference = serializers.CharField(
         source="order.reference_number", read_only=True
     )
+    # The customer, alongside the order the stone came in on. A reference number
+    # identifies the paperwork; the name identifies the visit.
+    customer_name = serializers.CharField(
+        source="order.customer.full_name", read_only=True
+    )
+    customer_phone = serializers.CharField(
+        source="order.customer.phone", read_only=True
+    )
 
     class Meta:
         model = Stone
@@ -78,6 +87,8 @@ class StoneSerializer(AuditFieldsMixin):
             "id",
             "order",
             "order_reference",
+            "customer_name",
+            "customer_phone",
             "label",
             "stone_type",
             "stone_type_detail",
@@ -110,6 +121,9 @@ class OrderSerializer(AuditFieldsMixin):
     # this reads the reverse relation rather than importing it.
     bill_number = serializers.SerializerMethodField()
     control_number = serializers.SerializerMethodField()
+    # The label the next stone identified here will carry, so the identification
+    # dialog can name it before it exists.
+    next_stone_label = serializers.SerializerMethodField()
     # Where the order has got to, derived from its stones and its bill.
     stage = serializers.SerializerMethodField()
     stage_label = serializers.SerializerMethodField()
@@ -152,6 +166,8 @@ class OrderSerializer(AuditFieldsMixin):
             "received_date",
             "stone_count",
             "identified_count",
+            "next_stone_label",
+            "next_stone_label",
             "bill_number",
             "control_number",
             "stage",
@@ -182,6 +198,12 @@ class OrderSerializer(AuditFieldsMixin):
         """This order's bill number, or None if it has not been billed."""
         bill = getattr(obj, "bill", None)
         return bill.bill_number if bill is not None else None
+
+    def get_next_stone_label(self, obj) -> str | None:
+        """What the next stone will be called, or None when the order is full."""
+        if obj.identified_count >= obj.stone_count:
+            return None
+        return next_stone_label(obj)
 
     def get_control_number(self, obj) -> str | None:
         """The number the customer quotes when paying, once GePG has issued one.

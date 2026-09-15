@@ -50,6 +50,15 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     order_reference = serializers.CharField(
         source="stone.order.reference_number", read_only=True
     )
+    # The customer, alongside the order they came in on. A reference number
+    # alone identifies the paperwork; the name is what identifies the visit to
+    # anyone reading a list of them.
+    customer_name = serializers.CharField(
+        source="stone.order.customer.full_name", read_only=True
+    )
+    customer_phone = serializers.CharField(
+        source="stone.order.customer.phone", read_only=True
+    )
     identified_by_label = serializers.SerializerMethodField()
     verified_by_label = serializers.SerializerMethodField()
 
@@ -81,6 +90,8 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "stone",
             "stone_label",
             "order_reference",
+            "customer_name",
+            "customer_phone",
             "report_number",
             "species",
             "species_detail",
