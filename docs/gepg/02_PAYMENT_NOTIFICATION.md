@@ -30,7 +30,7 @@ Customer Payment → GEPG → Payment Notification (XML) → TGC API Endpoint
 
 ### API Endpoint
 
-**URL**: `POST /billing/api/payments/notification/`
+**URL**: `POST /gepg/payments/notification/`
 
 **Authentication**: CSRF Exempt (external system)
 
@@ -39,8 +39,6 @@ Customer Payment → GEPG → Payment Notification (XML) → TGC API Endpoint
 **Response**: XML acknowledgment
 
 ### URL Configuration
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/urls.py`
 
 ```python
 from django.urls import path
@@ -61,8 +59,6 @@ urlpatterns = [
 
 ### View Handler
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/views/payment_api.py:6-50`
-
 ```python
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -76,8 +72,7 @@ def receive_payment_notification(request):
 
     Returns:
     - XML acknowledgment response
-    - Status 200 on success
-    - Status 400 on invalid XML
+    - Status 200 on EVERY path, including failure
     """
     try:
         # Get raw XML content
@@ -96,16 +91,24 @@ def receive_payment_notification(request):
     <pmtSpNtfReqAck>
         <AckId>ERROR</AckId>
         <ReqId>ERROR</ReqId>
-        <AckStsCode>7243</AckStsCode>
+        <AckStsCode>7102</AckStsCode>
     </pmtSpNtfReqAck>
     <signature>SignatureGoesHere</signature>
 </Gepg>"""
-        return HttpResponse(content=error_xml, content_type="application/xml", status=400)
+        return HttpResponse(content=error_xml, content_type="application/xml", status=200)
 ```
 
-### Service Function
+> **The status code is the important part of this endpoint.**
+>
+> It answers **HTTP 200 on every path**, including a parse failure, where the
+> acknowledgement carries code **`7102`**. A 4xx would make GePG treat the
+> delivery as failed and send it again — and a payload we could not parse the
+> first time will not parse the second. The failure is reported *inside* the
+> acknowledgement, which is where GePG looks.
+>
+> Code `7243` appears in the code table further down but is never sent.
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:239-349`
+### Service Function
 
 ```python
 def process_payment_notification(xml_content: str) -> str:
@@ -142,7 +145,7 @@ def process_payment_notification(xml_content: str) -> str:
 
             # Create or update payment record
             defaults = {
-                "local_bill": bill,
+                "bill": bill,
                 "bill_id": bill_id,
                 "pay_ref_id": pay_ref_id,
                 "paid_amount": paid_amount,
@@ -232,13 +235,13 @@ def process_payment_notification(xml_content: str) -> str:
     <PmtHdr>
       <ReqId>576HT657</ReqId>
       <GrpBillId>BILL-S-NO-001-47</GrpBillId>
-      <SpGrpCode>SP99631</SpGrpCode>
+      <SpGrpCode><SP_CODE></SpGrpCode>
       <CustCntrNum>255712345678</CustCntrNum>
       <EntryCnt>1</EntryCnt>
     </PmtHdr>
     <PmtDtls>
       <PmtTrxDtl>
-        <SpCode>SP99631</SpCode>
+        <SpCode><SP_CODE></SpCode>
         <BillId>BILL-S-NO-001-47</BillId>
         <BillCtrNum>9944000001234</BillCtrNum>
         <PspCode>PSP001</PspCode>
@@ -296,59 +299,30 @@ def process_payment_notification(xml_content: str) -> str:
 
 ## Database Models
 
-### Payment Model
+The real shape is in
+[`apps/billing/models/bill.py`](../../apps/billing/models/bill.py). One
+`Payment` row per GePG transaction.
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/models.py:61-115`
+| Column | Source | Notes |
+| --- | --- | --- |
+| `bill` | — | Foreign key. **Not** `local_bill` |
+| `gepg_bill_id` | `BillId` | The bill id as GePG knows it |
+| `trx_id` | `TrxId` | The idempotency key |
+| `req_id`, `grp_bill_id`, `sp_grp_code`, `cust_cntr_num` | `PmtHdr` | |
+| `entry_count` | `EntryCnt` | `PositiveIntegerField` |
+| `bill_amount`, `paid_amount` | `BillAmt`, `PaidAmt` | `max_digits=15` |
+| `trx_dt_tm` | `TrxDtTm` | When the customer paid |
+| `pyr_name`, `pyr_cell_num`, `pyr_email` | `PyrName`, `PyrCellNum`, `PyrEmail` | Who paid |
+| `psp_code`, `psp_name`, `usd_pay_chnl` | | Which channel took the money |
 
-```python
-class Payment(models.Model):
-    """
-    Model to store payment notifications received from GePG.
-    Each payment record represents a single transaction from a GePG notification.
-    """
+Two details differ from a naive reading:
 
-    # Payment Header Info (from PmtHdr)
-    req_id = models.CharField(max_length=100, null=True, blank=True)
-    grp_bill_id = models.CharField(max_length=100, null=True, blank=True)
-    sp_grp_code = models.CharField(max_length=10, null=True, blank=True)
-    cust_cntr_num = models.CharField(max_length=12, null=True, blank=True)
-    entry_count = models.IntegerField(null=True, blank=True)
-
-    # Payment Transaction Details (from PmtTrxDtl)
-    sp_code = models.CharField(max_length=10, null=True, blank=True)
-    bill_id = models.CharField(max_length=100, null=True, blank=True)
-    bill_ctr_num = models.CharField(max_length=12, null=True, blank=True)
-    psp_code = models.CharField(max_length=10, null=True, blank=True)
-    psp_name = models.CharField(max_length=200, null=True, blank=True)
-    trx_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    pay_ref_id = models.CharField(max_length=100, null=True, blank=True)
-    bill_amount = models.DecimalField(
-        max_digits=32, decimal_places=2, null=True, blank=True
-    )
-    paid_amount = models.DecimalField(
-        max_digits=32, decimal_places=2, null=True, blank=True
-    )
-    bill_pay_opt = models.CharField(max_length=1, null=True, blank=True)
-    currency = models.CharField(max_length=3, null=True, blank=True)
-    coll_acc_num = models.CharField(max_length=50, null=True, blank=True)
-    trx_dt_tm = models.DateTimeField(null=True, blank=True)
-    usd_pay_chnl = models.CharField(max_length=50, null=True, blank=True)
-    pyr_cell_num = models.CharField(max_length=15, blank=True, null=True)
-    pyr_email = models.CharField(max_length=150, blank=True, null=True)
-    pyr_name = models.CharField(max_length=200, blank=True, null=True)
-
-    # Acknowledgment Fields
-    ack_id = models.CharField(max_length=100, blank=True, null=True)
-    ack_sts_code = models.CharField(max_length=10, blank=True, null=True)
-    is_processed = models.BooleanField(default=False)
-    raw_request = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    # Link to our Bill
-    local_bill = models.ForeignKey(
-        Bill, on_delete=models.PROTECT, related_name="payments", null=True, blank=True
-    )
-```
+- **`trx_id` is not `unique=True`.** It carries a *partial* unique constraint
+  that excludes blanks and soft-deleted rows — the same rule every natural key
+  in this project follows, because a plain `unique=True` on a soft-deletable
+  model produces "cannot create, says it already exists, but I deleted it".
+- **Text columns default to `""`, not `NULL`.** One empty representation rather
+  than two.
 
 ---
 
@@ -356,16 +330,37 @@ class Payment(models.Model):
 
 ### Step-by-Step Flow
 
-1. **Receive XML**: GEPG posts XML to `/billing/api/payments/notification/`
+1. **Receive XML**: GEPG posts XML to `/gepg/payments/notification/`, parsed
+   with `defusedxml` rather than the standard library — the endpoint is public,
+   and `xml.etree.ElementTree` is documented as unsafe against hostile input
 2. **Parse XML**: Extract payment header and transaction details
 3. **Validate Data**: Check for required fields (BillId, TrxId, etc.)
-4. **Find Bill**: Lookup bill in database using BillId
+4. **Find Bill**: Look it up by `bill_number`, falling back to `control_number`
+   — GePG may echo back either
 5. **Check Duplicate**: Use TrxId to prevent duplicate payment processing
 6. **Create/Update Payment**: Store payment record with all details
-7. **Update Bill Status**: Mark bill as paid (status_code='102')
+7. **Recompute the bill's status**: sum every payment against
+   `bill.total_amount` — `paid` if covered in full, `partially_paid` if not.
+   There is no magic `102`; `status_code` holds the raw gateway string from
+   *submission* and is not touched here
+8. **Transition the stones**: on full settlement every stone on the order moves
+   to `paid`, which is what unblocks findings
 8. **Generate Acknowledgment**: Create XML acknowledgment
 9. **Sign Response**: Apply digital signature if enabled
 10. **Return Response**: Send acknowledgment back to GEPG
+
+### Partial payments
+
+A bill is not only paid or unpaid. Settlement compares the **sum of every
+payment** against `bill.total_amount`:
+
+| Covered | Bill status | Stones |
+| --- | --- | --- |
+| In full | `paid` | All transition to `paid` |
+| In part | `partially_paid` | Unchanged |
+
+A bill that is 90% paid is still a bill nobody can act on, which is why the
+stones do not move until the balance lands.
 
 ### Duplicate Payment Handling
 
@@ -392,8 +387,6 @@ if created:
 ## Helper Functions
 
 ### DateTime Parsing
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:214-236`
 
 ```python
 def _parse_gepg_datetime(value: str) -> datetime:
@@ -433,7 +426,7 @@ def _parse_gepg_datetime(value: str) -> datetime:
 
 - **7101**: Successfully processed
 - **7102**: Processing failed
-- **7243**: Invalid request format
+- **7243**: Invalid request format *(defined by GePG; this system never sends it — it answers 7102)*
 
 ### Bill Status Codes (Updated After Payment)
 
@@ -516,7 +509,7 @@ def verify_gepg_signature(xml_content: str, signature: str) -> bool:
 ### Manual Testing with cURL
 
 ```bash
-curl -X POST http://localhost:8000/billing/api/payments/notification/ \
+curl -X POST http://localhost:8000/gepg/payments/notification/ \
   -H "Content-Type: application/xml" \
   -d '<?xml version="1.0" encoding="UTF-8"?>
 <Gepg>
@@ -524,13 +517,13 @@ curl -X POST http://localhost:8000/billing/api/payments/notification/ \
     <PmtHdr>
       <ReqId>TEST001</ReqId>
       <GrpBillId>BILL-S-NO-001-47</GrpBillId>
-      <SpGrpCode>SP99631</SpGrpCode>
+      <SpGrpCode><SP_CODE></SpGrpCode>
       <CustCntrNum>255712345678</CustCntrNum>
       <EntryCnt>1</EntryCnt>
     </PmtHdr>
     <PmtDtls>
       <PmtTrxDtl>
-        <SpCode>SP99631</SpCode>
+        <SpCode><SP_CODE></SpCode>
         <BillId>BILL-S-NO-001-47</BillId>
         <BillCtrNum>9944000001234</BillCtrNum>
         <PspCode>PSP001</PspCode>
@@ -605,7 +598,7 @@ logger.info(f"Transaction ID: {trx_id}, Amount: {paid_amount}")
 
 ```python
 # Get all payments for a bill
-payments = Payment.objects.filter(local_bill__bill_id="BILL-S-NO-001-47")
+payments = Payment.objects.filter(bill__bill_number="BILL-2026-0001")
 
 # Get payments by date
 from django.utils import timezone

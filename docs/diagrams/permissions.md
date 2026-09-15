@@ -57,9 +57,37 @@ authenticated user — including one with an empty role — could read every rec
 Requiring `view_<model>` closes that hole, and
 `test_user_without_permissions_cannot_even_read` pins the behaviour.
 
-`restore` maps to `change_<model>`: bringing a row back is a state change, and a
-dedicated `restore_<model>` would have to be declared on every model in the
-project for no real gain.
+`restore` is a **POST**, so it resolves through the map above to
+`add_<model>` — bringing a row back is creating it again as far as the
+permission set is concerned. A dedicated `restore_<model>` would have to be
+declared on every model in the project for no real gain. The client's
+`restorePerm()` mirrors the same rule.
+
+## Workflow verbs
+
+Not every endpoint is CRUD. `ActionPermissions` extends the class above with an
+`action_permissions` map on the viewset, so a business verb can demand a
+permission of its own:
+
+```mermaid
+flowchart TD
+    REQ["Incoming request"] --> ACT{"action in<br/>action_permissions?"}
+    ACT -->|yes| NAMED["the permission named there<br/><i>e.g. certificates.issue_certificate</i>"]
+    ACT -->|no| MAP["fall back to the method map above"]
+    NAMED --> HAS{"user holds it?"}
+    MAP --> HAS
+    HAS -->|yes| ALLOW(["proceed"])
+    HAS -->|no| DENY(["403 Forbidden"])
+
+    style ACT stroke:#d99a2b,stroke-width:2px
+    style HAS stroke:#d99a2b,stroke-width:2px
+    style ALLOW stroke:#3fa860,stroke-width:2px
+    style DENY stroke:#d9534f,stroke-width:2px
+```
+
+The fallback is what keeps the map short: only the verbs that genuinely need
+their own permission are listed, and ordinary CRUD plus `restore` are unaffected.
+The full list is in [permissions.md](../engineering/permissions.md).
 
 ## Roles
 
@@ -84,9 +112,9 @@ flowchart LR
 | --- | --- |
 | `superadmin` | Every permission, resolved dynamically |
 | `administrator` | Full CRUD across the domain, users, roles, audit read |
-| `receptionist` | Customers and orders; registers and types stones |
-| `editor` | Catalog add / change / view — no delete |
-| `accountant` | Bills, payments, service providers, and pricing |
+| `receptionist` | Customers and orders, and handing finished certificates back. **Not** stones — typing one is the bench's job |
+| `gemmologist` | The bench: stones, identification, findings and certificates. No billing |
+| `accountant` | Bills, payments, service providers, and the stone catalogue |
 
 Keeping the matrix in code rather than in seed data means a role change arrives
 as a reviewable diff.
@@ -111,9 +139,10 @@ out of the system irrecoverably.
 
 ## Module gates
 
-Four permissions guard whole UI sections rather than tables: `module_user`,
-`module_orders`, `module_billing`, `module_settings`, `module_audit`. They have no table of their
-own, so they hang off an **unmanaged** model.
+Eight permissions guard whole UI sections rather than tables: `module_orders`,
+`module_identification`, `module_billing`, `module_certificates`,
+`module_reference`, `module_user`, `module_settings` and `module_audit`. They
+have no table of their own, so they hang off an **unmanaged** model.
 
 ```mermaid
 flowchart LR

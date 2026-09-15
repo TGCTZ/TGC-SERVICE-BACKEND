@@ -11,20 +11,24 @@ tells us asynchronously. There is no manual payment entry anywhere in the system
 | [00 Overview](00_GEPG_INTEGRATION_OVERVIEW.md) | Configuration, architecture, message catalogue |
 | [01 Bill submission](01_BILL_SUBMISSION.md) | `billSubReq` - getting a control number |
 | [02 Payment notification](02_PAYMENT_NOTIFICATION.md) | `pmtSpNtfReq` - the callback that settles a bill |
-| [03 Bill cancellation](03_BILL_CANCELLATION.md) | `billCancReq` - **not implemented** |
-| [04 Reconciliation](04_RECONCILIATION.md) | `sucSpPmtReq` - **not implemented** |
-| [05 SMS](05_SMS_INTEGRATION.md) | Beem Africa - **not implemented** |
+| [03 Bill cancellation](03_BILL_CANCELLATION.md) | `billCancReq` - **specification only** |
+| [04 Reconciliation](04_RECONCILIATION.md) | `sucSpPmtReq` - **specification only** |
+| [05 SMS](05_SMS_INTEGRATION.md) | Beem Africa - **specification only** |
+
+Documents 00 to 02 describe behaviour that exists. Documents 03 to 05 describe
+protocols for work that has not been built, and each carries a banner saying so.
 
 ## About the file paths in these documents
 
-**They are provenance, not a map of this codebase.** These documents were written
-against the legacy TGC-MIFUMO system, and quote paths like
-`/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py`. They are kept
-verbatim because the *protocol* they describe - the XML shapes, the status codes,
-the signing scheme, the acknowledgement rules - cannot be re-derived from our
-code, and getting a digit wrong against a government gateway is expensive.
+**Module names in the code listings are provenance, not a map of this
+codebase.** These documents were written against the TGC-MIFUMO system this one
+replaces, and their sample code still names its modules. The listings are kept
+because the *protocol* around them - the XML shapes, the status codes, the
+signing scheme, the acknowledgement rules - cannot be re-derived from our code,
+and getting a digit wrong against a government gateway is expensive.
 
-Where a document names a legacy module, this is where the same job is done here:
+Where a document names one of those modules, this is where the same job is done
+here:
 
 | In these documents | In this codebase |
 | --- | --- |
@@ -45,6 +49,12 @@ POST  /gepg/payments/notification/    pmtSpNtfReq  -> 7101 / 7102 ack
 POST  /gepg/bill/response/            billSubRes   -> ack (late control number)
 ```
 
+Submission can answer synchronously with a control number, or acknowledge and
+send it later on the response callback. A third case exists: the gateway can
+answer with the literal `PENDING`, which is **not** stored - the bill keeps an
+empty `control_number` until a real one arrives, because the unique constraint
+excludes blanks and a placeholder would occupy the slot the real number needs.
+
 The callbacks sit **outside** `/api/v1/` because their URLs are registered with
 GePG out of band and must survive an API version bump. They are plain Django
 views, unauthenticated and CSRF-exempt, and they answer in XML on every path
@@ -60,7 +70,8 @@ returns a plausible control number, and:
 the Bills screen grows a **Simulate payment** action on each row. It settles a
 bill by feeding a fake notification through the **real** handler, so the whole
 path - parse, record, settle, transition the stones - is exercised. It takes an
-amount, so a part-paid bill can be produced as well as a settled one.
+amount, so a part-paid bill can be produced as well as a settled one; leaving it
+blank pays the outstanding balance.
 
 Behind it: `POST /api/v1/bills/{id}/simulate-payment/`, which answers 404 unless
 the server has **both** `DEBUG` and `GEPG_SIMULATE` on.

@@ -13,8 +13,8 @@
 >
 > - **B1 / B6 ✅** — **no production module** in the current build; a stone goes
 >   identification → billing → findings → certificate.
-> - **B2 ✅** — pricing is **flat per stone type** (`StoneType.price`); weight
->   does not change the price.
+> - **B2 ✅** — pricing is **flat per stone category** (`StoneCategory.price`);
+>   weight does not change the price.
 > - **B3 ✅** — weight unit is **carat/gram** (`WeightUnit`); no `SiUnit`.
 > - **B5 ✅** — the `StoneStatus` list is settled (no `in_production`).
 > - **C5 ✅** — four roles seeded (receptionist, gemmologist, accountant,
@@ -25,8 +25,9 @@
 >   total, else `partially_paid` (still provisional).
 > - **C3** — certificates **can be revoked** (still provisional).
 > - **C4** — a **finalized** report is **locked** (no further edits).
-> - **C6** — reference formats: `ORD-YYYY-NNNN`, `RPT-YYYY-NNNN`,
->   `BILL-YYYY-NNNN`, `CERT-YYYY-NNNN` (per-year sequence).
+> - **C6** — reference formats: `ORD-YYYY-NNNN`, `BILL-YYYY-NNNN` and
+>   `CERT-YYYY-NNNN` (per-year sequence), and `TGC/YYYY/YYYY/NNNN` for
+>   identification report numbers (financial year, never-resetting sequence).
 
 ---
 
@@ -57,7 +58,7 @@ CERTIFICATE     → a certificate is issued per stone (downloadable as a PDF)
 | A3 | Is the reference data (colors, species, treatments, etc.) fixed or user-editable during data entry? | **Stable, admin-managed lookup lists** — staff choose from dropdowns; they are not added ad hoc during data entry. |
 | A4 | Is billing per order or per stone? | **One Bill per Order** — the customer pays once for the whole batch. |
 | A5 | Is a certificate issued per order or per stone? | **Per stone** — each stone gets its own certificate, downloadable as a PDF. |
-| A6 | What determines a stone's price? | **Stone type only** — a flat price per type (weight does not affect it). *(Refined from the original "type and weight" — see B2.)* |
+| A6 | What determines a stone's price? | **The stone's category** — a flat fee per category, reached through the stone's type (weight does not affect it). *(Refined from the original "type and weight" — see B2.)* |
 | A7 | Does each stone carry its own status, or does the whole order move together? | **Each stone has its own status** and progresses independently through the pipeline. |
 | A8 | Are the workflow stages fixed or editable by staff? | **Fixed stages defined in code** — they rarely change; developers manage them. |
 | A9 | Is a status audit trail needed? | **Yes — a full audit trail is a must** ("who moved this stone to which stage, and when"). |
@@ -80,12 +81,18 @@ record. A stone goes identification → billing → findings → certificate.
 
 ### B2. Is pricing a **flat rate** or **tiered by weight**?
 
-**Answer:** ✅ **Flat per stone type.** Each `StoneType` carries its own `price`;
-weight is recorded but does not change the amount charged.
+**Answer:** ✅ **Flat per stone category.** The fee is `StoneCategory.price`,
+reached through the stone's type; weight is recorded but does not change the
+amount charged. `StoneType` itself carries no price.
 
-> The full-stack system kept this on a separate `StonePrice` table. Here it is a
-> column on `StoneType`, which means the permission to set a price is the
-> permission to edit the stone catalogue - see `docs/engineering/permissions.md`.
+> The fee sits on the category rather than the type because the lab charges by
+> the class of work a stone represents, not by the species. It also means a new
+> stone type is priced the moment it is created, rather than being a row nobody
+> remembers to give a fee.
+>
+> The practical consequence: a bill total cannot be computed from a stone's type
+> alone. `preview_bill_for_order()` exists so the UI shows the same figure the
+> bill will carry - see `docs/engineering/permissions.md` for who may change it.
 
 ---
 

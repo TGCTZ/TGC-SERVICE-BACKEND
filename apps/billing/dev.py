@@ -1,8 +1,8 @@
 """Development-only helpers to simulate GePG callbacks.
 
-Never wired into production paths. Used by the dev-only "Simulate payment" button
-and the ``simulate_payment`` management command so the full
-order → bill → payment → certificate flow can be exercised without the real gateway.
+Never wired into production paths. Used by the dev-only "Simulate payment"
+action and by ``manage.py seed`` so the full order → bill → payment →
+certificate flow can be exercised without the real gateway.
 """
 
 import secrets

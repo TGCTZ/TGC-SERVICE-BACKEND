@@ -6,7 +6,7 @@ the tooling and the prose honest about each other.
 
 ## 1. Layering
 
-Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L3`.
+Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L5`.
 Imports point downward only. Two apps in the same layer must not import each
 other's models; shared data moves down into `apps.core`.
 
@@ -134,7 +134,7 @@ nobody looks for it, and a second screen would soon hold a slightly different
 copy.
 
 ```python
-def full_identification_worklist():
+def findings_worklist():
     """Stones waiting for findings: bill paid, report not finalized."""
     return Stone.objects.filter(order__bill__status=BillStatus.PAID).exclude(
         report__is_finalized=True

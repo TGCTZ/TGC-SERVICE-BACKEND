@@ -12,17 +12,16 @@ resolved graph.
 | Django | 5.2 LTS | Extended support until April 2028 |
 | PostgreSQL | 14+ | Any currently supported release |
 
-Django 5.2 is a Long-Term Support release. A template is copied and then left
-alone for years, so the three-year window matters more here than the newest
-feature set — a project started from this one should not need a framework
-upgrade in its first eighteen months.
+Django 5.2 is a Long-Term Support release. A lab system is installed and then
+left alone for years, so the three-year support window matters more here than
+the newest feature set.
 
 ## Core dependencies
 
 | Package | Version | Role |
 | --- | --- | --- |
-| `django` | 5.2.17 | Framework, ORM, migrations, auth primitives |
-| `djangorestframework` | 3.18.0 | Serialisation, ViewSets, routers, permissions |
+| `django` | >=5.2, <6.0 | Framework, ORM, migrations, auth primitives |
+| `djangorestframework` | 3.18.0+ | Serialisation, ViewSets, routers, permissions |
 | `djangorestframework-simplejwt` | 5.5.1 | JWT access/refresh tokens with blacklisting |
 | `django-filter` | 26.1 | Filter backend infrastructure |
 | `drf-spectacular` | 0.30.0 | OpenAPI 3 schema, Swagger UI, ReDoc |
@@ -31,10 +30,14 @@ upgrade in its first eighteen months.
 | `django-cors-headers` | 4.9.0 | Cross-origin access for browser clients |
 | `psycopg[binary]` | 3.3.5 | PostgreSQL driver |
 | `pillow` | 12.3.0 | Image handling for `ImageField` |
-| `requests` | 2.34.2 | Outbound HTTP to the GePG gateway |
-| `cryptography` | 50.0.1 | PKCS#12 loading and SHA256withRSA signing for GePG |
+| `requests` | 2.32+ | Outbound HTTP to the GePG gateway |
+| `cryptography` | 44.0+ | PKCS#12 loading and SHA256withRSA signing for GePG |
 | `defusedxml` | 0.7.1 | Parsing untrusted XML from the payment callbacks |
 | `weasyprint` | 66+ | Rendering the certificate PDF from an HTML template |
+| `qrcode` | 8.0+ | The verification QR printed on every certificate |
+
+Versions are the **floors** declared in `pyproject.toml`; a lockfile pins what
+is actually installed. Run `uv tree` to see the resolved versions.
 
 > **`weasyprint` needs system libraries**, and a missing one raises `OSError` at
 > *import* time — which takes the whole app down, not just the PDF endpoint. On
@@ -70,8 +73,8 @@ revoked at all before it expires.
 **`django-filter`** — installed for its infrastructure, though the project's
 list endpoints go through the custom `WhitelistFilterBackend` in
 `apps/core/filters.py` instead. That backend reads plain whitelists off the
-ViewSet rather than requiring a `FilterSet` class per model, which suits a
-template where most endpoints filter on a handful of obvious columns.
+ViewSet rather than requiring a `FilterSet` class per model, which suits an
+API where most endpoints filter on a handful of obvious columns.
 
 **`drf-spectacular`** — generates OpenAPI 3 from the serializers and views that
 already exist, so the schema cannot drift from the implementation the way a
@@ -143,9 +146,9 @@ these differently.
 | Considered | Chosen instead | Why |
 | --- | --- | --- |
 | `django-ninja` | DRF | Better developer experience and built-in OpenAPI, but a far smaller ecosystem and weaker transferable skill |
-| `django-rest-knox` | `simplejwt` | Knox's multiple revocable DB tokens are the closer match to Laravel Sanctum, but JWT is the industry default for SPA backends |
+| `django-rest-knox` | `simplejwt` | Knox's multiple revocable DB tokens are a reasonable alternative, but JWT is the industry default for SPA backends |
 | DRF `TokenAuthentication` | `simplejwt` | One token per user — no multi-device sessions, no selective revocation |
-| `django-guardian` | Django `Group`/`Permission` | Object-level permissions solve a problem this template does not have |
+| `django-guardian` | Django `Group`/`Permission` | Object-level permissions solve a problem this system does not have |
 | Custom role/permission tables | Django `Group`/`Permission` | Reimplements what Django ships, and loses admin integration |
 | `django-safedelete` | Custom `SoftDeleteModel` | Roughly 80 lines, no dependency, and fully understood by whoever maintains it |
 | `psycopg2` | `psycopg` 3 | v2 is maintenance-only |
@@ -156,8 +159,7 @@ these differently.
 
 ## Absent by design
 
-Not oversights — each is a decision to add per project rather than carry in the
-template.
+Not oversights — each is a decision deferred until something actually needs it.
 
 | Not included | Add when |
 | --- | --- |

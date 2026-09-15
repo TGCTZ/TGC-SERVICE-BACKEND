@@ -8,12 +8,15 @@ once settled the gemmologist records the findings; and the stone is
 finally certified with a printable PDF certificate.
 
 ```
-received -> billed -> paid -> identified -> finalized -> certified
+received -> under identification -> billed -> paid -> certified
+         -> ready for collection -> collected
 ```
 
-Each arrow is a service with its own guard, and each stage has a worklist that
-is the queue someone actually works from. The React client lives alongside this
-repository in `TGC-SERVICE-FRONTEND`.
+Identification comes *before* billing, because typing the stone is what
+determines the fee. Each arrow is a service with its own guard, and each stage
+has a worklist that is the queue someone actually works from.
+
+The React client lives alongside this one, in [`../frontend`](../frontend/README.md).
 
 ## Stack
 
@@ -92,6 +95,7 @@ how it is built.
 | [Testing the API](docs/engineering/testing-the-api.md) | Swagger, `api.http`, the query contract, the test suite |
 | [Permissions](docs/engineering/permissions.md) | Roles, permissions, module gates, workflow verbs |
 | [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
+| [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
 | [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
 | [Adding an app](docs/engineering/adding-an-app.md) | The shape every domain app follows |
 | [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |

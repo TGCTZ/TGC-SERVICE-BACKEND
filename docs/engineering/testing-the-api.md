@@ -164,11 +164,14 @@ Responses use DRF's envelope:
 A writable id and a read-only expanded object:
 
 ```json
-{ "stone_type": 3, "stone_type_detail": { "id": 3, "name": "Ruby", "price": "125000.00" } }
+{ "stone_type": 3, "stone_type_detail": { "id": 3, "name": "Ruby", "category": 1 } }
 ```
 
-Write the id; read the `_detail`. This is Django's convention, not Laravel's —
-there is no `stone_type_id` field.
+Write the id; read the `_detail`. There is no `stone_type_id` field.
+
+Note that a stone type carries no price. The identification fee is on the
+**category** it belongs to, so a total cannot be computed client-side from the
+type alone — use `GET /api/v1/bills/preview/?order=` instead.
 
 ---
 
@@ -195,11 +198,26 @@ through its service and leaves an audit trail:
 
 ```
 POST /api/v1/orders/{id}/stones/       register the next stone (labels A, B, C…)
+POST /api/v1/orders/{id}/hold/         {hold_status, reason} — pause or withdraw
+POST /api/v1/orders/{id}/release/      put a held order back to active
 POST /api/v1/stones/{id}/transition/   {to_status, note}
+GET  /api/v1/bills/preview/?order=     what the bill would say, before raising it
 POST /api/v1/bills/generate/           {order}
 GET  /api/v1/orders/worklist/
 GET  /api/v1/bills/worklist/
 ```
+
+Two more reads worth knowing:
+
+```
+GET  /api/v1/config/                   deployment flags the client reads at boot
+GET  /verify/{certificate_number}/     public certificate check — no auth, HTML
+```
+
+The verification route sits **outside** the versioned API on purpose: its URL is
+printed on paper and may be followed years from now, so it must survive a
+version bump. See
+[certificates.md](certificates.md).
 
 Two things worth trying, because they are the guards most likely to regress:
 
@@ -268,6 +286,7 @@ Fixtures in [`conftest.py`](../../conftest.py):
 | `user` | A user with no roles at all |
 | `admin_user` | A user holding `administrator` |
 | `viewer_user` | A user holding `receptionist` — the least privileged station |
+| `gemmologist_user` | A user holding `gemmologist` — the positive case wherever `viewer_user` is the negative one |
 | `roles` | Runs `setup_roles`, so the matrix exists |
 | `auth_client` | A **factory**: `auth_client(admin_user)` returns a credentialed client |
 

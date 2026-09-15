@@ -53,7 +53,7 @@ Everything inherits `BaseModel` - soft delete, audit columns, auditlog
 registration, all free. `ReferenceModel` for a lookup table.
 
 Two exceptions are allowed, and both must justify themselves in the docstring:
-an **append-only ledger** (`StatusHistory`, `CertificateAccessLog`) is a plain
+an **append-only ledger** (`StatusHistory`) is a plain
 `models.Model`, because a soft-deletable audit trail is a contradiction and
 logging the log is circular.
 
@@ -74,6 +74,11 @@ generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2026-0001
 ```
 
 It scans `all_objects`, so a soft-deleted number is never reissued.
+
+There is a second generator, `generate_tgc_report_number()`, for identification
+reports: `TGC/2026/2027/0765`. It is deliberately separate rather than a flag on
+the first, because the separator, the financial-year pair and the reset rule all
+differ — see [certificates.md](certificates.md).
 
 ## 4. Services
 

@@ -1,8 +1,27 @@
 # GEPG Integration - Reconciliation
 
+> ## ⚠️ Specification, not shipped behaviour
+>
+> **Nothing in this document is implemented.** `GEPG_RECONCILIATION_URL` is
+> defined in settings and read by nothing. There is no `Reconciliation` model —
+> `apps/billing/models/` holds only `Bill`, `BillItem`, `Payment` and
+> `ServiceProvider` — no `sucSpPmtReq` handling, no `reconcile_payments`
+> management command, and no scheduler or background worker anywhere in the
+> project.
+>
+> It is kept because the request/response contract and the matching rules are
+> what an implementation would have to satisfy. Read it as a design brief; the
+> models, commands and cron entries it describes are things to build, not things
+> to find.
+
 ## Overview
 
-Reconciliation is the process of requesting and matching payment records between the TGC Mifumo system and GEPG. This ensures that all payments are properly recorded and accounted for in both systems.
+Reconciliation would request payment records from GePG and match them against
+the payments recorded locally, so that the two systems can be shown to agree.
+
+Today the only thing that writes a `Payment` is the notification webhook. If a
+notification is never delivered, nothing notices — which is the gap this
+document exists to close.
 
 ---
 
@@ -49,15 +68,15 @@ Manual/Scheduled Trigger → create_reconciliation_request()
 
 ```bash
 # Reconciliation Endpoint
-GEPG_RECONCILIATION_URL=http://154.118.230.202:80/api/reconciliation/20/request
+GEPG_RECONCILIATION_URL=https://<gepg-host>/api/reconciliation/20/request
 
 # Service Provider Configuration
-GEPG_SP_GRP_CODE=SP99631
-GEPG_SYS_CODE=LTGC002
-GEPG_SP_CODE=SP99631
+GEPG_SP_GRP_CODE=<SP_CODE>
+GEPG_SYS_CODE=<SYS_CODE>
+GEPG_SP_CODE=<SP_CODE>
 
 # Security
-GEPG_USE_DIGITAL_SIGNATURE=True
+GEPG_USE_DIGITAL_SIGNATURE=False   # default; signing is opt-in
 GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 ```
 
@@ -67,13 +86,9 @@ GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 
 ### Service Functions
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py`
-
 #### 1. Create Reconciliation Request
 
 **Function**: `create_reconciliation_request(trx_date=None)`
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:1171-1254`
 
 **Purpose**: Creates and sends a reconciliation request to GEPG
 
@@ -105,8 +120,6 @@ else:
 
 **Function**: `process_reconciliation_response(xml_content, reconciliation)`
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:1366-1427`
-
 **Purpose**: Processes the reconciliation response from GEPG containing payment list
 
 **Parameters**:
@@ -129,8 +142,6 @@ process_reconciliation_response(xml_content, reconciliation)
 #### 3. Continuous Reconciliation Service
 
 **Function**: `continuous_reconciliation_service()`
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:1566-1605`
 
 **Purpose**: Automated reconciliation service that can be scheduled
 
@@ -159,8 +170,8 @@ else:
 <Gepg>
     <sucSpPmtReq>
         <ReqId>a1b2c3d4-e5f6-7890-abcd-ef1234567890</ReqId>
-        <SpGrpCode>SP99631</SpGrpCode>
-        <SysCode>LTGC002</SysCode>
+        <SpGrpCode><SP_CODE></SpGrpCode>
+        <SysCode><SYS_CODE></SysCode>
         <TrxDt>2025-01-12</TrxDt>
         <Rsv1></Rsv1>
         <Rsv2></Rsv2>
@@ -201,7 +212,7 @@ else:
             <PmtTrxDtl>
                 <CustCntrNum>255712345678</CustCntrNum>
                 <GrpBillId>BILL-S-NO-001-47</GrpBillId>
-                <SpCode>SP99631</SpCode>
+                <SpCode><SP_CODE></SpCode>
                 <BillId>BILL-S-NO-001-47</BillId>
                 <BillCtrNum>9944000001234</BillCtrNum>
                 <PspCode>PSP001</PspCode>
@@ -246,8 +257,6 @@ else:
 
 ### Reconciliation Model
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/models.py:118-166`
-
 ```python
 class Reconciliation(models.Model):
     STATUS_CHOICES = [
@@ -291,8 +300,6 @@ class Reconciliation(models.Model):
 ```
 
 ### ReconciliationTransaction Model
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/models.py:169-213`
 
 ```python
 class ReconciliationTransaction(models.Model):
@@ -697,7 +704,7 @@ class Command(BaseCommand):
 
 ```bash
 # Run reconciliation daily at 2 AM
-0 2 * * * cd /home/tgc_mifumo/tgc_mifumo && python manage.py reconcile_payments
+0 2 * * * cd /path/to/backend && uv run python manage.py reconcile_payments
 ```
 
 ---

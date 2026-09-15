@@ -1,8 +1,24 @@
 # GEPG Integration - SMS Notifications
 
+> ## ⚠️ Specification, not shipped behaviour
+>
+> **Nothing in this document is implemented**, and nothing is configured for it
+> either. There is no SMS module, no Beem client, and no `BEEM_AFRICA_API_KEY`
+> or `BEEM_AFRICA_SECRET_KEY` in settings — a `getattr(settings, ...)` for
+> either would always take its default. No customer has ever been sent a message
+> by this system.
+>
+> Every "integration point" listed below names a code path that exists but
+> contains no SMS call. Read this as a design brief.
+>
+> One thing is already in place: `Customer.phone` is normalised to MSISDN form
+> by `normalize_msisdn()` for the bill XML, so the input a future implementation
+> needs is available and already cleaned.
+
 ## Overview
 
-SMS integration provides automated customer notifications for bill creation and payment confirmations. The system uses **Beem Africa SMS API** to send SMS messages to customers.
+SMS notifications would tell a customer their control number when a bill is
+raised, and confirm receipt when it is paid, using the **Beem Africa SMS API**.
 
 ---
 
@@ -46,13 +62,9 @@ BEEM_AFRICA_SECRET_KEY=<set-in-.env>
 
 ### Service Functions
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py`
-
 #### 1. Send Payment SMS
 
 **Function**: `send_payment_sms(phone_number, amount, control_number)`
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:66-154`
 
 **Purpose**: Sends SMS notification with payment instructions
 
@@ -85,8 +97,6 @@ else:
 #### 2. Send SMS for Bill
 
 **Function**: `send_payment_sms_for_bill(bill)`
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:157-184`
 
 **Purpose**: Sends SMS for an existing bill with control number
 
@@ -228,8 +238,6 @@ Pay TZS 50,000 to the control number 9944000001234
 
 ### Normalization Function
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:29-41`
-
 ```python
 def _normalize_msisdn_tz(phone: str | None) -> str:
     """Normalize phone number to Tanzania format (255...)"""
@@ -325,8 +333,6 @@ def _normalize_msisdn_tz(phone: str | None) -> str:
 
 ### 1. Bill Creation (Identification Services)
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:792-797`
-
 ```python
 # Send SMS notification to customer with payment instructions
 sms_sent = send_payment_sms(customer_phone, billing_bill.bill_amount, control_number)
@@ -339,8 +345,6 @@ else:
 ```
 
 ### 2. Bill Creation (Production Shop)
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:1094-1099`
 
 ```python
 # Send SMS notification to customer with payment instructions

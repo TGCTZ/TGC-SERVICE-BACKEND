@@ -40,11 +40,19 @@ station - it is the break-glass account.
 ### Pricing is the stone catalogue
 
 Django permissions are per-model, and the identification fee is a column on
-`StoneType`. So `accountant` holds `gems.change_stonetype`, which also lets them
-rename and recategorise a stone type. The full-stack system kept price on its
-own `StonePrice` table and could separate the two. If that separation matters
-later, expose price through a dedicated action gated on a custom permission
-rather than splitting the model again.
+`StoneCategory`. Changing a price therefore means holding
+`gems.change_stonecategory`, which also lets the holder rename a category.
+
+Grouping the fee with the catalogue rather than with billing is deliberate: a
+price is reference data the lab maintains, not a figure an accountant sets per
+bill. But it does mean the permission to set a price is the permission to edit
+the category. If that separation matters later, expose price through a dedicated
+action gated on a custom permission rather than splitting the model.
+
+> ⚠️ The `accountant` role currently grants `gems.change_stonetype`, not
+> `gems.change_stonecategory`. Since the fee lives on the category, the role
+> that owns pricing cannot presently change a price. Treat this as an open
+> defect rather than a documented rule.
 
 ## Keeping the database in step
 
@@ -100,6 +108,10 @@ An action that is not listed falls back to the method map, so ordinary CRUD and
 
 | Action | Permission |
 |---|---|
+| `POST /orders/{id}/stones/` | `orders.add_stone` |
+| `GET /orders/worklist/` | `orders.add_stone` |
+| `POST /orders/{id}/hold/` | `orders.hold_order` |
+| `POST /orders/{id}/release/` | `orders.hold_order` |
 | `POST /stones/{id}/transition/` | `orders.transition_stone` |
 | `POST /identification-reports/{id}/finalize/` | `identification.finalize_report` |
 | `POST /bills/generate/` | `billing.generate_bill` |

@@ -86,9 +86,15 @@ therefore a known price); weight and the full findings are still blank.
 **Who:** Accountant
 
 1. Once an order's stones are typed, generate **one Bill for the Order**.
-2. The bill has a **line item per stone**, priced by a **flat rate per stone
-   type** (weight does not change the price). The charge is **frozen onto the line
-   item** at billing time, so later price-list changes never alter an issued bill.
+2. The bill has a **line item per stone**, priced by a **flat fee per stone
+   category** — reached through the stone's type, since the fee is a property of
+   the class of work rather than the species (weight does not change it). The
+   charge is **frozen onto the line item** at billing time, so later price-list
+   changes never alter an issued bill.
+
+   Because the fee is not on the stone type, a total cannot be worked out from a
+   stone's type alone. `preview_bill_for_order()` exists so the screen that asks
+   for a bill shows the same figure the bill will carry.
 3. Submit the bill to **GePG**, which returns a **control number**.
 4. The customer pays; payment is confirmed via the GePG callback (a dev
    "simulate payment" path exists for local testing).
@@ -123,10 +129,14 @@ advances toward certification.
 **Who:** Receptionist (issue/handover)
 
 1. A **Certificate is issued per stone**, carrying its identification results.
-2. Each certificate **downloads as a PDF** for printing and handover. There is
-   no public verification page: the document itself is the deliverable, and a
-   revoked certificate still downloads, watermarked REVOKED.
-3. The customer collects the certified stones; handover is recorded.
+2. Each certificate **downloads as a PDF** for printing and handover. A revoked
+   certificate still downloads, watermarked REVOKED.
+3. Every certificate carries a **QR code** pointing at a public verification
+   page, so anyone holding the paper can confirm it is genuine and has not been
+   withdrawn. That page is deliberately anonymous — it describes the stone and
+   names nobody. See
+   [certificates.md](../engineering/certificates.md).
+4. The customer collects the certified stones; handover is recorded.
 
 > **(assumption)** Whether payment must be **complete before** a certificate is
 > issued is open question B4. Certificate re-issuance and revocation are C3.
@@ -180,6 +190,56 @@ collected
 
 ---
 
+## 4b. Where a whole order has got to
+
+A stone has a status. An **order does not** — and that is a deliberate choice
+worth understanding before anyone adds the column.
+
+### The stage is derived, never stored
+
+Progress is per stone, and two stones from one visit can genuinely sit at
+different stages. But a list of orders still has to answer "where is this one?",
+so `OrderStage` gives the honest summary: **the stage the least advanced stone
+has reached**. An order is not ready to collect while one of its stones is still
+on the bench.
+
+```
+identifying → ready_to_bill → awaiting_payment → part_paid
+            → in_findings → certified → ready_for_collection → collected
+```
+
+plus `empty` for an order whose stones have not been entered yet.
+
+It is computed by `order_stage()` in `apps/orders/selectors.py` from the stone
+statuses and the bill, every time it is asked for. Nothing can drift, because
+there is nothing to drift *from* — no second copy of the truth to fall out of
+step when a stone moves.
+
+The cost is that a derived value cannot be filtered in SQL. So the same rule is
+expressed twice: `order_stage()` for one order in Python, and
+`orders_at_stage()` as a queryset filter for the Orders screen. A test asserts
+the two agree across every stage, which is what keeps the duplication safe.
+
+**If you are tempted to store the stage:** the reason not to is that every stone
+transition would then have to remember to recompute it, and the one code path
+that forgets produces an order whose badge disagrees with its own stones.
+
+### The hold is stored
+
+One part of an order's state genuinely cannot be derived: `OrderHold`, which is
+`active`, `on_hold` or `cancelled`.
+
+"The customer asked us to pause" and "the customer withdrew" are facts about the
+*visit*, not about any stone — no combination of stone statuses implies them, so
+they are a real column, with a reason, who set it and when. A hold outranks
+everything else: a held order reads as `on_hold` whatever its stones are doing.
+
+Holding or releasing an order needs the `orders.hold_order` permission, and a
+**paid order cannot be cancelled** — money has changed hands, so the withdrawal
+is a refund question rather than a status change.
+
+---
+
 ## 5. Key business rules (confirmed)
 
 1. **Reception records only a stone count** (`stone_count`); stones are created
@@ -189,7 +249,7 @@ collected
 3. Reference data (colors, species, treatments, prices, …) is **admin-managed**;
    staff select from fixed lists, not free text.
 4. **One Bill per Order** — the customer pays once for the whole batch.
-5. Pricing is a **flat rate per stone type** — weight does not change the price.
+5. Pricing is a **flat fee per stone category** — weight does not change it.
 6. A **certificate is issued per stone**.
 7. Each **stone moves independently** through the pipeline.
 8. Workflow **stages are fixed** (defined in code, not staff-editable).
