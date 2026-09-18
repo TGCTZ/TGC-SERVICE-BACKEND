@@ -8,9 +8,11 @@ from rest_framework.response import Response
 
 from django.http import HttpResponse
 
+from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
 from apps.gems.enums import CertificateStatus
 from apps.orders.models import Stone
+from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
 from .models import Certificate
@@ -87,7 +89,14 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Stones with a finalized report and a paid bill, not yet certified."""
-        queryset = certification_worklist()
+        # Searched explicitly rather than via `filter_queryset`: this action
+        # returns Stones, so the ViewSet's Certificate `search_fields` do not
+        # apply.
+        queryset = search_queryset(
+            certification_worklist(),
+            request.query_params.get("search"),
+            STONE_SEARCH_FIELDS,
+        )
         page = self.paginate_queryset(queryset)
         serializer = StoneSerializer(
             page, many=True, context=self.get_serializer_context()

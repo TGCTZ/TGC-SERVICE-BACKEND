@@ -119,3 +119,74 @@ def test_protected_role_cannot_be_deleted(admin_user, auth_client, roles):
 
     assert response.status_code == 400
     assert Group.objects.filter(name="superadmin").exists()
+
+
+def test_role_permissions_are_addressed_by_app_label_and_codename(
+    roles, admin_user, auth_client
+):
+    """A role's permissions read and write as ``app_label.codename``.
+
+    A bare codename is not unique - ``view_logentry`` exists in both ``admin``
+    and ``auditlog`` - so addressing one without its app label would resolve to
+    two rows and 500 the request.
+    """
+    from django.contrib.auth.models import Group, Permission
+
+    duplicated = Permission.objects.filter(codename="view_logentry")
+    assert duplicated.count() > 1, "expected the collision this test guards"
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["auditlog.view_logentry"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.data["permissions"] == ["auditlog.view_logentry"]
+
+    granted = role.permissions.get()
+    assert granted.content_type.app_label == "auditlog"
+
+
+def test_editing_a_role_permission_set_leaves_its_name_alone(
+    roles, admin_user, auth_client
+):
+    """The permission matrix sends only ``permissions``, and that is enough.
+
+    It never shows the user a name, so it must not have to send one back - a
+    full replace would either be rejected for the missing field or overwrite a
+    name the screen never displayed.
+    """
+    from django.contrib.auth.models import Group
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["users.view_user"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    role.refresh_from_db()
+    assert role.name == "auditor"
+
+
+def test_an_unknown_permission_label_is_rejected(roles, admin_user, auth_client):
+    """A label that names nothing is a 400, not a crash."""
+    from django.contrib.auth.models import Group
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["users.view_nothing"]},
+        format="json",
+    )
+
+    assert response.status_code == 400

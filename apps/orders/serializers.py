@@ -1,5 +1,6 @@
 """Serializers for the order domain."""
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
@@ -60,6 +61,19 @@ class CustomerSerializer(AuditFieldsMixin):
         extra_kwargs = {"phone": {"validators": []}}
 
 
+class StoneReportSerializer(serializers.Serializer):
+    """The slice of an identification report a stone's row needs.
+
+    A plain ``Serializer``, not a ModelSerializer, so ``orders`` does not import
+    the ``identification`` models - the two apps sit at the same layer. It is
+    read-only and exists only to give ``report_detail`` a documented shape.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    report_number = serializers.CharField(read_only=True)
+    is_finalized = serializers.BooleanField(read_only=True)
+
+
 class StoneSerializer(AuditFieldsMixin):
     """One stone in an order.
 
@@ -78,6 +92,7 @@ class StoneSerializer(AuditFieldsMixin):
         source="order.customer.full_name", read_only=True
     )
     customer_phone = serializers.CharField(source="order.customer.phone", read_only=True)
+    report_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = Stone
@@ -94,9 +109,27 @@ class StoneSerializer(AuditFieldsMixin):
             "weight_unit",
             "photo",
             "status",
+            "report_detail",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = (*AuditFieldsMixin.AUDIT_FIELDS, "label", "status", "order")
+
+    @extend_schema_field(StoneReportSerializer)
+    def get_report_detail(self, stone):
+        """The stone's identification report, or ``None`` if it has none yet.
+
+        Just enough for a caller to tell the three states of a stone apart - no
+        report, a draft, a finalized one - without a second request. The findings
+        queue turns on exactly this: a stone with a draft must be edited, not
+        recorded again, because ``Stone.report`` is a OneToOne and a second
+        create is rejected as a duplicate.
+
+        Declared here rather than as a nested serializer so ``orders`` keeps its
+        one-way relationship with ``identification``: the reverse accessor is
+        reached by attribute, never by import.
+        """
+        report = getattr(stone, "report", None)
+        return StoneReportSerializer(report).data if report else None
 
 
 class OrderSerializer(AuditFieldsMixin):

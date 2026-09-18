@@ -10,10 +10,17 @@ def certification_worklist():
     Findings signed off, bill settled, no certificate yet - the three issuance
     guards expressed as a queue, so the screen and the service agree.
     """
-    return Stone.objects.select_related(
-        "order", "order__customer", "stone_type", "report"
-    ).filter(
-        report__is_finalized=True,
-        order__bill__status=BillStatus.PAID,
-        certificate__isnull=True,
+    return (
+        Stone.objects.select_related("order", "order__customer", "stone_type", "report")
+        .filter(
+            report__is_finalized=True,
+            order__bill__status=BillStatus.PAID,
+            certificate__isnull=True,
+        )
+        .order_by(
+            # Signed-off stones in the order they were signed off, `pk` breaking the
+            # tie so a paginated page is stable.
+            "report__identified_at",
+            "pk",
+        )
     )

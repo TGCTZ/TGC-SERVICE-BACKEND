@@ -31,7 +31,8 @@ from apps.gems.tests.factories import (
 )
 from apps.identification.models import InstrumentUsed
 from apps.identification.services import create_report, finalize_report
-from apps.orders.models import StatusHistory
+from apps.identification.tests.factories import create_finalizable_report
+from apps.orders.models import StatusHistory, Stone
 from apps.orders.services import add_stone, update_stone
 from apps.orders.tests.factories import OrderFactory
 
@@ -58,9 +59,9 @@ def _paid_stone(settings, *, weight=Decimal("2.500")):
 def certifiable_stone(settings, user):
     """A paid stone with a finalized report - ready to certify."""
     stone = _paid_stone(settings)
-    report = create_report(
-        stone=stone,
-        user=user,
+    report = create_finalizable_report(
+        stone,
+        user,
         color=ColorFactory(name="Red"),
         origin=OriginFactory(name="Tanzania"),
     )
@@ -165,12 +166,17 @@ def test_certification_needs_a_settled_bill(certifiable_stone, user):
 def test_certification_needs_a_recorded_weight(settings, user):
     """A certificate states a weight, so it must have one.
 
-    The snapshot column is non-null and weight is optional until this point, so
-    without the guard this would surface as an IntegrityError rather than the
-    rule it actually expresses.
+    Defence in depth rather than a state the workflow can reach on its own:
+    ``finalize_report`` now insists on a weight, so the stone is stripped of one
+    *after* sign-off to reach this guard. Without it the missing weight would
+    surface as an IntegrityError on the non-null snapshot column rather than as
+    the rule it actually expresses.
     """
     stone = _paid_stone(settings, weight=None)
-    finalize_report(create_report(stone=stone, user=user), user=user)
+    finalize_report(create_finalizable_report(stone, user), user=user)
+    stone.refresh_from_db()
+    Stone.objects.filter(pk=stone.pk).update(weight=None)
+    stone.refresh_from_db()
 
     with pytest.raises(ServiceError, match="no recorded weight"):
         issue_certificate(stone, user=user)
@@ -313,9 +319,9 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
     species = SpeciesFactory(name="Corundum")
     variety = VarietyFactory(name="Ruby")
     shape = ShapeCutFactory(name="Oval")
-    report = create_report(
-        stone=stone,
-        user=user,
+    report = create_finalizable_report(
+        stone,
+        user,
         species=species,
         variety=variety,
         shape_cut=shape,
@@ -361,7 +367,7 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
 def test_certificate_names_both_gemmologists(settings, user, admin_user):
     """Two signatories, because the document claims two examined the stone."""
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
     finalize_report(report, user=user, verified_by=admin_user)
 
     certificate = issue_certificate(stone, user=user)
@@ -375,7 +381,7 @@ def test_certificate_names_both_gemmologists(settings, user, admin_user):
 def test_the_second_gemmologist_must_be_someone_else(settings, user):
     """A second opinion from the same head is not a second opinion."""
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
 
     with pytest.raises(ServiceError, match="different person"):
         finalize_report(report, user=user, verified_by=user)
@@ -384,7 +390,7 @@ def test_the_second_gemmologist_must_be_someone_else(settings, user):
 def test_certificate_snapshots_the_instruments_used(settings, user):
     """Instruments print as words on the document, so they freeze as words."""
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
     instrument = InstrumentFactory(name="Refractometer")
     InstrumentUsed.objects.create(
         report=report, instrument=instrument, reading="1.762-1.770"
@@ -407,7 +413,7 @@ def test_certificate_context_carries_a_qr_and_the_lab_marks(settings, user):
     """The QR is built at render time and points at the public verify URL."""
     settings.CERTIFICATE_VERIFY_BASE_URL = "https://tgc.example"
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
     finalize_report(report, user=user)
     certificate = issue_certificate(stone, user=user)
 
@@ -425,7 +431,7 @@ def test_certificate_context_carries_a_qr_and_the_lab_marks(settings, user):
 def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, client):
     """Whoever holds the paper can check it without an account."""
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
     finalize_report(report, user=user)
     certificate = issue_certificate(stone, user=user)
 
@@ -442,7 +448,7 @@ def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, c
 def test_verify_page_says_so_when_a_certificate_is_revoked(settings, user, client):
     """The whole reason a revoked certificate keeps its number and its row."""
     stone = _paid_stone(settings)
-    report = create_report(stone=stone, user=user)
+    report = create_finalizable_report(stone, user)
     finalize_report(report, user=user)
     certificate = issue_certificate(stone, user=user)
     revoke_certificate(certificate, user=user)

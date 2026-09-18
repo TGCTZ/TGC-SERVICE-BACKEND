@@ -16,4 +16,7 @@ def findings_worklist():
         Stone.objects.select_related("order", "order__customer", "stone_type", "report")
         .filter(order__bill__status=BillStatus.PAID)
         .exclude(report__is_finalized=True)
+        # Grouped by the parcel they came in on, which is how they sit on the
+        # bench; `pk` breaks the tie so a paginated page is stable.
+        .order_by("order__received_date", "order_id", "label", "pk")
     )

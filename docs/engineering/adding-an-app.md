@@ -70,15 +70,15 @@ models.UniqueConstraint(
 Reference numbers come from `apps/core/services.py`:
 
 ```python
-generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2026-0001
+generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2026-2027-0001
 ```
 
 It scans `all_objects`, so a soft-deleted number is never reissued.
 
-There is a second generator, `generate_tgc_report_number()`, for identification
-reports: `TGC/2026/2027/0765`. It is deliberately separate rather than a flag on
-the first, because the separator, the financial-year pair and the reset rule all
-differ — see [certificates.md](certificates.md).
+Every reference takes this one shape, identification report numbers included
+(`TGC-2026-2027-0765`). The year pair is the **financial** year — July to June,
+answered by `financial_year()` — and the sequence restarts with it. See
+[certificates.md](certificates.md).
 
 ## 4. Services
 

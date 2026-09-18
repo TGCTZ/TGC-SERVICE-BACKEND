@@ -195,7 +195,9 @@ class IdentityDetailViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 class RoleViewSet(viewsets.ModelViewSet):
     """CRUD over roles, which are Django groups under the hood."""
 
-    queryset = Group.objects.prefetch_related("permissions").order_by("name")
+    queryset = Group.objects.prefetch_related("permissions__content_type").order_by(
+        "name"
+    )
     serializer_class = RoleSerializer
     permission_classes = [StrictModelPermissions]
     search_fields = ("name",)
@@ -227,9 +229,15 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     @extend_schema(responses={200: dict})
     @action(detail=False, methods=["get"])
     def grouped(self, request):
-        """Permissions bucketed by app label, for rendering a role editor."""
+        """Permissions bucketed by app label, for rendering a role editor.
+
+        Values are full ``app_label.codename`` labels rather than bare
+        codenames, so they are the same strings a role's own ``permissions``
+        array holds and the editor can write back exactly what it read. A bare
+        codename would also be ambiguous - see ``PermissionLabelField``.
+        """
         buckets: dict[str, list[str]] = {}
         for permission in self.filter_queryset(self.get_queryset()):
             app_label = permission.content_type.app_label
-            buckets.setdefault(app_label, []).append(permission.codename)
+            buckets.setdefault(app_label, []).append(f"{app_label}.{permission.codename}")
         return Response(buckets)

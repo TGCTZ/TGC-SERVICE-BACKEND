@@ -598,7 +598,7 @@ logger.info(f"Transaction ID: {trx_id}, Amount: {paid_amount}")
 
 ```python
 # Get all payments for a bill
-payments = Payment.objects.filter(bill__bill_number="BILL-2026-0001")
+payments = Payment.objects.filter(bill__bill_number="BILL-2026-2027-0001")
 
 # Get payments by date
 from django.utils import timezone

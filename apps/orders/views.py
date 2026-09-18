@@ -12,6 +12,7 @@ from apps.core.permissions import StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 
 from .models import Customer, Order, StatusHistory, Stone
+from .search import ORDER_SEARCH_FIELDS, STONE_SEARCH_FIELDS
 from .selectors import (
     annotate_identified,
     identification_worklist,
@@ -73,12 +74,7 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     queryset = Order.objects.select_related("customer", "bill").prefetch_related("stones")
     serializer_class = OrderSerializer
 
-    search_fields = (
-        "reference_number",
-        "customer__first_name",
-        "customer__last_name",
-        "customer__phone",
-    )
+    search_fields = ORDER_SEARCH_FIELDS
     filter_fields = ("customer", "received_date")
     ordering_fields = ("id", "reference_number", "received_date", "created_at")
     date_filter_fields = ("created_at", "updated_at", "received_date")
@@ -199,12 +195,14 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over stones, plus status transitions."""
 
+    # `report` is serialised on every stone row - the queues read it to tell a
+    # stone waiting for findings from one whose draft is already open.
     queryset = Stone.objects.select_related(
-        "order", "order__customer", "stone_type", "stone_type__category"
+        "order", "order__customer", "stone_type", "stone_type__category", "report"
     )
     serializer_class = StoneSerializer
 
-    search_fields = ("label", "order__reference_number", "stone_type__name")
+    search_fields = STONE_SEARCH_FIELDS
     filter_fields = ("order", "stone_type", "status", "weight_unit")
     ordering_fields = ("id", "label", "status", "weight", "created_at")
 

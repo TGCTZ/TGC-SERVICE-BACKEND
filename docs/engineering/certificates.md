@@ -70,7 +70,7 @@ sit above both in the layer order.
 
 On success the stone transitions to `certified`, and the certificate takes a
 number from `generate_reference_number(Certificate, "certificate_number",
-"CERT")` — `CERT-2026-0001`, scanning `all_objects` so a soft-deleted row never
+"CERT")` — `CERT-2026-2027-0001`, scanning `all_objects` so a soft-deleted row never
 reissues a number it once held.
 
 ## Revoking
@@ -239,32 +239,28 @@ that change state.
 ## Report numbers
 
 The number printed as REPORT NO is not the certificate number. It is minted when
-the identification report is created, by `generate_tgc_report_number()` in
-`apps/core/services.py`:
+the identification report is created, by `generate_reference_number()` in
+`apps/core/services.py` — the same generator every other reference uses:
 
 ```
-TGC/2026/2027/0765
-    └──┬───┘ └─┬┘
+TGC-2026-2027-0765
+    └───┬────┘ └─┬┘
   financial year  sequence
 ```
 
 The Tanzanian financial year runs **July to June**, so August 2026 and March
 2027 both fall in `2026/2027`. `financial_year()` answers that question.
 
-Four things about this function are decisions rather than details:
+Three things about this are decisions rather than details:
 
-- **It is separate from `generate_reference_number()` on purpose.** The
-  separator, the two-year component and the reset rule all differ; one function
-  serving both would be a thicket of flags.
-- **The sequence never resets.** A `2027/2028` reference continues where
-  `2026/2027` left off. The year pair says *when*; the sequence says *how many*.
-  This is what the legacy scheme could not do: it derived the number from the
-  order's digits, so every stone in a multi-stone order received the **same**
-  report number. A single ever-increasing counter fixes that while keeping the
-  printed shape identical.
-- **Only `TGC/`-prefixed rows are scanned.** Numbers from the earlier scheme are
-  ignored rather than parsed and misread, which is what leaves the existing
-  `RPT-2026-NNNN` references alone.
+- **One generator, one shape.** Orders, bills, reports and certificates all read
+  `PREFIX-<fy-start>-<fy-end>-NNNN`, so a number read aloud or typed into a
+  search box is recognisable without knowing which document it came from. Report
+  numbers used to carry slashes, which made them unsafe in a filename or a URL
+  path segment — `certificate_number` reaches both.
+- **The sequence restarts each financial year.** The year pair says *when*; the
+  sequence says *how many since July*. Each prefix counts on its own, because
+  the scan is stemmed on the prefix as well as the year pair.
 - **The width is fixed at four digits.** `Max()` orders lexically, which is
   correct only because the sequence is zero-padded to a constant width. Changing
   the width is not a cosmetic change.

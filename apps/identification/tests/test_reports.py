@@ -18,6 +18,7 @@ from apps.gems.tests.factories import (
 from apps.identification.models import IdentificationReport, InstrumentUsed
 from apps.identification.selectors import findings_worklist
 from apps.identification.services import create_report, finalize_report, update_report
+from apps.identification.tests.factories import create_finalizable_report
 from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
 
@@ -47,12 +48,13 @@ def billed_stone(settings):
 
 
 def test_create_report_allocates_a_number(paid_stone, user):
-    """The service, not the client, mints TGC/<fy-start>/<fy-end>/NNNN."""
+    """The service, not the client, mints TGC-<fy-start>-<fy-end>-NNNN."""
     report = create_report(stone=paid_stone, user=user)
 
-    # The shape the lab already issues on paper; the year pair is a financial
-    # year, so it is asserted as a shape rather than against today's calendar.
-    assert re.fullmatch(r"TGC/\d{4}/\d{4}/\d{4}", report.report_number)
+    # The shape every reference in the system takes; the year pair is a
+    # financial year, so it is asserted as a shape rather than against today's
+    # calendar.
+    assert re.fullmatch(r"TGC-\d{4}-\d{4}-\d{4}", report.report_number)
     assert report.identified_by == user
     assert not report.is_finalized
 
@@ -90,7 +92,7 @@ def test_a_draft_report_can_be_edited(paid_stone, user):
 
 def test_finalizing_locks_the_report(paid_stone, user):
     """The lock is one-way and stamps who signed it off."""
-    report = create_report(stone=paid_stone, user=user)
+    report = create_finalizable_report(paid_stone, user)
     finalize_report(report, user=user)
 
     report.refresh_from_db()
@@ -105,7 +107,7 @@ def test_a_finalized_report_cannot_be_edited(paid_stone, user):
     A certificate quotes the report, so findings that could still change after
     finalization would make an issued certificate a claim about nothing.
     """
-    report = create_report(stone=paid_stone, user=user)
+    report = create_finalizable_report(paid_stone, user)
     finalize_report(report, user=user)
 
     with pytest.raises(ServiceError, match="finalized report cannot be edited"):
@@ -114,7 +116,7 @@ def test_a_finalized_report_cannot_be_edited(paid_stone, user):
 
 def test_a_report_cannot_be_finalized_twice(paid_stone, user):
     """There is no un-finalize, so a second call is a mistake worth reporting."""
-    report = create_report(stone=paid_stone, user=user)
+    report = create_finalizable_report(paid_stone, user)
     finalize_report(report, user=user)
 
     with pytest.raises(ServiceError, match="already finalized"):
@@ -126,7 +128,7 @@ def test_findings_worklist_holds_paid_unfinalized_stones(paid_stone, billed_ston
     assert paid_stone in findings_worklist()
     assert billed_stone not in findings_worklist()
 
-    report = create_report(stone=paid_stone, user=user)
+    report = create_finalizable_report(paid_stone, user)
     assert paid_stone in findings_worklist(), "a draft is still work in progress"
 
     finalize_report(report, user=user)
@@ -146,7 +148,7 @@ def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_cl
     )
 
     assert response.status_code == 201, response.data
-    assert re.fullmatch(r"TGC/\d{4}/\d{4}/\d{4}", response.data["report_number"])
+    assert re.fullmatch(r"TGC-\d{4}-\d{4}-\d{4}", response.data["report_number"])
     assert response.data["identified_by_label"] is not None
 
 
@@ -176,7 +178,7 @@ def test_finalize_endpoint_requires_the_finalize_permission(
 
 def test_patching_a_finalized_report_is_refused(paid_stone, admin_user, auth_client):
     """The lock holds over the API, not just in the service."""
-    report = create_report(stone=paid_stone)
+    report = create_finalizable_report(paid_stone, None)
     client = auth_client(admin_user)
     client.post(f"/api/v1/identification-reports/{report.pk}/finalize/")
 
@@ -187,7 +189,7 @@ def test_patching_a_finalized_report_is_refused(paid_stone, admin_user, auth_cli
 
     assert response.status_code == 400
     report.refresh_from_db()
-    assert report.conclusion == ""
+    assert report.conclusion == "Natural ruby."
 
 
 def test_is_finalized_is_not_directly_writable(paid_stone, admin_user, auth_client):
@@ -211,7 +213,7 @@ def test_instruments_cannot_be_added_to_a_finalized_report(
     paid_stone, admin_user, auth_client
 ):
     """The lock covers the readings too, or it means nothing."""
-    report = create_report(stone=paid_stone)
+    report = create_finalizable_report(paid_stone, None)
     client = auth_client(admin_user)
 
     first = client.post(
@@ -312,7 +314,7 @@ def test_a_finalized_report_refuses_a_weight_change(paid_stone, admin_user, auth
     Otherwise a certificate could quote a weight that was edited after it was
     signed off.
     """
-    report = create_report(stone=paid_stone, weight=Decimal("3.250"))
+    report = create_finalizable_report(paid_stone, None, weight=Decimal("3.250"))
     client = auth_client(admin_user)
     client.post(f"/api/v1/identification-reports/{report.pk}/finalize/")
 
@@ -323,3 +325,79 @@ def test_a_finalized_report_refuses_a_weight_change(paid_stone, admin_user, auth
     assert response.status_code == 400
     paid_stone.refresh_from_db()
     assert paid_stone.weight == Decimal("3.250")
+
+
+def test_finalize_needs_the_required_findings(paid_stone, user):
+    """A blank report cannot be locked, and the refusal names everything missing.
+
+    The form stays permissive so a sitting at the bench can be saved half-done;
+    this is where that permissiveness stops, because the next step after
+    finalizing is a certificate quoting the findings.
+    """
+    report = create_report(stone=paid_stone, user=user)
+
+    with pytest.raises(ServiceError) as refusal:
+        finalize_report(report, user=user)
+
+    # Every missing field at once, not just the first: a gemmologist should not
+    # have to discover them one failed click at a time.
+    message = str(refusal.value)
+    for field in ("species", "colour", "weight", "conclusion"):
+        assert field in message
+
+    report.refresh_from_db()
+    assert not report.is_finalized
+
+
+def test_finalize_names_only_what_is_still_missing(paid_stone, user):
+    """The three that are answered drop out of the message."""
+    report = create_finalizable_report(paid_stone, user, conclusion="")
+
+    with pytest.raises(ServiceError, match="conclusion") as refusal:
+        finalize_report(report, user=user)
+
+    assert "species" not in str(refusal.value)
+
+
+def test_a_complete_report_finalizes(paid_stone, user):
+    """The rule is a gate, not a wall."""
+    report = create_finalizable_report(paid_stone, user)
+    finalize_report(report, user=user)
+
+    report.refresh_from_db()
+    assert report.is_finalized
+
+
+def test_findings_worklist_is_searchable(paid_stone, admin_user, auth_client):
+    """The queue is worked by looking for a parcel, so it must be searchable."""
+    client = auth_client(admin_user)
+    reference = paid_stone.order.reference_number
+
+    hit = client.get("/api/v1/identification-reports/worklist/", {"search": reference})
+    assert hit.status_code == 200
+    assert [row["id"] for row in hit.data["results"]] == [paid_stone.pk]
+
+    miss = client.get(
+        "/api/v1/identification-reports/worklist/", {"search": "no-such-parcel"}
+    )
+    assert miss.data["results"] == []
+
+
+def test_findings_worklist_row_carries_its_report(paid_stone, admin_user, auth_client):
+    """A stone with a draft must be edited, not recorded again.
+
+    ``Stone.report`` is a OneToOne, so a second create is rejected as a
+    duplicate - the row has to say which of the two actions it is offering.
+    """
+    client = auth_client(admin_user)
+
+    before = client.get("/api/v1/identification-reports/worklist/")
+    assert before.data["results"][0]["report_detail"] is None
+
+    report = create_report(stone=paid_stone)
+
+    after = client.get("/api/v1/identification-reports/worklist/")
+    detail = after.data["results"][0]["report_detail"]
+    assert detail["id"] == report.pk
+    assert detail["report_number"] == report.report_number
+    assert detail["is_finalized"] is False

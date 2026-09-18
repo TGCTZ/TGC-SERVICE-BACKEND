@@ -6,7 +6,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.exceptions import ServiceError
+from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
 from .models import IdentificationReport, InstrumentUsed
@@ -104,7 +106,11 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Paid stones whose findings are not finalized yet."""
-        queryset = findings_worklist()
+        # Searched explicitly rather than via `filter_queryset`: this action
+        # returns Stones, so the ViewSet's report `search_fields` do not apply.
+        queryset = search_queryset(
+            findings_worklist(), request.query_params.get("search"), STONE_SEARCH_FIELDS
+        )
         page = self.paginate_queryset(queryset)
         serializer = StoneSerializer(
             page, many=True, context=self.get_serializer_context()

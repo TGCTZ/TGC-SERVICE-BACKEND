@@ -105,14 +105,9 @@ class WhitelistFilterBackend(BaseFilterBackend):
 
     def _search(self, params, queryset, view):
         """OR an ``icontains`` match across the view's ``search_fields``."""
-        term = params.get("search", "").strip()
-        fields = getattr(view, "search_fields", None)
-        if not term or not fields:
-            return queryset
-        condition = Q()
-        for field in fields:
-            condition |= Q(**{f"{field}__icontains": term})
-        return queryset.filter(condition)
+        return search_queryset(
+            queryset, params.get("search", ""), getattr(view, "search_fields", None)
+        )
 
     def _filter(self, params, queryset, view):
         """Apply ``filter[...]`` parameters against the whitelists."""
@@ -202,3 +197,27 @@ class WhitelistFilterBackend(BaseFilterBackend):
                 }
             )
         return parameters
+
+
+def search_queryset(queryset, term: str, fields):
+    """OR an ``icontains`` match for ``term`` across ``fields``.
+
+    Split out of :class:`WhitelistFilterBackend` so the worklist actions can
+    reuse it. They cannot go through ``filter_queryset``: a worklist returns a
+    different model from the ViewSet hosting it - ``/bills/worklist`` returns
+    Orders, ``/identification-reports/worklist`` returns Stones - so the view's
+    own ``search_fields`` would be applied to the wrong model and raise
+    ``FieldError``. Those actions pass the right whitelist explicitly instead.
+
+    Args:
+        queryset: The queryset to narrow.
+        term: The raw search term; blank or whitespace is a no-op.
+        fields: Field lookups to OR across. Falsy is a no-op.
+    """
+    term = (term or "").strip()
+    if not term or not fields:
+        return queryset
+    condition = Q()
+    for field in fields:
+        condition |= Q(**{f"{field}__icontains": term})
+    return queryset.filter(condition)

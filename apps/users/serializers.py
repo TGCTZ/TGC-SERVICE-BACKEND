@@ -57,15 +57,51 @@ class PermissionSerializer(serializers.ModelSerializer):
         return f"{obj.content_type.app_label}.{obj.codename}"
 
 
+class PermissionLabelField(serializers.RelatedField):
+    """A permission addressed as ``app_label.codename``.
+
+    A bare codename is not unique. ``view_logentry`` exists in both ``admin``
+    and ``auditlog``, so resolving one would raise ``MultipleObjectsReturned``
+    and turn a save into a 500 - and on the way out, two different permissions
+    would serialise to the same string, leaving a client unable to tell which
+    one a role actually holds.
+
+    The app label is what disambiguates them, and ``app_label.codename`` is
+    already the form Django's own ``user.has_perm`` takes, so the wire format
+    matches the vocabulary the rest of the system uses.
+    """
+
+    default_error_messages = {
+        "invalid": "Expected a permission as 'app_label.codename'.",
+        "does_not_exist": "Permission '{label}' does not exist.",
+    }
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("queryset", Permission.objects.select_related("content_type"))
+        super().__init__(**kwargs)
+
+    def to_representation(self, value: Permission) -> str:
+        """Render the permission as ``app_label.codename``."""
+        return f"{value.content_type.app_label}.{value.codename}"
+
+    def to_internal_value(self, data) -> Permission:
+        """Resolve ``app_label.codename`` back to a permission."""
+        if not isinstance(data, str) or data.count(".") != 1:
+            self.fail("invalid")
+
+        app_label, codename = data.split(".")
+        try:
+            return self.get_queryset().get(
+                content_type__app_label=app_label, codename=codename
+            )
+        except Permission.DoesNotExist:
+            self.fail("does_not_exist", label=data)
+
+
 class RoleSerializer(serializers.ModelSerializer):
     """A role, exposed as a group plus its permission labels."""
 
-    permissions = serializers.SlugRelatedField(
-        many=True,
-        slug_field="codename",
-        queryset=Permission.objects.all(),
-        required=False,
-    )
+    permissions = PermissionLabelField(many=True, required=False)
     is_protected = serializers.SerializerMethodField()
     user_count = serializers.SerializerMethodField()
 

@@ -8,9 +8,11 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.http import Http404
 
+from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 from apps.orders.models import Order
+from apps.orders.search import ORDER_SEARCH_FIELDS
 from apps.orders.serializers import OrderSerializer
 
 from .dev import simulate_payment
@@ -143,7 +145,11 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Orders with every stone identified and no bill yet."""
-        queryset = billing_worklist()
+        # Searched explicitly rather than via `filter_queryset`: this action
+        # returns Orders, so the ViewSet's Bill `search_fields` do not apply.
+        queryset = search_queryset(
+            billing_worklist(), request.query_params.get("search"), ORDER_SEARCH_FIELDS
+        )
         page = self.paginate_queryset(queryset)
         serializer = OrderSerializer(
             page, many=True, context=self.get_serializer_context()

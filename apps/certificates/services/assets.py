@@ -142,7 +142,7 @@ def verification_url(certificate_number: str) -> str:
     """The public URL a certificate's QR code points at.
 
     Args:
-        certificate_number: The certificate's own number, e.g. ``CERT-2026-0001``.
+        certificate_number: The certificate's own number, e.g. ``CERT-2026-2027-0001``.
     """
     base = settings.CERTIFICATE_VERIFY_BASE_URL.rstrip("/")
     return f"{base}/verify/{certificate_number}/"

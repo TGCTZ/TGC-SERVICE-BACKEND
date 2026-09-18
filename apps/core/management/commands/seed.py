@@ -107,8 +107,10 @@ class Command(BaseCommand):
         }
         for name, category in STONE_TYPES:
             StoneTypeFactory(name=name, category=categories[category])
+        species_list = []
         for species_name, varieties in SPECIES_VARIETIES.items():
             species = SpeciesFactory(name=species_name)
+            species_list.append(species)
             for variety_name in varieties:
                 VarietyFactory(name=variety_name, species=species)
         colors = [ColorFactory(name=name, group=group) for name, group in COLORS]
@@ -173,8 +175,12 @@ class Command(BaseCommand):
                             stone,
                             weight=Decimal(f"{random.uniform(0.5, 12):.3f}"),
                         )
+                        # Species, colour, weight and conclusion are what
+                        # `finalize_report` insists on, so a seeded report is
+                        # complete enough to sign off and certify.
                         report = create_report(
                             stone=stone,
+                            species=random.choice(species_list),
                             color=random.choice(colors),
                             origin=random.choice(origins),
                             conclusion="Seeded findings.",

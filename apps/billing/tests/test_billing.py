@@ -417,3 +417,22 @@ def test_config_reports_whether_simulation_is_available(
 
     settings.GEPG_SIMULATE = False
     assert not auth_client(admin_user).get("/api/v1/config/").data["simulate_payments"]
+
+
+def test_billing_worklist_is_searchable(billable_order, admin_user, auth_client):
+    """Searched by the customer as readily as by the reference.
+
+    The action returns Orders while the ViewSet is a Bill one, so this covers the
+    explicit whitelist it passes rather than the ViewSet's own `search_fields` -
+    which would raise `FieldError` against an Order queryset.
+    """
+    client = auth_client(admin_user)
+    customer = billable_order.customer
+
+    for term in (billable_order.reference_number, customer.last_name, customer.phone):
+        hit = client.get("/api/v1/bills/worklist/", {"search": term})
+        assert hit.status_code == 200, hit.data
+        assert [row["id"] for row in hit.data["results"]] == [billable_order.pk], term
+
+    miss = client.get("/api/v1/bills/worklist/", {"search": "no-such-order"})
+    assert miss.data["results"] == []

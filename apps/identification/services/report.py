@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_tgc_report_number
+from apps.core.services import generate_reference_number
 from apps.gems.enums import BillStatus
 from apps.orders.services import update_stone
 
@@ -61,10 +61,12 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
 
     report = IdentificationReport(
         stone=stone,
-        # TGC/<fy-start>/<fy-end>/<seq> - this is the number printed on the
-        # certificate as REPORT NO, and it is what the lab already issues on
-        # paper, so it is allocated in that shape rather than translated later.
-        report_number=generate_tgc_report_number(IdentificationReport, "report_number"),
+        # TGC-<fy-start>-<fy-end>-<seq> - printed on the certificate as
+        # REPORT NO, and the same shape as every other reference the system
+        # issues, so it survives a filename and a URL path segment intact.
+        report_number=generate_reference_number(
+            IdentificationReport, "report_number", "TGC"
+        ),
         **fields,
     )
     if user is not None:
@@ -111,6 +113,39 @@ def update_report(
     return report
 
 
+#: What a report must answer before it can be locked, as ``(accessor, label)``.
+#:
+#: Deliberately short. The form stays permissive so a sitting at the bench can be
+#: saved half-done, which means this is the only place completeness is ever
+#: checked - and a certificate quotes these four: what the stone is, what it
+#: looks like, how big it is, and the verdict. Everything else is situational; a
+#: stone may legitimately defeat a test and still deserve a certificate.
+#:
+#: ``weight`` is read through the stone, not the report: the form collects it
+#: alongside the findings but ``_pop_stone_fields`` writes it to the stone, which
+#: is also where :func:`apps.certificates.services.issue_certificate` looks.
+FINALIZE_REQUIRED_FIELDS = (
+    ("species", "species"),
+    ("color", "colour"),
+    ("stone.weight", "weight"),
+    ("conclusion", "conclusion"),
+)
+
+
+def _missing_for_finalize(report: IdentificationReport) -> list[str]:
+    """Labels of the required findings this report has not answered yet."""
+    missing = []
+    for accessor, label in FINALIZE_REQUIRED_FIELDS:
+        value = report
+        for part in accessor.split("."):
+            value = getattr(value, part, None)
+        # A blank CharField is "" and an unset FK or decimal is None; both mean
+        # unanswered, so falsiness is the right test for all four.
+        if not value:
+            missing.append(label)
+    return missing
+
+
 def finalize_report(
     report: IdentificationReport, *, user=None, verified_by=None
 ) -> IdentificationReport:
@@ -131,11 +166,18 @@ def finalize_report(
         verified_by: The second gemmologist, who checked the findings.
 
     Raises:
-        ServiceError: If the report is already finalized, or if the same person
-            is named as both gemmologists.
+        ServiceError: If the report is already finalized, if required findings
+            are still blank, or if the same person is named as both
+            gemmologists.
     """
     if report.is_finalized:
         raise ServiceError("Report is already finalized.")
+
+    # Every missing field at once, not the first one: a gemmologist away from the
+    # bench should learn everything still outstanding in a single round trip.
+    missing = _missing_for_finalize(report)
+    if missing:
+        raise ServiceError("Record the {} before finalizing.".format(", ".join(missing)))
 
     # A second opinion from the same head is not a second opinion. Caught here
     # rather than in the serializer because it is the rule the document's own
