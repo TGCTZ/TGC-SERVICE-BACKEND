@@ -5,8 +5,12 @@ from decimal import Decimal
 
 import pytest
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
+from apps.certificates.selectors import certification_worklist
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import WeightUnit
 from apps.gems.tests.factories import (
@@ -19,6 +23,7 @@ from apps.identification.models import IdentificationReport, InstrumentUsed
 from apps.identification.selectors import findings_worklist
 from apps.identification.services import create_report, finalize_report, update_report
 from apps.identification.tests.factories import create_finalizable_report
+from apps.orders.serializers import StoneSerializer
 from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
 
@@ -48,13 +53,13 @@ def billed_stone(settings):
 
 
 def test_create_report_allocates_a_number(paid_stone, user):
-    """The service, not the client, mints TGC-<fy-start>-<fy-end>-NNNN."""
+    """The service, not the client, mints TGC-<fy>-NNNN."""
     report = create_report(stone=paid_stone, user=user)
 
     # The shape every reference in the system takes; the year pair is a
     # financial year, so it is asserted as a shape rather than against today's
     # calendar.
-    assert re.fullmatch(r"TGC-\d{4}-\d{4}-\d{4}", report.report_number)
+    assert re.fullmatch(r"TGC-\d{4}-\d{4}", report.report_number)
     assert report.identified_by == user
     assert not report.is_finalized
 
@@ -148,7 +153,7 @@ def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_cl
     )
 
     assert response.status_code == 201, response.data
-    assert re.fullmatch(r"TGC-\d{4}-\d{4}-\d{4}", response.data["report_number"])
+    assert re.fullmatch(r"TGC-\d{4}-\d{4}", response.data["report_number"])
     assert response.data["identified_by_label"] is not None
 
 
@@ -401,3 +406,119 @@ def test_findings_worklist_row_carries_its_report(paid_stone, admin_user, auth_c
     assert detail["id"] == report.pk
     assert detail["report_number"] == report.report_number
     assert detail["is_finalized"] is False
+
+
+def test_discarding_a_report_frees_the_stone(paid_stone, user):
+    """The delete dialog promises the stone returns to the queue, so it must.
+
+    The relation is a ForeignKey with a conditional unique constraint rather
+    than a OneToOne for exactly this: a OneToOne's unique index covers
+    soft-deleted rows, so a discarded report would occupy its stone forever and
+    the stone could never be reported on again.
+    """
+    first = create_report(stone=paid_stone, user=user)
+    first.delete()
+
+    assert paid_stone in findings_worklist()
+
+    second = create_report(stone=paid_stone, user=user)
+    assert second.pk != first.pk
+
+    # The stone reads back the live report, not the discarded one.
+    paid_stone.refresh_from_db()
+    assert paid_stone.report == second
+
+
+def test_a_stone_cannot_hold_two_live_reports(paid_stone, user):
+    """Refused in the service, so the caller is told what to do instead."""
+    create_report(stone=paid_stone, user=user)
+
+    with pytest.raises(ServiceError, match="already has a report"):
+        create_report(stone=paid_stone, user=user)
+
+
+def test_a_stone_with_no_report_reads_as_none(paid_stone):
+    """`Stone.report` stands in for the OneToOne accessor it replaced."""
+    assert paid_stone.report is None
+
+
+def test_a_discarded_report_is_not_findings(paid_stone, user):
+    """A finalized report that was discarded does not certify its stone.
+
+    The queues join to the report table, and a database join sees soft-deleted
+    rows - the model's default manager does not reach into one. Without the
+    `deleted_at` condition on that join, a discarded sign-off would still hold
+    the stone out of the findings queue and push it into the certification one.
+    """
+    report = create_finalizable_report(paid_stone, user)
+    finalize_report(report, user=user)
+    assert paid_stone not in findings_worklist()
+
+    report.delete()
+    assert paid_stone in findings_worklist(), "discarded findings are not findings"
+    assert paid_stone not in certification_worklist()
+
+
+def test_restoring_is_refused_when_the_stone_was_reported_on_again(
+    paid_stone, admin_user, auth_client
+):
+    """The newer report is the real record, so the older stays in the bin.
+
+    Without this the restore would put two live reports on one stone, which the
+    conditional constraint answers with an IntegrityError and a 500.
+    """
+    first = create_report(stone=paid_stone)
+    first.delete()
+    create_report(stone=paid_stone)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/identification-reports/{first.pk}/restore/"
+    )
+
+    assert response.status_code == 400
+    assert "newer report" in str(response.data)
+    first.refresh_from_db()
+    assert first.is_deleted
+
+
+def test_restoring_works_when_the_stone_is_still_free(
+    paid_stone, admin_user, auth_client
+):
+    """Nothing took the slot, so the report comes back."""
+    report = create_report(stone=paid_stone)
+    report.delete()
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/identification-reports/{report.pk}/restore/"
+    )
+
+    assert response.status_code == 200, response.data
+    report.refresh_from_db()
+    assert not report.is_deleted
+    assert paid_stone.report == report
+
+
+def test_the_findings_queue_costs_a_constant_number_of_queries(settings, user):
+    """Two queries whatever the queue's length: the rows, then their reports.
+
+    `Stone.report` reads a reverse FK, which is one query per row unless the
+    queryset prefetches it - so the queue is exactly the kind of screen where
+    that mistake would go unnoticed until the bench had a real backlog.
+    """
+    settings.GEPG_SIMULATE = True
+    stone_type = StoneTypeFactory(price=Decimal("500.00"))
+    for _ in range(6):
+        order = OrderFactory(stone_count=1)
+        stone = add_stone(order, stone_type=stone_type)
+        simulate_payment(generate_bill_for_order(order))
+        stone.refresh_from_db()
+        create_report(stone=stone, user=user)
+
+    with CaptureQueriesContext(connection) as queries:
+        rows = StoneSerializer(list(findings_worklist()), many=True).data
+
+    assert len(rows) == 6
+    assert all(row["report_detail"] for row in rows)
+    assert len(queries.captured_queries) == 2, [
+        q["sql"] for q in queries.captured_queries
+    ]

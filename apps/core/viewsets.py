@@ -64,10 +64,25 @@ class SoftDeleteViewSetMixin:
                 {"detail": "This record is not deleted."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        self.check_restorable(instance)
         instance.restore()
         self._log(instance, LogEntry.Action.UPDATE, restored=True)
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def check_restorable(self, instance):
+        """Refuse a restore that a conditional unique constraint would reject.
+
+        A constraint written ``WHERE deleted_at IS NULL`` lets a soft-deleted row
+        sit alongside a live one - that is the point of it - but restoring the
+        old row would then put two live rows where one is allowed, which the
+        database answers with an IntegrityError and a 500. A ViewSet whose model
+        carries such a constraint overrides this and raises ``ServiceError``, so
+        the caller gets the rule rather than a crash.
+
+        Args:
+            instance: The soft-deleted row about to be restored.
+        """
 
     def _log(self, instance, action_type, *, restored: bool = False):
         """Write an explicit audit entry for a soft delete or restore.

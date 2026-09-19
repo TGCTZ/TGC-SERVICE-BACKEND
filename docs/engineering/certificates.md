@@ -70,7 +70,7 @@ sit above both in the layer order.
 
 On success the stone transitions to `certified`, and the certificate takes a
 number from `generate_reference_number(Certificate, "certificate_number",
-"CERT")` — `CERT-2026-2027-0001`, scanning `all_objects` so a soft-deleted row never
+"CERT")` — `CERT-2627-0001`, scanning `all_objects` so a soft-deleted row never
 reissues a number it once held.
 
 ## Revoking
@@ -243,9 +243,10 @@ the identification report is created, by `generate_reference_number()` in
 `apps/core/services.py` — the same generator every other reference uses:
 
 ```
-TGC-2026-2027-0765
-    └───┬────┘ └─┬┘
-  financial year  sequence
+TGC-2627-0765
+    └─┬┘ └─┬┘
+      │    sequence
+      financial year 2026/2027
 ```
 
 The Tanzanian financial year runs **July to June**, so August 2026 and March
@@ -254,10 +255,15 @@ The Tanzanian financial year runs **July to June**, so August 2026 and March
 Three things about this are decisions rather than details:
 
 - **One generator, one shape.** Orders, bills, reports and certificates all read
-  `PREFIX-<fy-start>-<fy-end>-NNNN`, so a number read aloud or typed into a
-  search box is recognisable without knowing which document it came from. Report
-  numbers used to carry slashes, which made them unsafe in a filename or a URL
-  path segment — `certificate_number` reaches both.
+  `PREFIX-<yy><yy>-NNNN`, so a number read aloud or typed into a search box is
+  recognisable without knowing which document it came from. Report numbers used
+  to carry slashes, which made them unsafe in a filename or a URL path segment —
+  `certificate_number` reaches both.
+- **Both years are two digits.** `2627`, not `2026-2027`: short enough to say
+  over a counter and to fit a printed line, and unambiguous for a lab whose
+  records do not reach back to 1926. The leading zero is kept, so 2029/2030
+  reads `2930` and the segment stays four characters wide — a narrower one would
+  stop sorting against its neighbours.
 - **The sequence restarts each financial year.** The year pair says *when*; the
   sequence says *how many since July*. Each prefix counts on its own, because
   the scan is stemmed on the prefix as well as the year pair.

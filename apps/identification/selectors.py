@@ -13,9 +13,22 @@ def findings_worklist():
     in ``apps.billing`` - the join itself needs no import.
     """
     return (
-        Stone.objects.select_related("order", "order__customer", "stone_type", "report")
+        Stone.objects.select_related(
+            "order",
+            "order__customer",
+            "stone_type",
+            # The row serialises the stone type, which renders its
+            # category - one query per row without this join.
+            "stone_type__category",
+        )
+        # `reports` is a reverse FK, so it is prefetched rather than joined; the
+        # rows read it back through `Stone.report`.
+        .prefetch_related("reports")
         .filter(order__bill__status=BillStatus.PAID)
-        .exclude(report__is_finalized=True)
+        # A soft-deleted report does not count as findings, so the join is
+        # narrowed to live rows - a database join sees every row, including the
+        # ones the model's default manager hides.
+        .exclude(reports__is_finalized=True, reports__deleted_at__isnull=True)
         # Grouped by the parcel they came in on, which is how they sit on the
         # bench; `pk` breaks the tie so a paginated page is stable.
         .order_by("order__received_date", "order_id", "label", "pk")

@@ -23,7 +23,7 @@ def financial_year(when=None) -> tuple[int, int]:
 
 
 def generate_reference_number(model, field: str, prefix: str, *, width: int = 4) -> str:
-    """Return the next human-readable reference, e.g. ``ORD-2026-2027-0001``.
+    """Return the next human-readable reference, e.g. ``ORD-2627-0001``.
 
     One shape for every identifier the system issues - orders, bills, reports and
     certificates - so a number read aloud or typed into a search box is
@@ -33,7 +33,10 @@ def generate_reference_number(model, field: str, prefix: str, *, width: int = 4)
 
     The year component is the financial year rather than the calendar one,
     because that is the period the lab reports on, and the sequence restarts with
-    it - the year pair says when, the sequence says how many since July.
+    it - the year pair says when, the sequence says how many since July. Both
+    years are written as two digits, so 2026/2027 reads ``2627``: short enough to
+    say over a counter and to fit a printed line, and still unambiguous for a lab
+    whose records do not reach back to 1926.
 
     Scans ``all_objects`` rather than the default manager so a soft-deleted
     record never has its number handed out a second time. This is a
@@ -47,7 +50,7 @@ def generate_reference_number(model, field: str, prefix: str, *, width: int = 4)
         width: Zero-padded width of the sequence component.
     """
     start, end = financial_year()
-    stem = f"{prefix}-{start}-{end}-"
+    stem = f"{prefix}-{start % 100:02d}{end % 100:02d}-"
     latest = (
         model.all_objects.filter(**{f"{field}__startswith": stem})
         .aggregate(peak=Max(field))

@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db
 
 
 def test_create_order_allocates_a_reference_number():
-    """The service, not the client, mints ORD-YYYY-YYYY-NNNN."""
+    """The service, not the client, mints ORD-YYYY-NNNN."""
     order = create_order(customer=CustomerFactory(), stone_count=2)
 
     assert order.reference_number.startswith("ORD-")

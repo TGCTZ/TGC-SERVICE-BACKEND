@@ -195,11 +195,13 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over stones, plus status transitions."""
 
-    # `report` is serialised on every stone row - the queues read it to tell a
-    # stone waiting for findings from one whose draft is already open.
+    # `report_detail` is serialised on every stone row - the queues read it to
+    # tell a stone waiting for findings from one whose draft is already open.
+    # Prefetched, not joined: the relation is a reverse FK so that a discarded
+    # report frees the stone rather than occupying it forever.
     queryset = Stone.objects.select_related(
-        "order", "order__customer", "stone_type", "stone_type__category", "report"
-    )
+        "order", "order__customer", "stone_type", "stone_type__category"
+    ).prefetch_related("reports")
     serializer_class = StoneSerializer
 
     search_fields = STONE_SEARCH_FIELDS

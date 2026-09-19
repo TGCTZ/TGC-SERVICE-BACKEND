@@ -41,6 +41,23 @@ class Stone(BaseModel):
     def __str__(self) -> str:
         return f"{self.order.reference_number} / {self.label}"
 
+    @property
+    def report(self):
+        """The stone's live identification report, or ``None``.
+
+        A stone carries at most one report that has not been discarded, but the
+        relation is a ForeignKey rather than a OneToOne - a OneToOne's unique
+        index covers soft-deleted rows, so a discarded report would keep the
+        stone's slot forever. This reads like the OneToOne accessor it replaces.
+
+        ``reports`` is the report model's default manager, which already hides
+        soft-deleted rows. **Prefetch it** on any queryset that reads this over
+        several stones, or each row costs a query; `prefetch_related("reports")`
+        needs no import of the identification app, and this property then reads
+        the prefetched cache.
+        """
+        return next(iter(self.reports.all()[:1]), None)
+
 
 class StatusHistory(models.Model):
     """Append-only record of a stone's status transitions.

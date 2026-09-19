@@ -14,10 +14,19 @@ class IdentificationReport(BaseModel):
     Every finding is optional: a report is built up over a sitting at the bench,
     and a stone may defeat one test while answering another. What makes it
     authoritative is ``is_finalized``, which is one-way.
+
+    **One live report per stone**, enforced by a conditional unique constraint
+    rather than by ``OneToOneField``. A OneToOne is a plain unique index on
+    ``stone_id``, which the database applies to soft-deleted rows too - so a
+    discarded report went on occupying its stone's slot forever, and the stone
+    could never be reported on again. The relation is a ForeignKey carrying a
+    ``deleted_at IS NULL`` constraint instead, which is the same rule the
+    ``report_number`` constraint already uses. Read the live one through
+    :attr:`orders.Stone.report`.
     """
 
-    stone = models.OneToOneField(
-        "orders.Stone", on_delete=models.CASCADE, related_name="report"
+    stone = models.ForeignKey(
+        "orders.Stone", on_delete=models.CASCADE, related_name="reports"
     )
     report_number = models.CharField(max_length=50)
 
@@ -108,6 +117,13 @@ class IdentificationReport(BaseModel):
                 fields=["report_number"],
                 condition=Q(deleted_at__isnull=True),
                 name="%(app_label)s_%(class)s_unique_report_number",
+            ),
+            # One *live* report per stone. Discarding a report frees the stone
+            # to be reported on again, which is what the delete dialog promises.
+            models.UniqueConstraint(
+                fields=["stone"],
+                condition=Q(deleted_at__isnull=True),
+                name="%(app_label)s_%(class)s_unique_live_stone",
             ),
         ]
 

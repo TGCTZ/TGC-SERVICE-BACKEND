@@ -43,6 +43,20 @@ def _pop_stone_fields(fields: dict) -> dict:
     return {name: fields.pop(name) for name in _STONE_FIELDS if name in fields}
 
 
+def _assert_not_already_reported(stone) -> None:
+    """Refuse a second live report for a stone.
+
+    The constraint behind this is conditional - one report per stone *among
+    those not discarded* - so the database would answer with an IntegrityError
+    and a generic 400. Checked here so the caller is told which stone and what
+    to do instead, which is to open the report the stone already has.
+    """
+    if IdentificationReport.objects.filter(stone=stone).exists():
+        raise ServiceError(
+            f"Stone {stone.label} already has a report. Edit that one instead."
+        )
+
+
 @transaction.atomic
 def create_report(*, stone, user=None, **fields) -> IdentificationReport:
     """Create an identification report for a stone.
@@ -55,13 +69,18 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
         user: The gemmologist, recorded as the identifier.
         **fields: Any report field - species, colour, refractive index and so
             on - plus ``weight``/``weight_unit``, which are applied to the stone.
+
+    Raises:
+        ServiceError: If the stone's bill is unsettled, or it already has a
+            report that has not been discarded.
     """
     _assert_payment_settled(stone)
+    _assert_not_already_reported(stone)
     stone_fields = _pop_stone_fields(fields)
 
     report = IdentificationReport(
         stone=stone,
-        # TGC-<fy-start>-<fy-end>-<seq> - printed on the certificate as
+        # TGC-<fy>-<seq> - printed on the certificate as
         # REPORT NO, and the same shape as every other reference the system
         # issues, so it survives a filename and a URL path segment intact.
         report_number=generate_reference_number(

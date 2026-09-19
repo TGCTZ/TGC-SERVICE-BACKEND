@@ -72,6 +72,24 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "worklist": ["identification.add_identificationreport"],
     }
 
+    def check_restorable(self, instance):
+        """Refuse to restore a report whose stone has been reported on again.
+
+        Discarding a report frees its stone, so the bench may well have recorded
+        fresh findings since. Only one live report per stone is allowed, and the
+        newer one is the real record - so the older is left in the bin rather
+        than the newer one silently displaced.
+        """
+        if (
+            IdentificationReport.objects.filter(stone=instance.stone)
+            .exclude(pk=instance.pk)
+            .exists()
+        ):
+            raise ServiceError(
+                f"Stone {instance.stone.label} already has a newer report. "
+                "Delete that one first if this is the record you want back."
+            )
+
     def perform_create(self, serializer):
         """Delegate to the service, which allocates the number and checks payment."""
         fields = dict(serializer.validated_data)
