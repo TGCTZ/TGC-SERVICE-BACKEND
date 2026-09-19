@@ -13,7 +13,6 @@ right trade for a file that has to be reproducible years later.
 import base64
 import logging
 import mimetypes
-from functools import cache
 from io import BytesIO
 from pathlib import Path
 
@@ -21,6 +20,7 @@ import qrcode
 from PIL import Image, ImageOps
 
 from django.conf import settings
+from django.utils.safestring import mark_safe
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +44,32 @@ def _encode(data: bytes, mime: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-@cache
+#: Encoded assets, by name. Only *hits* live here - see :func:`asset_data_uri`.
+_ENCODED: dict[str, str] = {}
+
+#: Names already reported missing, so the warning is logged once per absence
+#: rather than once per certificate rendered.
+_REPORTED_MISSING: set[str] = set()
+
+
 def asset_data_uri(name: str) -> str | None:
     """Return one of the lab's marks as a ``data:`` URI, or None if absent.
 
-    Cached for the life of the process: these files do not change between
-    renders, and re-reading a 500KB PNG per certificate is pure waste.
+    A file that was found is cached for the life of the process: these images
+    do not change between renders, and re-reading a 500KB PNG per certificate
+    is pure waste.
+
+    A file that was *not* found is deliberately not cached. Under
+    ``functools.cache`` the miss was remembered too, so a lab that supplied its
+    stamp at noon went on getting the empty box until someone restarted the
+    process - and nothing in a new PNG makes Django's autoreloader restart one.
+    Re-checking costs a single ``stat`` per render, which is nothing next to
+    rendering a PDF, and it makes the promise in ``static/certificates/img``'s
+    README true: drop the file in and it appears on the next render.
 
     Returns None rather than raising when a file is missing, so a lab that has
     not supplied its stamp yet still gets a certificate - the template falls
-    back to a labelled empty box. A missing asset is logged once, at the first
-    render that wanted it.
+    back to a labelled empty box.
 
     Args:
         name: A key of :data:`ASSETS`.
@@ -63,18 +78,108 @@ def asset_data_uri(name: str) -> str | None:
     if filename is None:
         return None
 
-    path = ASSET_DIR / filename
+    return _encoded_file(name, ASSET_DIR / filename)
+
+
+def _encoded_file(key: str, path: Path, mime: str | None = None) -> str | None:
+    """Read and encode one file, caching the hit and never the miss.
+
+    Shared by the lab's marks and the embedded fonts: both are files on disk
+    that must reach the document as ``data:`` URIs, and both must appear the
+    moment someone drops them in.
+
+    Args:
+        key: Cache key, unique across every kind of asset.
+        path: The file to read.
+        mime: Media type, guessed from the suffix when not given.
+    """
+    encoded = _ENCODED.get(key)
+    if encoded is not None:
+        return encoded
+
     if not path.is_file():
-        logger.warning("Certificate asset %r not found at %s", name, path)
+        # Logged once per absence: this runs on every render now, and a lab
+        # without a stamp would otherwise fill the log with one line per
+        # certificate issued.
+        if key not in _REPORTED_MISSING:
+            logger.warning("Certificate asset %r not found at %s", key, path)
+            _REPORTED_MISSING.add(key)
         return None
 
-    mime = mimetypes.guess_type(path.name)[0] or "image/png"
-    return _encode(path.read_bytes(), mime)
+    if mime is None:
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    encoded = _encode(path.read_bytes(), mime)
+
+    # Racing threads may both land here and encode the same file; both produce
+    # the same bytes, so the last write wins harmlessly.
+    _ENCODED[key] = encoded
+    _REPORTED_MISSING.discard(key)
+    return encoded
+
+
+def forget_assets() -> None:
+    """Drop the encoded-asset cache, so the next render re-reads from disk.
+
+    For replacing a mark in a running process, and for tests that write an
+    asset into a temporary :data:`ASSET_DIR`.
+    """
+    _ENCODED.clear()
+    _REPORTED_MISSING.clear()
 
 
 def lab_assets() -> dict[str, str | None]:
     """Every lab mark the template may want, keyed as the template names them."""
     return {name: asset_data_uri(name) for name in ASSETS}
+
+
+FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "certificates" / "fonts"
+
+#: The faces the document embeds: (file stem, CSS family, weight).
+#:
+#: Source Serif 4 is the institutional voice - the lab's name, the document
+#: title, the column headers and every label. Inter carries the findings: the
+#: values, readings and measurements. Splitting them is not decoration; a
+#: refractive index reads more reliably in a face designed for small sizes and
+#: even figure widths than in a text serif.
+#:
+#: Subset and instanced by ``scripts/build_fonts.py`` - see that file and
+#: ``static/certificates/fonts/README.md``.
+FONTS = (
+    ("source-serif-4-regular", "TGC Serif", 400),
+    ("source-serif-4-semibold", "TGC Serif", 600),
+    ("inter-regular", "TGC Sans", 400),
+    ("inter-semibold", "TGC Sans", 600),
+)
+
+
+def font_faces() -> str:
+    """The ``@font-face`` rules for the document, fonts embedded inline.
+
+    Returned as CSS text rather than a list of URIs so the template stays a
+    template: it drops this in at the top of its ``<style>`` block and never
+    has to know how many faces there are or what they are called.
+
+    Embedded for the same reason the images are, but with a sharper edge. The
+    render host carries DejaVu and nothing else, and the system package list
+    installs no fonts at all, so a face named but not embedded does not fail -
+    it *substitutes*, silently, and the lab issues a subtly different document
+    without anyone noticing. That is how this template came to render in DejaVu
+    Serif in the first place.
+
+    A face whose file is missing is skipped rather than raising, and the
+    template's fallback stack catches it. A certificate that renders in the
+    wrong font is recoverable; one that does not render is not.
+    """
+    rules = []
+    for stem, family, weight in FONTS:
+        uri = _encoded_file(f"font:{stem}", FONT_DIR / f"{stem}.woff2", "font/woff2")
+        if uri is None:
+            continue
+        rules.append(
+            f"@font-face{{font-family:'{family}';font-style:normal;"
+            f"font-weight:{weight};src:url({uri}) format('woff2');}}"
+        )
+    return mark_safe("\n".join(rules))  # noqa: S308 - our own files, not user input
 
 
 #: Longest edge, in pixels, of a photograph embedded in a certificate.

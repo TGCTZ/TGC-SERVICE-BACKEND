@@ -20,7 +20,13 @@ from django.template.loader import render_to_string
 from apps.gems.enums import CertificateStatus, WeightUnit
 
 from ..models import Certificate
-from .assets import lab_assets, photo_data_uri, qr_data_uri, verification_url
+from .assets import (
+    font_faces,
+    lab_assets,
+    photo_data_uri,
+    qr_data_uri,
+    verification_url,
+)
 
 TEMPLATE = "certificates/certificate.html"
 
@@ -70,6 +76,8 @@ def certificate_context(certificate: Certificate) -> dict:
         ),
         "verify_url": verify_url,
         "qr_code": qr_data_uri(verify_url),
+        # The embedded typefaces, as ready-to-drop-in @font-face rules.
+        "font_faces": font_faces(),
         **lab_assets(),
     }
 

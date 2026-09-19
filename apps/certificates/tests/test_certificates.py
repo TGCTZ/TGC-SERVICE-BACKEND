@@ -4,12 +4,14 @@ from decimal import Decimal
 
 import pytest
 
+from django.template.loader import render_to_string
+
 from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
-from apps.certificates.services import issue_certificate, revoke_certificate
-from apps.certificates.services.pdf import certificate_context
+from apps.certificates.services import assets, issue_certificate, revoke_certificate
+from apps.certificates.services.pdf import TEMPLATE, certificate_context
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import (
     CertificateStatus,
@@ -465,3 +467,63 @@ def test_verify_page_answers_plainly_for_an_unknown_number(client):
 
     assert response.status_code == 404
     assert "Not found" in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# Lab marks
+
+
+def test_a_mark_supplied_later_appears_without_a_restart(request, monkeypatch, tmp_path):
+    """Dropping a mark into the asset directory must not need a process restart.
+
+    The loader used to be wrapped in ``functools.cache``, which remembered the
+    *miss* as readily as the hit: a lab that supplied its stamp at noon went on
+    getting the empty placeholder box until someone restarted the server, and
+    nothing about a new PNG makes Django's autoreloader restart one.
+    """
+    # Both ends: the loader must not start with a real mark already encoded,
+    # and must not leave this temporary one behind for the next test.
+    request.addfinalizer(assets.forget_assets)
+    monkeypatch.setattr(assets, "ASSET_DIR", tmp_path)
+    assets.forget_assets()
+
+    assert assets.asset_data_uri("official_stamp") is None
+
+    (tmp_path / assets.ASSETS["official_stamp"]).write_bytes(b"not really a png")
+
+    assert assets.asset_data_uri("official_stamp").startswith("data:image/png;base64,")
+
+
+def test_the_document_carries_its_own_typefaces(certifiable_stone):
+    """Every face the certificate names must also be embedded in it.
+
+    The failure this guards against is silent rather than loud: the render host
+    has neither family installed, so a font file that goes missing or gets
+    renamed does not raise - the document simply renders in whatever the system
+    substitutes, and the lab issues a subtly different certificate indefinitely.
+    """
+    certificate = issue_certificate(certifiable_stone)
+
+    faces = certificate_context(certificate)["font_faces"]
+
+    assert faces.count("@font-face") == len(assets.FONTS)
+    # Embedded, not merely referenced: a src pointing anywhere but at inline
+    # bytes would mean WeasyPrint has to resolve something at render time.
+    assert faces.count("src:url(data:font/woff2;base64,") == len(assets.FONTS)
+
+
+def test_no_template_syntax_leaks_onto_the_document(certifiable_stone):
+    """The rendered certificate must contain no unrendered template syntax.
+
+    Django's ``{# ... #}`` is a *single-line* comment. Spread one over two
+    lines and the remainder is not a comment at all - it is content, and it
+    prints on the certificate. That has happened more than once while editing
+    this template, and it is invisible in a unit test that only reads the
+    context, so it is asserted against the rendered HTML here.
+    """
+    certificate = issue_certificate(certifiable_stone)
+
+    html = render_to_string(TEMPLATE, certificate_context(certificate))
+
+    for token in ("{#", "#}", "{%", "%}", "{{", "}}"):
+        assert token not in html, f"Unrendered {token!r} reached the document."

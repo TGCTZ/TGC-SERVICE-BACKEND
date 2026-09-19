@@ -2,6 +2,21 @@
   The gemstone identification report, as the lab issues it: A4 landscape, three
   columns, one page.
 
+  Layout is absolute, in millimetres measured from the paper edge - not flow,
+  and not flexbox. A certificate is a *form*: the stamp box has to sit in the
+  same place on every sheet whether the comments field is empty or three lines
+  long, so the boxes are placed first and the data pours into them. Flexbox is
+  used only to centre content *inside* a box, never to decide where a box goes.
+  (The previous version sized the page with `height: 100%` against a body of
+  auto height, which collapses; the columns then had no space to grow into and
+  everything crowded into the top half of the sheet.)
+
+  The coordinates are collected in the two tables below - PAGE BANDS and the
+  per-column blocks - so the layout can be re-proportioned by editing numbers
+  rather than by unpicking nested boxes. Every fixed box is `overflow: hidden`:
+  a certificate with far more findings than the form allows for degrades by
+  truncation, not by printing over the QR code.
+
   CSS is inline rather than a linked stylesheet, and every image is a data: URI
   passed in from services/assets.py. Both for the same reason - the renderer is
   handed a bare HTML string with no base_url, so there is nothing to resolve
@@ -21,141 +36,277 @@
   <meta charset="utf-8">
   <title>{{ certificate.certificate_number }}</title>
   <style>
+    {{ font_faces }}
+
+    /* ==========================================================
+       The TGC palette, from frontend/src/styles/theme.css and the
+       colour system spec. Declared once as tokens for the same
+       reason the interface does it: a rule that carries a raw hex
+       is a rule nobody can re-theme.
+
+       Contrast, measured against the surface each one sits on:
+         blue on white .............  7.6:1
+         ink on white .............. 17.9:1
+         gold-950 on gold-50 ....... 12.7:1
+         muted on white ............  4.8:1
+
+       Gold itself is 2.2:1 on white. It is a rule, a border and a
+       fill in this document - never a letterform. Spec section 7:
+       gold is an accent, not the primary colour.
+       ========================================================== */
+    :root {
+      --tgc-blue: #0152a9;      /* TGC Blue, blue-600 */
+      --tgc-gold: #e4a41e;      /* TGC Gold, gold-500 */
+      --gold-tint: #fffaeb;     /* gold-50  - column header fill */
+      --gold-deep: #452a05;     /* gold-950 - text on gold surfaces */
+      --ink: #0f172a;           /* neutral-900 */
+      --muted: #64748b;         /* neutral-500 */
+      --rule: #e2e8f0;          /* neutral-200 */
+      --rule-strong: #cbd5e1;   /* neutral-300 */
+      --placeholder: #94a3b8;   /* neutral-400 - 'no photograph', 'no instruments' */
+      --danger: #dc2626;        /* semantic danger - the revoked marks */
+    }
+
+    /* Zero page margin so every coordinate below is measured from the physical
+       paper edge. The sheet supplies its own margins as absolute offsets. */
     @page {
       size: A4 landscape;
-      margin: 8mm;
-    }
-
-    /* DejaVu Serif by name, not by accident. The reference PDF renders in it
-       only because Linux substitutes it for an unavailable Times New Roman;
-       asking for it directly means the document looks the same wherever it is
-       rendered, and it carries the glyphs (✓, ·) the layout uses. */
-    body {
-      font-family: "DejaVu Serif", Georgia, serif;
-      font-size: 8pt;
-      color: #111827;
       margin: 0;
-      line-height: 1.35;
     }
 
+    /* Non-negotiable for a millimetre layout: a declared height must be the
+       height the box occupies, padding and border included. */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    /* Two voices. "TGC Serif" (Source Serif 4) is what the institution says -
+       its name, the document's title, the headers and every label. "TGC Sans"
+       (Inter) carries what the instruments measured. Both are embedded by
+       services/assets.py as data: URIs, because the render host has neither
+       installed and an unembedded face substitutes silently rather than
+       failing - which is how this document came to be set in DejaVu Serif.
+
+       The fallbacks are there for the case where a font file has gone missing;
+       the document still renders, just not in its own clothes. */
+    body {
+      font-family: "TGC Sans", "DejaVu Sans", sans-serif;
+      font-size: 11pt;
+      color: var(--ink);
+      margin: 0;
+      line-height: 1.3;
+    }
+
+    /* Figures that share a column must share a width. An R.I. of 1.577 - 1.583
+       set in proportional figures wanders against the row above it, and these
+       documents are read side by side. */
+    .value,
+    .reading {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ==========================================================
+       PAGE BANDS - A4 landscape is 297 x 210mm.
+
+         y 0      revoked banner (only on a revoked certificate)   h 7
+         y 8      header: emblem / titles / logo                   h 24
+         y 35     info bar: report number and date                 h 8
+         y 46     the three columns                                h 144
+         y 192.5  footer: certificate and order references         h 6
+
+       Horizontally: 10mm side margins, three 89mm columns with
+       5mm gutters (89*3 + 5*2 = 277 = 297 - 2*10).
+       ========================================================== */
     .sheet {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
       position: relative;
+      width: 297mm;
+      height: 210mm;
+      overflow: hidden;
+    }
+
+    .band {
+      position: absolute;
+      left: 10mm;
+      width: 277mm;
     }
 
     /* ---------- Header ---------- */
+    /* A single blue rule closes the masthead. Gold lives further down the page
+       - the column headers and the stamp box - where it accents one thing at a
+       time rather than stacking rules across the full width of the sheet. */
     .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 2px solid #0f3d75;
-      padding-bottom: 4mm;
-      margin-bottom: 3mm;
+      top: 8mm;
+      height: 24mm;
+      border-bottom: 2px solid var(--tgc-blue);
     }
 
+    /* The marks are pinned to the corners and the titles centred on the sheet
+       independently, so an emblem of a different aspect ratio cannot nudge the
+       lab's name off centre. */
     .header .mark {
-      width: 26mm;
+      position: absolute;
+      top: 0;
+      width: 24mm;
+      height: 22mm;
       text-align: center;
     }
 
     .header .mark img {
       max-width: 100%;
-      max-height: 20mm;
+      max-height: 22mm;
       object-fit: contain;
     }
 
+    .header .mark.left { left: 0; }
+    .header .mark.right { right: 0; }
+
+    /* Tighter leading than the body's 1.3. Four lines of display type at the
+       sizes below add up to more than the header's 24mm at body leading, and
+       the address was running under the rule; display type wants less leading
+       than text anyway, so this is the fix rather than a taller header. */
     .header .titles {
-      flex: 1;
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      line-height: 1.1;
+      position: absolute;
+      top: 0.5mm;
+      left: 28mm;
+      right: 28mm;
       text-align: center;
-      color: #0f3d75;
+      color: var(--tgc-blue);
     }
 
     .titles .ministry {
-      font-size: 9pt;
+      font-size: 12pt;
       letter-spacing: 2px;
       text-transform: uppercase;
     }
 
     .titles .lab {
-      font-size: 12pt;
-      font-weight: bold;
+      font-size: 19pt;
+      font-weight: 600;
       letter-spacing: 1px;
       text-transform: uppercase;
     }
 
     .titles .doc {
-      font-size: 13pt;
-      font-weight: bold;
+      font-size: 16pt;
+      font-weight: 600;
       letter-spacing: 2px;
       text-transform: uppercase;
-      margin-top: 1mm;
     }
 
     .titles .address {
-      font-size: 7.5pt;
-      color: #4b5563;
-      letter-spacing: 0;
-      text-transform: none;
+      font-size: 10.5pt;
+      color: var(--muted);
     }
 
     /* ---------- Info bar ---------- */
     .info-bar {
+      top: 35mm;
+      height: 8mm;
       display: flex;
       justify-content: space-between;
-      background: #f5f0eb;
-      border: 1px solid #ccc;
-      color: #0f3d75;
-      font-weight: bold;
-      font-size: 9pt;
-      padding: 2mm 3mm;
-      margin-bottom: 3mm;
+      align-items: center;
+      background: var(--gold-tint);
+      color: var(--tgc-blue);
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-weight: 600;
+      font-size: 12pt;
+      padding: 0 3mm;
     }
 
     /* ---------- Columns ---------- */
-    .columns {
-      display: flex;
-      gap: 3mm;
-      flex: 1;
-      min-height: 0;
+    .column {
+      position: absolute;
+      top: 46mm;
+      width: 89mm;
+      height: 144mm;
+      border: 1px solid var(--rule);
+      border-radius: 1mm;
+      overflow: hidden;
     }
 
-    .column {
-      flex: 1;
-      border: 1px solid #ddd;
-      border-radius: 1mm;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
+    .column-1 { left: 10mm; }
+    .column-2 { left: 104mm; }
+    .column-3 { left: 198mm; }
 
     .column-header {
-      background: #eaf3ff;
-      color: #0f3d75;
-      font-weight: bold;
-      font-size: 8.5pt;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 7mm;
+      background: var(--gold-tint);
+      color: var(--gold-deep);
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-weight: 600;
+      font-size: 14pt;
       letter-spacing: 1px;
       text-transform: uppercase;
       text-align: center;
-      padding: 1.5mm;
-      border-bottom: 1px solid #ccc;
+      line-height: 7mm;
+      /* gold-950 on gold-50 is 12.7:1. The obvious choice, gold-700, measures
+         4.2:1 and fails AA at this size - the design system already says so:
+         "gold is too light for white text". */
+      border-bottom: 0.6mm solid var(--tgc-gold);
     }
 
-    .column-body {
-      padding: 2mm 3mm;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
+    /* Every block inside a column is placed by `top` and `height` from the
+       tables below; 3mm of side padding is shared by all of them. */
+    .block {
+      position: absolute;
+      left: 3mm;
+      right: 3mm;
+      overflow: hidden;
     }
+
+    /* ==========================================================
+       COLUMN 1 - DESCRIPTION      COLUMN 2 - IDENTIFICATION
+         9    rows (8 x 8.5mm) 68    9    photograph        46
+         80   official stamp  40     58   rows (5 x 8.5mm) 42.5
+         123  signatories     20     103  comments          40
+
+       COLUMN 3 - INSTRUMENTS USED
+         9    instrument list 77
+         89   QR + caption    30
+         122  statement       21
+
+       All three columns end flush at 143mm - the column's own 1px
+       border eats the last half-millimetre of its 144mm box.
+       ========================================================== */
+    .c1-rows        { top: 9mm;   height: 68mm; }
+    .c1-stamp       { top: 80mm;  height: 40mm; }
+    .c1-signatories { top: 123mm; height: 20mm; border-top: 1px solid var(--rule); padding-top: 1.5mm; }
+
+    /* The photograph gives up 9mm to the conclusion. At 11pt a four-line
+       comments box truncated an ordinary finding, and what the gemmologist
+       concluded is the part of this column that carries legal weight - the
+       photograph is corroboration. */
+    .c2-photo       { top: 9mm;   height: 46mm; }
+    .c2-rows        { top: 58mm;  height: 42.5mm; }
+    .c2-comments    { top: 103mm; height: 40mm; }
+
+    .c3-instruments { top: 9mm;   height: 77mm; }
+    .c3-verify      { top: 89mm;  height: 30mm; }
+    .c3-statement   { top: 122mm; height: 21mm; }
 
     /* ---------- Label/value rows ---------- */
+    /* A fixed 7mm rather than padding around the text: identical row heights in
+       all three columns mean the dotted rules line up across the sheet. The
+       height follows the type. At 11pt the longest finding the lab records -
+       "Doubly refractive (uniaxial)" - no longer fits its 83mm beside a label,
+       so the row has to hold two lines of value rather than one. 8.5mm is two
+       lines at the value's 1.05 leading, with the single-line rows unchanged
+       because the flex box centres them. */
     .row {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 2mm;
-      padding: 1.1mm 0;
-      border-bottom: 1px dotted #d1d5db;
+      height: 8.5mm;
+      border-bottom: 1px dotted var(--rule-strong);
     }
 
     .row:last-child {
@@ -163,174 +314,202 @@
     }
 
     .row .label {
-      font-weight: bold;
-      color: #0f3d75;
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-size: 10pt;
+      font-weight: 600;
+      color: var(--tgc-blue);
       text-transform: uppercase;
       white-space: nowrap;
     }
 
     .row .value {
       text-align: end;
-      overflow-wrap: break-word;
+      line-height: 1.05;
+      overflow: hidden;
     }
 
     .muted {
-      color: #9ca3af;
+      color: var(--placeholder);
     }
 
     /* ---------- Stamp and signatories ---------- */
     .stamp {
-      margin-top: auto;
+      height: 100%;
+      border: 0.5mm solid var(--tgc-gold);
       text-align: center;
-      border: 1px solid #111827;
-      padding: 1mm;
+      padding: 1.5mm;
     }
 
     .stamp .caption {
-      font-size: 7pt;
-      font-weight: bold;
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-size: 10pt;
+      font-weight: 600;
+      color: var(--tgc-blue);
       text-transform: uppercase;
       letter-spacing: 1px;
     }
 
     .stamp img {
       max-width: 100%;
-      max-height: 22mm;
+      max-height: 50mm;
       object-fit: contain;
-    }
-
-    .stamp .missing {
-      color: #9ca3af;
-      font-size: 7pt;
-      padding: 6mm 0;
-    }
-
-    .signatories {
-      margin-top: 2mm;
-      border-top: 1px solid #ccc;
-      padding-top: 1.5mm;
     }
 
     /* ---------- Photograph ---------- */
     .photo {
+      height: 100%;
       border: 1px dashed #bbb;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1.5mm;
-      margin-bottom: 2mm;
-      min-height: 30mm;
     }
 
     /* max-* rather than fixed width AND height: forcing both squashes every
        photograph that is not exactly the box's aspect ratio. */
     .photo img {
       max-width: 100%;
-      max-height: 40mm;
+      max-height: 42mm;
       object-fit: contain;
     }
 
     .photo .missing {
-      color: #9ca3af;
-      font-size: 7.5pt;
+      color: var(--placeholder);
+      font-size: 10.5pt;
       text-align: center;
       text-transform: uppercase;
       letter-spacing: 1px;
+    }
+
+    /* ---------- Comments ---------- */
+    .comments .label {
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-size: 10pt;
+      font-weight: 600;
+      color: var(--tgc-blue);
+      text-transform: uppercase;
+      border-bottom: 1px dotted var(--rule-strong);
+      padding-bottom: 1mm;
+      margin-bottom: 1.5mm;
+    }
+
+    /* A line height in millimetres, and a height that is a whole number of
+       them: an over-long conclusion then cuts *between* lines instead of
+       through one. 6 lines at 5mm, under a label block about 9mm tall, is the
+       40mm the block has. Longer than that is a data problem, not a layout
+       one, and the box clips rather than spilling onto the QR. */
+    .comments .text {
+      font-size: 10pt;
+      line-height: 5mm;
+      height: 30mm;
+      overflow: hidden;
     }
 
     /* ---------- Instruments ---------- */
     .instrument {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 2mm;
-      padding: 1.1mm 0;
-      border-bottom: 1px dotted #d1d5db;
+      height: 7mm;
+      border-bottom: 1px dotted var(--rule-strong);
     }
 
     .instrument .tick {
-      color: #0f3d75;
+      color: var(--tgc-blue);
       font-weight: bold;
     }
 
     .instrument .reading {
-      color: #374151;
+      color: var(--ink);
+      white-space: nowrap;
     }
 
     /* ---------- QR and verification ---------- */
-    /* Follows the instruments rather than being pushed to the bottom: with
-       three instruments recorded rather than ten, `margin-top: auto` left a
-       hand-width hole in the middle of the column. The statement holds the
-       bottom edge instead. */
     .verify {
-      margin-top: 3mm;
       text-align: center;
     }
 
     .verify img {
-      width: 22mm;
-      height: 22mm;
+      width: 24mm;
+      height: 24mm;
     }
 
     .verify .caption {
-      font-size: 7.5pt;
-      color: #0f3d75;
+      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-size: 10.5pt;
+      color: var(--tgc-blue);
       letter-spacing: 1px;
-      font-weight: bold;
+      font-weight: 600;
       text-transform: uppercase;
     }
 
     .statement {
-      margin-top: auto;
-      border: 1px solid #ccc;
+      height: 100%;
+      border: 1px solid var(--rule-strong);
       padding: 1.5mm;
-      font-size: 6.5pt;
-      color: #555;
+      font-size: 9.5pt;
+      color: var(--muted);
       text-align: center;
-      line-height: 1.4;
+      line-height: 1.35;
+    }
+
+    /* ---------- Footer ---------- */
+    .footer-number {
+      top: 192.5mm;
+      height: 6mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9.5pt;
+      color: var(--muted);
     }
 
     /* ---------- Revoked ---------- */
-    .watermark {
-      position: absolute;
-      top: 38%;
-      left: 0;
-      right: 0;
-      text-align: center;
-      font-size: 90pt;
-      font-weight: bold;
-      color: #dc2626;
-      opacity: 0.16;
-      transform: rotate(-20deg);
-      letter-spacing: 8px;
-    }
-
+    /* Full bleed along the top edge, above the header, so the banner needs no
+       room reserved for it in the bands below and nothing shifts when a
+       certificate is revoked. */
     .revoked-band {
-      background: #dc2626;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 297mm;
+      height: 7mm;
+      background: var(--danger);
       color: #fff;
       text-align: center;
       font-weight: bold;
+      font-size: 11pt;
       letter-spacing: 2px;
       text-transform: uppercase;
-      padding: 1.5mm;
-      margin-bottom: 2mm;
+      line-height: 7mm;
     }
 
-    .footer-number {
-      margin-top: 2mm;
-      font-size: 6.5pt;
-      color: #6b7280;
-      display: flex;
-      justify-content: space-between;
+    .watermark {
+      position: absolute;
+      top: 75mm;
+      left: 0;
+      width: 297mm;
+      text-align: center;
+      font-size: 90pt;
+      font-weight: bold;
+      color: var(--danger);
+      opacity: 0.16;
+      transform: rotate(-20deg);
+      letter-spacing: 8px;
     }
   </style>
 </head>
 <body>
 <div class="sheet">
 
-  {% if is_revoked %}<div class="watermark">REVOKED</div>{% endif %}
+  {% if is_revoked %}
+    <div class="watermark">REVOKED</div>
+    <div class="revoked-band">This certificate has been revoked and no longer stands</div>
+  {% endif %}
 
-  <div class="header">
-    <div class="mark">
+  <div class="band header">
+    <div class="mark left">
       {% if coat_of_arms %}<img src="{{ coat_of_arms }}" alt="">{% endif %}
     </div>
     <div class="titles">
@@ -339,155 +518,166 @@
       <div class="doc">Gemstone Identification Report</div>
       {% if lab_address %}<div class="address">{{ lab_address }}</div>{% endif %}
     </div>
-    <div class="mark">
+    <div class="mark right">
       {% if tgc_logo %}<img src="{{ tgc_logo }}" alt="">{% endif %}
     </div>
   </div>
 
-  {% if is_revoked %}
-    <div class="revoked-band">This certificate has been revoked and no longer stands</div>
-  {% endif %}
-
-  <div class="info-bar">
+  <div class="band info-bar">
     <span>Report No: {{ report_number }}</span>
     <span>Date: {{ certificate.issued_at|date:"d/m/Y" }}</span>
   </div>
 
-  <div class="columns">
+  {# ---------- Column 1: description, stamp, signatories ---------- #}
+  <div class="column column-1">
+    <div class="column-header">Description</div>
 
-    {# ---------- Column 1: description, stamp, signatories ---------- #}
-    <div class="column">
-      <div class="column-header">Description</div>
-      <div class="column-body">
-        <div class="row">
-          <span class="label">Colour</span>
-          <span class="value">{{ certificate.color_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Shape / Cut</span>
-          <span class="value">{{ certificate.shape_cut_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Weight</span>
-          <span class="value">{{ certificate.weight_snapshot }} {{ weight_unit }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Transparency</span>
-          <span class="value">{{ certificate.transparency_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Optic character</span>
-          <span class="value">{{ certificate.optic_character_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">R.I.</span>
-          <span class="value">{{ certificate.refractive_index_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Specific gravity</span>
-          <span class="value">{{ certificate.specific_gravity_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Dimensions</span>
-          <span class="value">{{ certificate.dimensions_snapshot|default:"—" }}</span>
-        </div>
-
-        <div class="stamp">
-          <div class="caption">Official Stamp</div>
-          {% if official_stamp %}
-            <img src="{{ official_stamp }}" alt="">
-          {% else %}
-            <div class="missing">Stamp not on file</div>
-          {% endif %}
-        </div>
-
-        <div class="signatories">
-          <div class="row">
-            <span class="label">Gemmologist 1</span>
-            <span class="value">{{ certificate.gemmologist|default:"—" }}</span>
-          </div>
-          <div class="row">
-            <span class="label">Gemmologist 2</span>
-            <span class="value">{{ certificate.gemmologist_two|default:"—" }}</span>
-          </div>
-        </div>
+    <div class="block c1-rows">
+      <div class="row">
+        <span class="label">Colour</span>
+        <span class="value">{{ certificate.color_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Shape / Cut</span>
+        <span class="value">{{ certificate.shape_cut_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Weight</span>
+        <span class="value">{{ certificate.weight_snapshot }} {{ weight_unit }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Transparency</span>
+        <span class="value">{{ certificate.transparency_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Optic character</span>
+        <span class="value">{{ certificate.optic_character_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">R.I.</span>
+        <span class="value">{{ certificate.refractive_index_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Specific gravity</span>
+        <span class="value">{{ certificate.specific_gravity_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Dimensions</span>
+        <span class="value">{{ certificate.dimensions_snapshot|default:"—" }}</span>
       </div>
     </div>
 
-    {# ---------- Column 2: photograph and identification ---------- #}
-    <div class="column">
-      <div class="column-header">Identification</div>
-      <div class="column-body">
-        <div class="photo">
-          {% if photo %}
-            <img src="{{ photo }}" alt="">
-          {% else %}
-            <div class="missing">Photograph<br>not available</div>
-          {% endif %}
-        </div>
-
-        <div class="row">
-          <span class="label">Group / Species</span>
-          <span class="value">{{ certificate.species_snapshot|default:certificate.stone_type_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Variety</span>
-          <span class="value">{{ certificate.variety_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Nature</span>
-          <span class="value">{{ certificate.nature_type_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Treatment</span>
-          <span class="value">{{ certificate.treatment_snapshot|default:"—" }}</span>
-        </div>
-        {% comment %}
-          ORIGIN is the geographic source. The legacy template printed
-          nature_type here by mistake; both are shown, each in its own row.
-        {% endcomment %}
-        <div class="row">
-          <span class="label">Origin</span>
-          <span class="value">{{ certificate.origin_snapshot|default:"—" }}</span>
-        </div>
-        <div class="row">
-          <span class="label">Comments</span>
-          <span class="value">{{ certificate.comments_snapshot|default:"—" }}</span>
-        </div>
+    <div class="block c1-stamp">
+      {% comment %}
+        No placeholder when there is no stamp on file: the empty box is the
+        space the lab stamps by hand, and printing "not on file" across it
+        would read as a defect in the certificate rather than as room.
+      {% endcomment %}
+      <div class="stamp">
+        <div class="caption">Official Stamp</div>
+        {% if official_stamp %}<img src="{{ official_stamp }}" alt="">{% endif %}
       </div>
     </div>
 
-    {# ---------- Column 3: instruments, QR, statement ---------- #}
-    <div class="column">
-      <div class="column-header">Instruments Used</div>
-      <div class="column-body">
-        {% for instrument in instruments %}
-          <div class="instrument">
-            <span><span class="tick">✓</span> {{ instrument.name }}</span>
-            {% if instrument.reading %}
-              <span class="reading">{{ instrument.reading }}</span>
-            {% endif %}
-          </div>
-        {% empty %}
-          <div class="muted">No instruments recorded.</div>
-        {% endfor %}
-
-        <div class="verify">
-          <img src="{{ qr_code }}" alt="">
-          <div class="caption">Scan to verify</div>
-        </div>
-
-        <div class="statement">
-          The information described in this report has been examined by at least
-          two qualified Gemmologists. Please see the back side for additional
-          information.
-        </div>
+    <div class="block c1-signatories">
+      <div class="row">
+        <span class="label">Gemmologist 1</span>
+        <span class="value">{{ certificate.gemmologist|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Gemmologist 2</span>
+        <span class="value">{{ certificate.gemmologist_two|default:"—" }}</span>
       </div>
     </div>
-
   </div>
 
-  <div class="footer-number">
+  {# ---------- Column 2: photograph and identification ---------- #}
+  <div class="column column-2">
+    <div class="column-header">Identification</div>
+
+    <div class="block c2-photo">
+      <div class="photo">
+        {% if photo %}
+          <img src="{{ photo }}" alt="">
+        {% else %}
+          <div class="missing">Photograph<br>not available</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="block c2-rows">
+      <div class="row">
+        <span class="label">Group / Species</span>
+        <span class="value">{{ certificate.species_snapshot|default:certificate.stone_type_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Variety</span>
+        <span class="value">{{ certificate.variety_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Nature</span>
+        <span class="value">{{ certificate.nature_type_snapshot|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Treatment</span>
+        <span class="value">{{ certificate.treatment_snapshot|default:"—" }}</span>
+      </div>
+      {% comment %}
+        ORIGIN is the geographic source. The legacy template printed
+        nature_type here by mistake; both are shown, each in its own row.
+      {% endcomment %}
+      <div class="row">
+        <span class="label">Origin</span>
+        <span class="value">{{ certificate.origin_snapshot|default:"—" }}</span>
+      </div>
+    </div>
+
+    {% comment %}
+      Comments earns a block of its own rather than a row: a conclusion is a
+      sentence, and a 6mm right-aligned cell truncated it.
+    {% endcomment %}
+    <div class="block c2-comments comments">
+      <div class="label">Comments</div>
+      <div class="text">{{ certificate.comments_snapshot|default:"—" }}</div>
+    </div>
+  </div>
+
+  {# ---------- Column 3: instruments, QR, statement ---------- #}
+  <div class="column column-3">
+    <div class="column-header">Instruments Used</div>
+
+    {% comment %}
+      77mm is exactly 11 rows of 7mm, so an over-long list cuts between rows
+      rather than through one. The lab's own form lists 10.
+    {% endcomment %}
+    <div class="block c3-instruments">
+      {% for instrument in instruments %}
+        <div class="instrument">
+          <span><span class="tick">✓</span> {{ instrument.name }}</span>
+          {% if instrument.reading %}
+            <span class="reading">{{ instrument.reading }}</span>
+          {% endif %}
+        </div>
+      {% empty %}
+        <div class="muted">No instruments recorded.</div>
+      {% endfor %}
+    </div>
+
+    <div class="block c3-verify verify">
+      <img src="{{ qr_code }}" alt="">
+      <div class="caption">Scan to verify</div>
+    </div>
+
+    <div class="block c3-statement">
+      <div class="statement">
+        The information described in this report has been examined by at least
+        two qualified Gemmologists. Please see the back side for additional
+        information.
+      </div>
+    </div>
+  </div>
+
+  <div class="band footer-number">
     <span>{{ certificate.certificate_number }}</span>
     <span>{{ order_reference }} &middot; Stone {{ stone_label }}</span>
   </div>
