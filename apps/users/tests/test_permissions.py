@@ -43,7 +43,7 @@ def test_setup_roles_prune_removes_a_retired_role(roles):
     call_command("setup_roles", "--prune", verbosity=0)
 
     assert not Group.objects.filter(name="retired").exists()
-    assert Group.objects.filter(name="administrator").exists()
+    assert Group.objects.filter(name="manager").exists()
 
 
 def test_setup_roles_prune_removes_a_retired_module_gate(roles):

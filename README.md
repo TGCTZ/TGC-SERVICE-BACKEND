@@ -65,8 +65,8 @@ Health probes sit outside the versioned API, so they survive a version bump:
 | `GET /api/health/` | Liveness. Touches nothing external; 200 while the process runs. |
 | `GET /api/health/ready/` | Readiness. Checks the database and pending migrations; 503 if either fails. |
 
-Demo accounts are `<role>@tgc.com` with the password printed by `seed`, for each
-of `superadmin`, `administrator`, `receptionist`, `gemmologist` and `accountant`.
+Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
+of `superadmin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
 
 ## Everyday commands
 

@@ -122,7 +122,7 @@ class Command(BaseCommand):
         self.stdout.write("Creating one account per role...")
         for role in Group.objects.all():
             account = UserFactory(
-                email=f"{role.name}@tgc.com",
+                email=f"{role.name}@example.com",
                 username=role.name,
                 first_name=role.name.title(),
                 last_name="Demo",
@@ -190,5 +190,5 @@ class Command(BaseCommand):
                             issue_certificate(stone)
 
         self.stdout.write(
-            self.style.SUCCESS(f"Done. Role accounts: <role>@tgc.com / {DEMO_PASSWORD}")
+            self.style.SUCCESS(f"Done. Role accounts: <role>@example.com / {DEMO_PASSWORD}")
         )

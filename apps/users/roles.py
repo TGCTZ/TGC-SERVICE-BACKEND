@@ -55,7 +55,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     # Full access. Also granted every permission dynamically by setup_roles, so
     # new models are covered without editing this file.
     "superadmin": [],
-    "administrator": (
+    "manager": (
         _perms("users", USER_MODELS, CRUD)
         + _perms("gems", GEMS_MODELS, CRUD)
         + _perms("orders", ORDERS_MODELS, CRUD)

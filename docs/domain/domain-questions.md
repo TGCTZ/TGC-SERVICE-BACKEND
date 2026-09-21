@@ -18,7 +18,7 @@
 > - **B3 ✅** — weight unit is **carat/gram** (`WeightUnit`); no `SiUnit`.
 > - **B5 ✅** — the `StoneStatus` list is settled (no `in_production`).
 > - **C5 ✅** — four roles seeded (receptionist, gemmologist, accountant,
->   administrator).
+>   manager).
 > - **B4** — a certificate can be issued **only after the bill is fully paid**
 >   (still provisional).
 > - **C2** — **partial payments allowed**; bill is `paid` once payments cover the
@@ -192,7 +192,7 @@ gemmologist, production staff, accountant, admin…), and which stages can each
 role act on? This drives the permissions layer.
 
 **Decided ✅:** roles are **Django Groups** — receptionist, gemmologist,
-accountant, administrator — seeded by `python manage.py setup_roles`. Action-level
+accountant, manager — seeded by `python manage.py setup_roles`. Action-level
 custom permissions (`finalize_report`, `generate_bill`, `issue_certificate`, …)
 are defined on the models. The role→permission mapping lives in
 `apps/users/roles.py`; see

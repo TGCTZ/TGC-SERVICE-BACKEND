@@ -24,7 +24,7 @@ stage of the stone's journey and onto one of the four worklists.
 | Role | Station | Scope |
 |---|---|---|
 | `superadmin` | - | Every permission, resolved dynamically at run time |
-| `administrator` | Back office | Full CRUD across the domain, users, roles, audit |
+| `manager` | Back office | Full CRUD across the domain, users, roles, audit |
 | `receptionist` | Front desk | Customers, orders, handover. Does **not** identify stones |
 | `gemmologist` | The bench | Both identification stages, finalize, and issuing certificates |
 | `accountant` | Accounts | Bills, payments, service providers, and pricing |

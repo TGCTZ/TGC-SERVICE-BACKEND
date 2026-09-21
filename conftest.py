@@ -32,13 +32,13 @@ def user(db):
 
 @pytest.fixture
 def admin_user(db, roles):
-    """A user holding the administrator role."""
+    """A user holding the manager role."""
     from django.contrib.auth.models import Group
 
     from apps.users.tests.factories import UserFactory
 
     account = UserFactory()
-    account.groups.add(Group.objects.get(name="administrator"))
+    account.groups.add(Group.objects.get(name="manager"))
     return account
 
 

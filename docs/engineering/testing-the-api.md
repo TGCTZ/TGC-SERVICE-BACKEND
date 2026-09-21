@@ -12,7 +12,7 @@ uv run python manage.py seed
 uv run python manage.py runserver
 ```
 
-`seed` creates one account per role — `<role>@tgc.com`, password `1234567890` —
+`seed` creates one account per role — `<role>@example.com`, password `1234567890` —
 and enough orders at different stages that every worklist has something in it.
 
 ---
@@ -27,7 +27,7 @@ API actually does. Every path, parameter and response shape is there.
 To call anything but the health probes you need a token first:
 
 1. `POST /api/v1/auth/login/` → **Try it out** → send
-   `{"email": "administrator@tgc.com", "password": "1234567890"}`
+   `{"email": "manager@example.com", "password": "1234567890"}`
 2. Copy `access` out of the response
 3. **Authorize** (top right) → paste `Bearer <token>` → Authorize
 
@@ -86,7 +86,7 @@ a 400 is the pass condition.
 Change one line at the top and re-run:
 
 ```
-"email": "receptionist@tgc.com"
+"email": "receptionist@example.com"
 ```
 
 Then watch what starts returning 403. This is the fastest way to check the role
@@ -107,7 +107,7 @@ Fine for a single request. Two Windows-specific traps:
   column 2 — which looks like a payload bug rather than a shell one.
 
 ```bash
-curl.exe -s -X POST http://localhost:8000/api/v1/auth/login/ -H "Content-Type: application/json" -d '{"email":"administrator@tgc.com","password":"1234567890"}'
+curl.exe -s -X POST http://localhost:8000/api/v1/auth/login/ -H "Content-Type: application/json" -d '{"email":"manager@example.com","password":"1234567890"}'
 ```
 
 ---
@@ -284,7 +284,7 @@ Fixtures in [`conftest.py`](../../conftest.py):
 |---|---|
 | `api_client` | An unauthenticated DRF client |
 | `user` | A user with no roles at all |
-| `admin_user` | A user holding `administrator` |
+| `admin_user` | A user holding `manager` |
 | `viewer_user` | A user holding `receptionist` — the least privileged station |
 | `gemmologist_user` | A user holding `gemmologist` — the positive case wherever `viewer_user` is the negative one |
 | `roles` | Runs `setup_roles`, so the matrix exists |

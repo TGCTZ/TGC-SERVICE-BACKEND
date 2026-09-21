@@ -111,7 +111,7 @@ flowchart LR
 | Role | Scope |
 | --- | --- |
 | `superadmin` | Every permission, resolved dynamically |
-| `administrator` | Full CRUD across the domain, users, roles, audit read |
+| `manager` | Full CRUD across the domain, users, roles, audit read |
 | `receptionist` | Customers and orders, and handing finished certificates back. **Not** stones — typing one is the bench's job |
 | `gemmologist` | The bench: stones, identification, findings and certificates. No billing |
 | `accountant` | Bills, payments, service providers, and the stone catalogue |
