@@ -522,3 +522,86 @@ def test_the_findings_queue_costs_a_constant_number_of_queries(settings, user):
     assert len(queries.captured_queries) == 2, [
         q["sql"] for q in queries.captured_queries
     ]
+
+
+# ---------------------------------------------------------------------------
+# Who may countersign a report
+# ---------------------------------------------------------------------------
+
+
+def test_the_bench_can_list_its_own_candidates(gemmologist_user, auth_client):
+    """The dialog's list must work for the role that actually finalizes.
+
+    Regression: this list used to come from ``/users``, which the gemmologist
+    role holds no permission on. The 403 was swallowed by the client and the
+    dropdown simply rendered empty, so a report could not be countersigned at
+    all without anyone being told why.
+    """
+    response = auth_client(gemmologist_user).get(
+        "/api/v1/identification-reports/gemmologist-candidates/"
+    )
+
+    assert response.status_code == 200
+
+
+def test_candidates_are_gemmologists_other_than_the_caller(
+    gemmologist_user, admin_user, viewer_user, auth_client
+):
+    """Only the bench, and never the caller themselves."""
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    peer = UserFactory()
+    peer.groups.add(Group.objects.get(name="gemmologist"))
+
+    response = auth_client(gemmologist_user).get(
+        "/api/v1/identification-reports/gemmologist-candidates/"
+    )
+
+    returned = {row["id"] for row in response.data}
+    assert peer.id in returned
+    # Not the caller: `finalize_report` refuses a report signed twice over.
+    assert gemmologist_user.id not in returned
+    # Not other roles, however privileged - the certificate claims two
+    # qualified gemmologists, so a manager or receptionist is not eligible.
+    assert admin_user.id not in returned
+    assert viewer_user.id not in returned
+
+
+def test_an_inactive_gemmologist_is_not_offered(gemmologist_user, auth_client):
+    """Someone who has left the lab cannot be named on a new certificate."""
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    retired = UserFactory(is_active=False)
+    retired.groups.add(Group.objects.get(name="gemmologist"))
+
+    response = auth_client(gemmologist_user).get(
+        "/api/v1/identification-reports/gemmologist-candidates/"
+    )
+
+    assert retired.id not in {row["id"] for row in response.data}
+
+
+def test_finalize_refuses_a_second_signatory_off_the_bench(
+    paid_stone, gemmologist_user, viewer_user, auth_client
+):
+    """The rule lives on the server, not in the dialog.
+
+    Narrowing the dropdown is a convenience; this is the check that keeps the
+    certificate's "at least two qualified Gemmologists" true for a caller who
+    posts the id by hand.
+    """
+    report = create_finalizable_report(paid_stone, gemmologist_user)
+
+    response = auth_client(gemmologist_user).post(
+        f"/api/v1/identification-reports/{report.id}/finalize/",
+        {"verified_by": viewer_user.id},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    report.refresh_from_db()
+    assert not report.is_finalized

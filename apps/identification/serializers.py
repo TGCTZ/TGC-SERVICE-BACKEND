@@ -2,8 +2,6 @@
 
 from rest_framework import serializers
 
-from django.contrib.auth import get_user_model
-
 from apps.core.serializers import AuditFieldsMixin
 from apps.gems.enums import WeightUnit
 from apps.gems.serializers import (
@@ -16,6 +14,7 @@ from apps.gems.serializers import (
 )
 
 from .models import IdentificationReport, InstrumentUsed
+from .selectors import gemmologist_candidates
 
 
 class InstrumentUsedSerializer(AuditFieldsMixin):
@@ -145,6 +144,26 @@ class IdentificationReportSerializer(AuditFieldsMixin):
         return str(obj.verified_by) if obj.verified_by_id else None
 
 
+class GemmologistCandidateSerializer(serializers.Serializer):
+    """One person the caller may name as second gemmologist.
+
+    Deliberately not the full user serializer: the dialog needs a name to show
+    and an id to post back, and the bench has no business reading everyone's
+    email address to fill in a dropdown.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    label = serializers.SerializerMethodField()
+
+    def get_label(self, obj) -> str:
+        """The same rendering as ``verified_by_label`` on the report.
+
+        Shared so the name in the dropdown is the name that comes back on the
+        finalized report, rather than two spellings of the same person.
+        """
+        return str(obj)
+
+
 class FinalizeReportSerializer(serializers.Serializer):
     """Payload for finalizing a report.
 
@@ -153,6 +172,9 @@ class FinalizeReportSerializer(serializers.Serializer):
     prints a single name rather than an empty second line.
     """
 
+    # Narrowed to the bench rather than every user: this field is what puts a
+    # second name on a certificate that claims two qualified gemmologists saw
+    # the stone, so the check belongs on the server, not in the dialog.
     verified_by = serializers.PrimaryKeyRelatedField(
-        queryset=get_user_model().objects.all(), required=False, allow_null=True
+        queryset=gemmologist_candidates(), required=False, allow_null=True
     )

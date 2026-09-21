@@ -14,6 +14,10 @@ account, granted everything dynamically so a newly added model is covered
 without editing this file.
 """
 
+#: The bench. Named here so the identification app can ask "who is a
+#: gemmologist?" without hardcoding a string that this file might rename.
+GEMMOLOGIST_ROLE = "gemmologist"
+
 CRUD = ("add", "change", "delete", "view")
 READ = ("view",)
 

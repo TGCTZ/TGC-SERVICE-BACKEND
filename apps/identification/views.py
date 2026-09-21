@@ -12,9 +12,15 @@ from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
 from .models import IdentificationReport, InstrumentUsed
-from .selectors import findings_worklist
+from .selectors import (
+    findings_worklist,
+)
+from .selectors import (
+    gemmologist_candidates as gemmologist_candidates_queryset,
+)
 from .serializers import (
     FinalizeReportSerializer,
+    GemmologistCandidateSerializer,
     IdentificationReportSerializer,
     InstrumentUsedSerializer,
 )
@@ -70,6 +76,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     action_permissions = {
         "finalize": ["identification.finalize_report"],
         "worklist": ["identification.add_identificationreport"],
+        # Gated on finalize rather than `users.view_user`: this list exists to
+        # fill the finalize dialog, and the bench holds no permission on users.
+        "gemmologist_candidates": ["identification.finalize_report"],
     }
 
     def check_restorable(self, instance):
@@ -119,6 +128,17 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             verified_by=payload.validated_data.get("verified_by"),
         )
         return Response(self.get_serializer(report).data)
+
+    @extend_schema(responses=GemmologistCandidateSerializer(many=True))
+    @action(detail=False, methods=["get"], url_path="gemmologist-candidates")
+    def gemmologist_candidates(self, request):
+        """Active gemmologists the caller may name as second signatory.
+
+        Unpaginated: the bench is a handful of people, and a dropdown that
+        silently stopped at page one would hide colleagues rather than page.
+        """
+        candidates = gemmologist_candidates_queryset(exclude_user=request.user)
+        return Response(GemmologistCandidateSerializer(candidates, many=True).data)
 
     @extend_schema(responses=StoneSerializer)
     @action(detail=False, methods=["get"])
