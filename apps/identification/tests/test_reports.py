@@ -217,13 +217,13 @@ def test_is_finalized_is_not_directly_writable(paid_stone, admin_user, auth_clie
 def test_instruments_cannot_be_added_to_a_finalized_report(
     paid_stone, admin_user, auth_client
 ):
-    """The lock covers the readings too, or it means nothing."""
+    """The lock covers the instruments too, or it means nothing."""
     report = create_finalizable_report(paid_stone, None)
     client = auth_client(admin_user)
 
     first = client.post(
         "/api/v1/instruments-used/",
-        {"report": report.pk, "instrument": InstrumentFactory().pk, "reading": "1.76"},
+        {"report": report.pk, "instrument": InstrumentFactory().pk},
     )
     assert first.status_code == 201, first.data
 
@@ -231,10 +231,22 @@ def test_instruments_cannot_be_added_to_a_finalized_report(
 
     second = client.post(
         "/api/v1/instruments-used/",
-        {"report": report.pk, "instrument": InstrumentFactory().pk, "reading": "1.54"},
+        {"report": report.pk, "instrument": InstrumentFactory().pk},
     )
     assert second.status_code == 400
     assert InstrumentUsed.objects.filter(report=report).count() == 1
+
+
+def test_an_instrument_can_be_ticked_only_once_per_report(
+    paid_stone, admin_user, auth_client
+):
+    """A toggle is on or off; a double click must not record it twice."""
+    report = create_finalizable_report(paid_stone, None)
+    client = auth_client(admin_user)
+    payload = {"report": report.pk, "instrument": InstrumentFactory().pk}
+
+    assert client.post("/api/v1/instruments-used/", payload).status_code == 201
+    assert client.post("/api/v1/instruments-used/", payload).status_code == 400
 
 
 def test_findings_worklist_endpoint_lists_stones(paid_stone, admin_user, auth_client):

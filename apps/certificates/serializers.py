@@ -5,6 +5,7 @@ from rest_framework import serializers
 from apps.core.serializers import AuditFieldsMixin
 
 from .models import Certificate
+from .selectors import instrument_checklist
 
 
 class CertificateSerializer(AuditFieldsMixin):
@@ -22,6 +23,9 @@ class CertificateSerializer(AuditFieldsMixin):
     )
     report_number = serializers.CharField(source="report.report_number", read_only=True)
     issued_by_label = serializers.SerializerMethodField()
+    # The lab's full instrument list with this certificate's ticks - the same
+    # list the PDF prints, so the view dialog and the document agree.
+    instrument_checklist = serializers.SerializerMethodField()
 
     class Meta:
         model = Certificate
@@ -47,11 +51,11 @@ class CertificateSerializer(AuditFieldsMixin):
             "optic_character_snapshot",
             "treatment_snapshot",
             "nature_type_snapshot",
-            "dimensions_snapshot",
             "refractive_index_snapshot",
             "specific_gravity_snapshot",
             "comments_snapshot",
             "instruments_snapshot",
+            "instrument_checklist",
             "report_number_snapshot",
             "photo_snapshot",
             "gemmologist",
@@ -66,6 +70,10 @@ class CertificateSerializer(AuditFieldsMixin):
         # the snapshots and the status all have to be minted together or the
         # document does not mean anything.
         read_only_fields = tuple(f for f in fields if f != "stone")
+
+    def get_instrument_checklist(self, obj) -> list[dict]:
+        """Every active instrument, ticked where this certificate used it."""
+        return instrument_checklist(obj)
 
     def get_issued_by_label(self, obj) -> str | None:
         """Who issued it, or None if unattributed."""

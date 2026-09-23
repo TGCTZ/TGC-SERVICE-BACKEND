@@ -334,7 +334,6 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
         treatment=Treatment.HEATED,
         nature_type=NatureType.NATURAL,
         refractive_index="1.762-1.770",
-        dimensions="8.1 x 6.0 x 4.2 mm",
         conclusion="Natural ruby, heated.",
     )
     finalize_report(report, user=user)
@@ -346,7 +345,6 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
     assert certificate.shape_cut_snapshot == "Oval"
     assert certificate.origin_snapshot == "Mogok"
     assert certificate.refractive_index_snapshot == "1.762-1.770"
-    assert certificate.dimensions_snapshot == "8.1 x 6.0 x 4.2 mm"
     assert certificate.comments_snapshot == "Natural ruby, heated."
     assert certificate.report_number_snapshot == report.report_number
 
@@ -389,26 +387,45 @@ def test_the_second_gemmologist_must_be_someone_else(settings, user):
         finalize_report(report, user=user, verified_by=user)
 
 
-def test_certificate_snapshots_the_instruments_used(settings, user):
-    """Instruments print as words on the document, so they freeze as words."""
+def test_certificate_snapshots_the_instrument_checklist(settings, user):
+    """Every active instrument is listed, ticked when used, frozen as words."""
     stone = _paid_stone(settings)
     report = create_finalizable_report(stone, user)
-    instrument = InstrumentFactory(name="Refractometer")
-    InstrumentUsed.objects.create(
-        report=report, instrument=instrument, reading="1.762-1.770"
-    )
+    used = InstrumentFactory(name="Refractometer")
+    InstrumentFactory(name="Polariscope")
+    retired = InstrumentFactory(name="Dichroscope", is_active=False)
+    InstrumentUsed.objects.create(report=report, instrument=used)
     finalize_report(report, user=user)
 
     certificate = issue_certificate(stone, user=user)
 
-    assert certificate.instruments_snapshot == [
-        {"name": "Refractometer", "reading": "1.762-1.770"}
-    ]
+    snapshot = {row["name"]: row["used"] for row in certificate.instruments_snapshot}
+    assert snapshot["Refractometer"] is True
+    assert snapshot["Polariscope"] is False
+    assert retired.name not in snapshot
 
-    instrument.name = "Renamed instrument"
-    instrument.save()
+    used.name = "Renamed instrument"
+    used.save()
     certificate.refresh_from_db()
-    assert certificate.instruments_snapshot[0]["name"] == "Refractometer"
+    assert "Refractometer" in {row["name"] for row in certificate.instruments_snapshot}
+
+
+def test_legacy_instrument_snapshot_renders_as_ticked(settings, user):
+    """Certificates issued before the checklist listed only instruments used."""
+    stone = _paid_stone(settings)
+    report = create_finalizable_report(stone, user)
+    finalize_report(report, user=user)
+    certificate = issue_certificate(stone, user=user)
+    certificate.instruments_snapshot = [{"name": "Refractometer", "reading": "1.76"}]
+
+    InstrumentFactory(name="Polariscope")
+
+    instruments = {
+        row["name"]: row["used"]
+        for row in certificate_context(certificate)["instruments"]
+    }
+    assert instruments["Refractometer"] is True
+    assert instruments["Polariscope"] is False
 
 
 def test_certificate_context_carries_a_qr_and_the_lab_marks(settings, user):

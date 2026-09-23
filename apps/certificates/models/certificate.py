@@ -55,12 +55,13 @@ class Certificate(BaseModel):
     optic_character_snapshot = models.CharField(max_length=50, blank=True, default="")
     treatment_snapshot = models.CharField(max_length=50, blank=True, default="")
     nature_type_snapshot = models.CharField(max_length=50, blank=True, default="")
-    dimensions_snapshot = models.CharField(max_length=50, blank=True, default="")
     refractive_index_snapshot = models.CharField(max_length=50, blank=True, default="")
     # Held as text, not Decimal: it is printed verbatim and never arithmetic.
     specific_gravity_snapshot = models.CharField(max_length=50, blank=True, default="")
     comments_snapshot = models.TextField(blank=True, default="")
-    # ``[{"name": ..., "reading": ...}, ...]`` as it read at issue. A list
+    # ``[{"name": ..., "used": bool}, ...]``: the full instrument checklist as
+    # it stood at issue. Certificates issued before the checklist hold
+    # ``[{"name": ..., "reading": ...}]`` with every row used. A list
     # rather than rows, because these are words on a document rather than a
     # relation anyone queries.
     instruments_snapshot = models.JSONField(default=list, blank=True)

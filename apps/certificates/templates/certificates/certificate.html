@@ -57,8 +57,12 @@
     :root {
       --tgc-blue: #0152a9;      /* TGC Blue, blue-600 */
       --tgc-gold: #e4a41e;      /* TGC Gold, gold-500 */
-      --gold-tint: #fffaeb;     /* gold-50  - column header fill */
-      --gold-deep: #452a05;     /* gold-950 - text on gold surfaces */
+      --header-teal: #3b7a96;   /* section header fill, matched to the lab's paper form; white on it is 4.9:1 */
+      --navy: #000080;          /* titles, labels, instrument names, info bar, 'Scan to verify' */
+      /* 1px drew true in the PDF but dropped out in browser viewers at page
+         zoom, leaving sections with missing sides; 0.35mm survives. */
+      --rule-width: 0.35mm;
+      --grid: #000;             /* section and cell borders - black, as on the paper form */
       --ink: #0f172a;           /* neutral-900 */
       --muted: #64748b;         /* neutral-500 */
       --rule: #e2e8f0;          /* neutral-200 */
@@ -92,7 +96,7 @@
        The fallbacks are there for the case where a font file has gone missing;
        the document still renders, just not in its own clothes. */
     body {
-      font-family: "TGC Sans", "DejaVu Sans", sans-serif;
+      font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
       font-size: 11pt;
       color: var(--ink);
       margin: 0;
@@ -102,8 +106,7 @@
     /* Figures that share a column must share a width. An R.I. of 1.577 - 1.583
        set in proportional figures wanders against the row above it, and these
        documents are read side by side. */
-    .value,
-    .reading {
+    .value {
       font-variant-numeric: tabular-nums;
     }
 
@@ -113,8 +116,8 @@
          y 0      revoked banner (only on a revoked certificate)   h 7
          y 8      header: emblem / titles / logo                   h 24
          y 35     info bar: report number and date                 h 8
-         y 46     the three columns                                h 144
-         y 192.5  footer: certificate and order references         h 6
+         y 46     the three columns                                h 154
+         (10mm bottom margin; no footer)
 
        Horizontally: 10mm side margins, three 89mm columns with
        5mm gutters (89*3 + 5*2 = 277 = 297 - 2*10).
@@ -139,7 +142,6 @@
     .header {
       top: 8mm;
       height: 24mm;
-      border-bottom: 2px solid var(--tgc-blue);
     }
 
     /* The marks are pinned to the corners and the titles centred on the sheet
@@ -162,44 +164,51 @@
     .header .mark.left { left: 0; }
     .header .mark.right { right: 0; }
 
-    /* Tighter leading than the body's 1.3. Four lines of display type at the
-       sizes below add up to more than the header's 24mm at body leading, and
-       the address was running under the rule; display type wants less leading
-       than text anyway, so this is the fix rather than a taller header. */
+    /* Tighter leading than the body's 1.3: display type wants less, and it keeps
+       the three title lines compact and centred in the 24mm header. */
     .header .titles {
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
+      font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
       line-height: 1.1;
       position: absolute;
-      top: 0.5mm;
+      top: 3mm;
+      /* The space between the two 24mm marks, with 4mm clear of each; centred
+         on the sheet, so the titles sit over the middle column. */
       left: 28mm;
       right: 28mm;
       text-align: center;
+      white-space: nowrap;
       color: var(--tgc-blue);
     }
 
+    /* As on the paper form: a small ministry line, the lab's name as the
+       largest type, and the document title smaller
+       beneath it - all bold, in navy. The lab's name is the widest line, wider
+       than the middle column it is centred over. */
     .titles .ministry {
       font-size: 12pt;
-      letter-spacing: 2px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
+      color: var(--navy);
     }
 
     .titles .lab {
-      font-size: 19pt;
-      font-weight: 600;
-      letter-spacing: 1px;
+      font-size: 18pt;
+      font-weight: 700;
+      letter-spacing: 0.2mm;
+      /* Letter-spacing trails the last letter too; this keeps it centred. */
+      padding-left: 0.2mm;
       text-transform: uppercase;
+      color: var(--navy);
+      margin: 0.8mm 0;
     }
 
     .titles .doc {
-      font-size: 16pt;
-      font-weight: 600;
-      letter-spacing: 2px;
+      font-size: 13pt;
+      font-weight: 700;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
-    }
-
-    .titles .address {
-      font-size: 10.5pt;
-      color: var(--muted);
+      color: var(--navy);
     }
 
     /* ---------- Info bar ---------- */
@@ -209,122 +218,135 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: var(--gold-tint);
-      color: var(--tgc-blue);
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-weight: 600;
-      font-size: 12pt;
+      background: #eef3f6;
+      border: var(--rule-width) solid var(--grid);
+      color: var(--navy);
+      font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
+      font-weight: 700;
+      font-size: 13pt;
       padding: 0 3mm;
     }
 
     /* ---------- Columns ---------- */
+    /* A column is only a position now; each section inside it draws its own
+       border, as on the lab's paper form. */
     .column {
       position: absolute;
       top: 46mm;
       width: 89mm;
-      height: 144mm;
-      border: 1px solid var(--rule);
-      border-radius: 1mm;
-      overflow: hidden;
+      height: 154mm;
     }
 
     .column-1 { left: 10mm; }
     .column-2 { left: 104mm; }
     .column-3 { left: 198mm; }
 
-    .column-header {
+    /* ---------- Sections ---------- */
+    .section {
       position: absolute;
-      top: 0;
       left: 0;
       right: 0;
+      border: var(--rule-width) solid var(--grid);
+      overflow: hidden;
+    }
+
+    .section-header {
       height: 7mm;
-      background: var(--gold-tint);
-      color: var(--gold-deep);
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-weight: 600;
-      font-size: 14pt;
+      background: var(--header-teal);
+      color: #fff;
+      font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
+      font-weight: 700;
+      font-size: 12pt;
       letter-spacing: 1px;
       text-transform: uppercase;
       text-align: center;
       line-height: 7mm;
-      /* gold-950 on gold-50 is 12.7:1. The obvious choice, gold-700, measures
-         4.2:1 and fails AA at this size - the design system already says so:
-         "gold is too light for white text". */
-      border-bottom: 0.6mm solid var(--tgc-gold);
-    }
-
-    /* Every block inside a column is placed by `top` and `height` from the
-       tables below; 3mm of side padding is shared by all of them. */
-    .block {
-      position: absolute;
-      left: 3mm;
-      right: 3mm;
-      overflow: hidden;
     }
 
     /* ==========================================================
-       COLUMN 1 - DESCRIPTION      COLUMN 2 - IDENTIFICATION
-         9    rows (8 x 8.5mm) 68    9    photograph        46
-         80   official stamp  40     58   rows (5 x 8.5mm) 42.5
-         123  signatories     20     103  comments          40
+       SECTIONS - top and height within each 154mm column, 3mm apart.
 
-       COLUMN 3 - INSTRUMENTS USED
-         9    instrument list 77
-         89   QR + caption    30
-         122  statement       21
+       COLUMN 1                     COLUMN 2
+         0    description     77      0    gemstone photo   87
+         80   official stamp  47      90   identification   64
+         130  gemmologists    24
 
-       All three columns end flush at 143mm - the column's own 1px
-       border eats the last half-millimetre of its 144mm box.
+       COLUMN 3
+         0    instruments used 94
+         97   QR box           26
+         124  'Scan to verify'  8 (outside the box)
+         133  statement        21
+
+       Each section is a 7mm header plus its rows: description
+       7 x 10mm, gemmologists 2 x 8.5mm, identification 5 x 8.5mm
+       plus a 14.5mm comment, instruments 12 x 7mm.
        ========================================================== */
-    .c1-rows        { top: 9mm;   height: 68mm; }
-    .c1-stamp       { top: 80mm;  height: 40mm; }
-    .c1-signatories { top: 123mm; height: 20mm; border-top: 1px solid var(--rule); padding-top: 1.5mm; }
+    .s-description    { top: 0;     height: 77mm; }
+    .s-stamp          { top: 80mm;  height: 47mm; }
+    .s-gemmologists   { top: 130mm; height: 24mm; }
 
-    /* The photograph gives up 9mm to the conclusion. At 11pt a four-line
-       comments box truncated an ordinary finding, and what the gemmologist
-       concluded is the part of this column that carries legal weight - the
-       photograph is corroboration. */
-    .c2-photo       { top: 9mm;   height: 46mm; }
-    .c2-rows        { top: 58mm;  height: 42.5mm; }
-    .c2-comments    { top: 103mm; height: 40mm; }
+    .s-photo          { top: 0;     height: 87mm; }
+    .s-identification { top: 90mm;  height: 64mm; }
 
-    .c3-instruments { top: 9mm;   height: 77mm; }
-    .c3-verify      { top: 89mm;  height: 30mm; }
-    .c3-statement   { top: 122mm; height: 21mm; }
+    .s-instruments    { top: 0;     height: 94mm; }
+    .s-verify         { top: 97mm;  height: 26mm; }
+    .verify-caption   { position: absolute; left: 0; right: 0; top: 124mm; height: 8mm; }
+    .s-statement      { top: 133mm; height: 21mm; }
 
-    /* ---------- Label/value rows ---------- */
-    /* A fixed 7mm rather than padding around the text: identical row heights in
-       all three columns mean the dotted rules line up across the sheet. The
-       height follows the type. At 11pt the longest finding the lab records -
-       "Doubly refractive (uniaxial)" - no longer fits its 83mm beside a label,
-       so the row has to hold two lines of value rather than one. 8.5mm is two
-       lines at the value's 1.05 leading, with the single-line rows unchanged
-       because the flex box centres them. */
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 2mm;
-      height: 8.5mm;
-      border-bottom: 1px dotted var(--rule-strong);
+    /* ---------- Label/value tables ---------- */
+    /* Fixed layout and fixed row heights, so rows line up across columns and
+       a long value wraps inside its cell instead of widening the table. Only
+       inner rules are drawn - the section supplies the outer border. */
+    .grid {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
     }
 
-    .row:last-child {
+    .grid td {
+      padding: 0 2mm;
+      vertical-align: middle;
+      border-bottom: var(--rule-width) solid var(--grid);
+      overflow: hidden;
+    }
+
+    .grid tr:last-child td {
       border-bottom: none;
     }
 
-    .row .label {
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-size: 10pt;
-      font-weight: 600;
-      color: var(--tgc-blue);
-      text-transform: uppercase;
+    /* 45% of the column is 40mm: the widest label, "OPTIC CHARACTER", is
+       35.8mm at 10.5pt bold, plus the cell's 4mm of padding. */
+    .grid td.label {
+      width: 45%;
       white-space: nowrap;
+      border-right: var(--rule-width) solid var(--grid);
+      font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: var(--navy);
+      text-transform: uppercase;
     }
 
-    .row .value {
-      text-align: end;
+    /* 10pt at 1.05 leading fits two lines in an 8mm row: the longest finding,
+       "Doubly refractive (uniaxial)", wraps once rather than clipping. */
+    .grid td.value {
+      font-size: 10pt;
+      font-weight: 700;
       line-height: 1.05;
+    }
+
+    .rows-10  td { height: 10mm; }
+    .rows-8-5 td { height: 8.5mm; }
+
+    /* The conclusion gets two lines and no more, at 5mm each; longer is a data
+       problem, and the cell clips rather than pushing the table off the page. */
+    .grid td.comment {
+      height: 14.5mm;
+    }
+
+    .grid td.comment div {
+      max-height: 10mm;
+      line-height: 5mm;
       overflow: hidden;
     }
 
@@ -332,44 +354,35 @@
       color: var(--placeholder);
     }
 
-    /* ---------- Stamp and signatories ---------- */
+    /* ---------- Stamp ---------- */
     .stamp {
-      height: 100%;
-      border: 0.5mm solid var(--tgc-gold);
-      text-align: center;
-      padding: 1.5mm;
-    }
-
-    .stamp .caption {
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-size: 10pt;
-      font-weight: 600;
-      color: var(--tgc-blue);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
-    .stamp img {
-      max-width: 100%;
-      max-height: 30mm;
-      object-fit: contain;
-    }
-
-    /* ---------- Photograph ---------- */
-    .photo {
-      height: 100%;
-      border: 1px dashed #bbb;
+      height: 40mm;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1.5mm;
     }
 
+    .stamp img {
+      max-width: 100%;
+      max-height: 37mm;
+      object-fit: contain;
+    }
+
+    /* ---------- Photograph ---------- */
+    .photo {
+      height: 80mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2mm;
+    }
+
     /* max-* rather than fixed width AND height: forcing both squashes every
        photograph that is not exactly the box's aspect ratio. */
     .photo img {
       max-width: 100%;
-      max-height: 42mm;
+      max-height: 76mm;
       object-fit: contain;
     }
 
@@ -381,88 +394,68 @@
       letter-spacing: 1px;
     }
 
-    /* ---------- Comments ---------- */
-    .comments .label {
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-size: 10pt;
-      font-weight: 600;
-      color: var(--tgc-blue);
-      text-transform: uppercase;
-      border-bottom: 1px dotted var(--rule-strong);
-      padding-bottom: 1mm;
-      margin-bottom: 1.5mm;
-    }
-
-    /* A line height in millimetres, and a height that is a whole number of
-       them: an over-long conclusion then cuts *between* lines instead of
-       through one. 6 lines at 5mm, under a label block about 9mm tall, is the
-       40mm the block has. Longer than that is a data problem, not a layout
-       one, and the box clips rather than spilling onto the QR. */
-    .comments .text {
-      font-size: 10pt;
-      line-height: 5mm;
-      height: 30mm;
-      overflow: hidden;
-    }
-
     /* ---------- Instruments ---------- */
-    .instrument {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 2mm;
+    /* 7mm rows: 12 fit, so an over-long list cuts between rows. The lab's own
+       form lists 10. */
+    .instruments td {
       height: 7mm;
-      border-bottom: 1px dotted var(--rule-strong);
     }
 
-    .instrument .tick {
-      color: var(--tgc-blue);
-      font-weight: bold;
+    /* The list rarely fills its section, so the last row closes itself off. */
+    .instruments tr:last-child td {
+      border-bottom: var(--rule-width) solid var(--grid);
     }
 
-    .instrument .reading {
+    .instruments td.name {
+      color: var(--navy);
+      font-size: 10.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-right: var(--rule-width) solid var(--grid);
+    }
+
+    .instruments td.tick {
+      width: 12mm;
+      text-align: center;
       color: var(--ink);
-      white-space: nowrap;
+      font-size: 13pt;
+      font-weight: bold;
+      /* Arimo has no check mark; Inter's is embedded. */
+      font-family: "TGC Sans", "DejaVu Sans", sans-serif;
     }
+
 
     /* ---------- QR and verification ---------- */
     .verify {
       text-align: center;
+      padding-top: 1.5mm;
     }
 
     .verify img {
-      width: 24mm;
-      height: 24mm;
+      width: 22mm;
+      height: 22mm;
     }
 
-    .verify .caption {
-      font-family: "TGC Serif", "DejaVu Serif", Georgia, serif;
-      font-size: 10.5pt;
-      color: var(--tgc-blue);
+    /* Below the QR's box rather than inside it, as on the paper form. */
+    .verify-caption {
+      text-align: center;
+      line-height: 8mm;
+      font-size: 16pt;
+      font-weight: 700;
       letter-spacing: 1px;
-      font-weight: 600;
+      color: var(--navy);
       text-transform: uppercase;
     }
 
     .statement {
       height: 100%;
-      border: 1px solid var(--rule-strong);
-      padding: 1.5mm;
+      padding: 1.5mm 2mm;
+      background: #e5e7eb;
       font-size: 9.5pt;
-      color: var(--muted);
+      font-weight: 700;
+      color: var(--ink);
       text-align: center;
       line-height: 1.35;
-    }
-
-    /* ---------- Footer ---------- */
-    .footer-number {
-      top: 192.5mm;
-      height: 6mm;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 9.5pt;
-      color: var(--muted);
     }
 
     /* ---------- Revoked ---------- */
@@ -516,7 +509,6 @@
       <div class="ministry">{{ ministry_name }}</div>
       <div class="lab">{{ lab_name }}</div>
       <div class="doc">Gemstone Identification Report</div>
-      {% if lab_address %}<div class="address">{{ lab_address }}</div>{% endif %}
     </div>
     <div class="mark right">
       {% if tgc_logo %}<img src="{{ tgc_logo }}" alt="">{% endif %}
@@ -528,74 +520,46 @@
     <span>Date: {{ certificate.issued_at|date:"d/m/Y" }}</span>
   </div>
 
-  {# ---------- Column 1: description, stamp, signatories ---------- #}
+  {# ---------- Column 1: description, stamp, gemmologists ---------- #}
   <div class="column column-1">
-    <div class="column-header">Description</div>
-
-    <div class="block c1-rows">
-      <div class="row">
-        <span class="label">Colour</span>
-        <span class="value">{{ certificate.color_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Shape / Cut</span>
-        <span class="value">{{ certificate.shape_cut_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Weight</span>
-        <span class="value">{{ certificate.weight_snapshot }} {{ weight_unit }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Transparency</span>
-        <span class="value">{{ certificate.transparency_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Optic character</span>
-        <span class="value">{{ certificate.optic_character_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">R.I.</span>
-        <span class="value">{{ certificate.refractive_index_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Specific gravity</span>
-        <span class="value">{{ certificate.specific_gravity_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Dimensions</span>
-        <span class="value">{{ certificate.dimensions_snapshot|default:"—" }}</span>
-      </div>
+    <div class="section s-description">
+      <div class="section-header">Description</div>
+      <table class="grid rows-10">
+        <tr><td class="label">Colour</td><td class="value">{{ certificate.color_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Shape / Cut</td><td class="value">{{ certificate.shape_cut_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Weight</td><td class="value">{{ certificate.weight_snapshot }} {{ weight_unit }}</td></tr>
+        <tr><td class="label">Transparency</td><td class="value">{{ certificate.transparency_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Optic character</td><td class="value">{{ certificate.optic_character_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">R.I.</td><td class="value">{{ certificate.refractive_index_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Specific gravity</td><td class="value">{{ certificate.specific_gravity_snapshot|default:"—" }}</td></tr>
+      </table>
     </div>
 
-    <div class="block c1-stamp">
+    <div class="section s-stamp">
+      <div class="section-header">Official Stamp</div>
       {% comment %}
         No placeholder when there is no stamp on file: the empty box is the
         space the lab stamps by hand, and printing "not on file" across it
         would read as a defect in the certificate rather than as room.
       {% endcomment %}
       <div class="stamp">
-        <div class="caption">Official Stamp</div>
         {% if official_stamp %}<img src="{{ official_stamp }}" alt="">{% endif %}
       </div>
     </div>
 
-    <div class="block c1-signatories">
-      <div class="row">
-        <span class="label">Gemmologist 1</span>
-        <span class="value">{{ certificate.gemmologist|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Gemmologist 2</span>
-        <span class="value">{{ certificate.gemmologist_two|default:"—" }}</span>
-      </div>
+    <div class="section s-gemmologists">
+      <div class="section-header">Gemmologists</div>
+      <table class="grid rows-8-5">
+        <tr><td class="label">Gemmologist 1</td><td class="value">{{ certificate.gemmologist|default:"—" }}</td></tr>
+        <tr><td class="label">Gemmologist 2</td><td class="value">{{ certificate.gemmologist_two|default:"—" }}</td></tr>
+      </table>
     </div>
   </div>
 
   {# ---------- Column 2: photograph and identification ---------- #}
   <div class="column column-2">
-    <div class="column-header">Identification</div>
-
-    <div class="block c2-photo">
+    <div class="section s-photo">
+      <div class="section-header">Gemstone Photo</div>
       <div class="photo">
         {% if photo %}
           <img src="{{ photo }}" alt="">
@@ -605,81 +569,55 @@
       </div>
     </div>
 
-    <div class="block c2-rows">
-      <div class="row">
-        <span class="label">Group / Species</span>
-        <span class="value">{{ certificate.species_snapshot|default:certificate.stone_type_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Variety</span>
-        <span class="value">{{ certificate.variety_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Nature</span>
-        <span class="value">{{ certificate.nature_type_snapshot|default:"—" }}</span>
-      </div>
-      <div class="row">
-        <span class="label">Treatment</span>
-        <span class="value">{{ certificate.treatment_snapshot|default:"—" }}</span>
-      </div>
-      {% comment %}
-        ORIGIN is the geographic source. The legacy template printed
-        nature_type here by mistake; both are shown, each in its own row.
-      {% endcomment %}
-      <div class="row">
-        <span class="label">Origin</span>
-        <span class="value">{{ certificate.origin_snapshot|default:"—" }}</span>
-      </div>
-    </div>
-
-    {% comment %}
-      Comments earns a block of its own rather than a row: a conclusion is a
-      sentence, and a 6mm right-aligned cell truncated it.
-    {% endcomment %}
-    <div class="block c2-comments comments">
-      <div class="label">Comments</div>
-      <div class="text">{{ certificate.comments_snapshot|default:"—" }}</div>
+    <div class="section s-identification">
+      <div class="section-header">Identification</div>
+      <table class="grid rows-8-5">
+        <tr><td class="label">Group / Species</td><td class="value">{{ certificate.species_snapshot|default:certificate.stone_type_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Variety</td><td class="value">{{ certificate.variety_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Nature</td><td class="value">{{ certificate.nature_type_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Treatment</td><td class="value">{{ certificate.treatment_snapshot|default:"—" }}</td></tr>
+        <tr><td class="label">Origin</td><td class="value">{{ certificate.origin_snapshot|default:"—" }}</td></tr>
+        {% comment %}
+          ORIGIN is the geographic source. The legacy template printed
+          nature_type there by mistake; both are shown, each in its own row.
+        {% endcomment %}
+        <tr>
+          <td class="label comment">Comment</td>
+          <td class="value comment"><div>{{ certificate.comments_snapshot|default:"—" }}</div></td>
+        </tr>
+      </table>
     </div>
   </div>
 
   {# ---------- Column 3: instruments, QR, statement ---------- #}
   <div class="column column-3">
-    <div class="column-header">Instruments Used</div>
-
-    {% comment %}
-      77mm is exactly 11 rows of 7mm, so an over-long list cuts between rows
-      rather than through one. The lab's own form lists 10.
-    {% endcomment %}
-    <div class="block c3-instruments">
-      {% for instrument in instruments %}
-        <div class="instrument">
-          <span><span class="tick">✓</span> {{ instrument.name }}</span>
-          {% if instrument.reading %}
-            <span class="reading">{{ instrument.reading }}</span>
-          {% endif %}
-        </div>
-      {% empty %}
-        <div class="muted">No instruments recorded.</div>
-      {% endfor %}
+    <div class="section s-instruments">
+      <div class="section-header">Instruments Used</div>
+      {# Every instrument is listed; the ones used are ticked. #}
+      <table class="grid instruments">
+        {% for instrument in instruments %}
+          <tr>
+            <td class="name">{{ instrument.name }}</td>
+            <td class="tick">{% if instrument.used %}✓{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td class="muted">No instruments recorded.</td></tr>
+        {% endfor %}
+      </table>
     </div>
 
-    <div class="block c3-verify verify">
+    <div class="section s-verify verify">
       <img src="{{ qr_code }}" alt="">
-      <div class="caption">Scan to verify</div>
     </div>
+    <div class="verify-caption">Scan to verify</div>
 
-    <div class="block c3-statement">
+    <div class="section s-statement">
       <div class="statement">
         The information described in this report has been examined by at least
         two qualified Gemmologists. Please see the back side for additional
         information.
       </div>
     </div>
-  </div>
-
-  <div class="band footer-number">
-    <span>{{ certificate.certificate_number }}</span>
-    <span>{{ order_reference }} &middot; Stone {{ stone_label }}</span>
   </div>
 
 </div>

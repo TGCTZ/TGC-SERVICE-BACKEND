@@ -20,6 +20,7 @@ from django.template.loader import render_to_string
 from apps.gems.enums import CertificateStatus, WeightUnit
 
 from ..models import Certificate
+from ..selectors import instrument_checklist
 from .assets import (
     font_faces,
     lab_assets,
@@ -68,7 +69,7 @@ def certificate_context(certificate: Certificate) -> dict:
         "report_number": (
             certificate.report_number_snapshot or certificate.report.report_number
         ),
-        "instruments": certificate.instruments_snapshot or [],
+        "instruments": instrument_checklist(certificate),
         # The frozen copy, falling back to the stone's live photograph for
         # certificates issued before snapshotting existed.
         "photo": (

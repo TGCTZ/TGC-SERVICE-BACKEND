@@ -149,6 +149,9 @@ FONTS = (
     ("source-serif-4-semibold", "TGC Serif", 600),
     ("inter-regular", "TGC Sans", 400),
     ("inter-semibold", "TGC Sans", 600),
+    # Arial's metrics, for the text the lab's paper form sets in Arial.
+    ("arimo-regular", "TGC Arial", 400),
+    ("arimo-bold", "TGC Arial", 700),
 )
 
 

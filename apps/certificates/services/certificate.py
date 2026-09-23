@@ -1,11 +1,13 @@
 """Certificate issuance and revocation."""
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
 from apps.core.services import generate_reference_number
 from apps.gems.enums import BillStatus, CertificateStatus, StoneStatus
+from apps.gems.models import Instrument
 from apps.orders.services import transition_stone
 
 from ..models import Certificate
@@ -29,16 +31,20 @@ def _person(user) -> str:
 
 
 def _instruments(report) -> list[dict]:
-    """The instruments used, as plain rows of words.
+    """Every instrument the lab has, each marked used or not.
 
-    Snapshotted as a list rather than kept as a relation because these are
-    printed text, not something anyone queries. Skips blank readings rather than
-    printing an empty value: the reference document shows the instrument alone
-    when there is no figure to give.
+    The certificate prints the full checklist, so the snapshot freezes the list
+    as it stood at issue - adding an instrument later must not add an unticked
+    row to an old document. An inactive instrument still appears when this
+    report used it: the tick is a fact about the stone.
     """
+    used_ids = set(report.instruments_used.values_list("instrument_id", flat=True))
+    instruments = Instrument.objects.filter(
+        Q(is_active=True) | Q(pk__in=used_ids)
+    ).order_by("name")
     return [
-        {"name": used.instrument.name, "reading": used.reading or ""}
-        for used in report.instruments_used.select_related("instrument").all()
+        {"name": instrument.name, "used": instrument.pk in used_ids}
+        for instrument in instruments
     ]
 
 
@@ -98,7 +104,6 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         optic_character_snapshot=report.get_optic_character_display() or "",
         treatment_snapshot=report.get_treatment_display() or "",
         nature_type_snapshot=report.get_nature_type_display() or "",
-        dimensions_snapshot=report.dimensions,
         refractive_index_snapshot=report.refractive_index,
         specific_gravity_snapshot=(
             "" if report.specific_gravity is None else str(report.specific_gravity)

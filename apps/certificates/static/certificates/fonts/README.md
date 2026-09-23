@@ -9,7 +9,12 @@ need `collectstatic` to have run, and WeasyPrint needs no `base_url`.
 | `source-serif-4-regular.woff2` | `TGC Serif` | 400 | reserve |
 | `source-serif-4-semibold.woff2` | `TGC Serif` | 600 | lab name, title, column headers, labels |
 | `inter-regular.woff2` | `TGC Sans` | 400 | values, readings, comments, statement |
-| `inter-semibold.woff2` | `TGC Sans` | 600 | reserve |
+| `inter-semibold.woff2` | `TGC Sans` | 600 | the ✓ in the instruments column |
+| `arimo-regular.woff2` | `TGC Arial` | 400 | titles, photo placeholder |
+| `arimo-bold.woff2` | `TGC Arial` | 700 | headers, labels, values, statement |
+
+Arimo stands in for Arial, which the lab's paper form is set in: same letter
+widths, but under the OFL, so it can be embedded. Arial's licence forbids that.
 
 ## Why these are embedded rather than named
 

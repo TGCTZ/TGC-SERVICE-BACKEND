@@ -75,7 +75,6 @@ class IdentificationReport(BaseModel):
     )
 
     # Measurements.
-    dimensions = models.CharField(max_length=50, blank=True, default="")
     refractive_index = models.CharField(max_length=50, blank=True, default="")
     specific_gravity = models.DecimalField(
         max_digits=10, decimal_places=3, null=True, blank=True
@@ -132,7 +131,11 @@ class IdentificationReport(BaseModel):
 
 
 class InstrumentUsed(BaseModel):
-    """An instrument used during a report, with its reading."""
+    """An instrument used during a report.
+
+    Presence is the whole record: the lab ticks which instruments it used and
+    records no measurement, so a row exists or it does not.
+    """
 
     report = models.ForeignKey(
         IdentificationReport, on_delete=models.CASCADE, related_name="instruments_used"
@@ -140,14 +143,18 @@ class InstrumentUsed(BaseModel):
     instrument = models.ForeignKey(
         "gems.Instrument", on_delete=models.PROTECT, related_name="+"
     )
-    reading = models.CharField(max_length=100, blank=True, default="")
 
     class Meta:
         ordering = ["report", "id"]
+        constraints = [
+            # Live rows only, so a toggle switched off (soft-deleted) and back
+            # on is not blocked by its own ghost.
+            models.UniqueConstraint(
+                fields=["report", "instrument"],
+                condition=Q(deleted_at__isnull=True),
+                name="identification_instrumentused_unique_live",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return (
-            f"{self.instrument} ({self.reading})"
-            if self.reading
-            else str(self.instrument)
-        )
+        return str(self.instrument)

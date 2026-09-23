@@ -18,7 +18,7 @@ from .selectors import gemmologist_candidates
 
 
 class InstrumentUsedSerializer(AuditFieldsMixin):
-    """An instrument used during a report, with its reading."""
+    """An instrument used during a report."""
 
     instrument_detail = InstrumentSerializer(source="instrument", read_only=True)
 
@@ -29,7 +29,6 @@ class InstrumentUsedSerializer(AuditFieldsMixin):
             "report",
             "instrument",
             "instrument_detail",
-            "reading",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
@@ -61,7 +60,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     identified_by_label = serializers.SerializerMethodField()
     verified_by_label = serializers.SerializerMethodField()
 
-    # Weight is measured at the bench alongside the dimensions, so it belongs on
+    # Weight is measured at the bench alongside the other findings, so it belongs on
     # this form - but it lives on the Stone, which is what the certificate
     # snapshots. It travels through here and the service hands it on. Read back
     # under stone_* so the form seeds itself in one request.
@@ -106,7 +105,6 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "transparency",
             "treatment",
             "optic_character",
-            "dimensions",
             "refractive_index",
             "specific_gravity",
             "weight",

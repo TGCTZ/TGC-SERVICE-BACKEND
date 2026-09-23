@@ -3,7 +3,10 @@
 from django.db.models import Max
 
 from apps.gems.enums import BillStatus
+from apps.gems.models import Instrument
 from apps.orders.models import Stone
+
+from .models import Certificate
 
 
 def certification_worklist():
@@ -44,3 +47,24 @@ def certification_worklist():
             "pk",
         )
     )
+
+
+def instrument_checklist(certificate: Certificate) -> list[dict]:
+    """Every active instrument, ticked where the certificate recorded its use.
+
+    Built at render time rather than read straight from the snapshot, so every
+    certificate prints the lab's full instrument list - including those issued
+    before the checklist, whose snapshot held only the instruments used (rows
+    with no ``used`` key, each of them ticked). What was *used* still comes
+    from the snapshot; only the list of names around it is live. An instrument
+    in the snapshot that has since been retired or renamed stays on, under its
+    name as issued.
+    """
+    used = {
+        row["name"]
+        for row in certificate.instruments_snapshot or []
+        if row.get("used", True)
+    }
+    names = set(Instrument.objects.filter(is_active=True).values_list("name", flat=True))
+    names |= {row["name"] for row in certificate.instruments_snapshot or []}
+    return [{"name": name, "used": name in used} for name in sorted(names)]

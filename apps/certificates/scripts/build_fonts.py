@@ -36,6 +36,10 @@ OUT_DIR = Path(__file__).resolve().parent.parent / "static" / "certificates" / "
 SOURCES = {
     "source-serif-4": "https://github.com/google/fonts/raw/main/ofl/sourceserif4/SourceSerif4%5Bopsz%2Cwght%5D.ttf",
     "inter": "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+    # Arimo is metric-compatible with Arial - the face the lab's paper form is
+    # set in - under a licence (OFL) that allows embedding. Arial's
+    # does not.
+    "arimo": "https://github.com/google/fonts/raw/main/ofl/arimo/Arimo%5Bwght%5D.ttf",
 }
 
 #: Optical size to pin, per family, in points.
@@ -43,12 +47,17 @@ SOURCES = {
 #: The certificate's largest type is the 13pt lab name and its smallest is the
 #: 6.5pt statement, so 11 sits in the middle of what the serif actually sets.
 #: Inter's axis bottoms out at 14, which is already its text-optimised end.
-OPTICAL_SIZE = {"source-serif-4": 11, "inter": 14}
+OPTICAL_SIZE = {"source-serif-4": 11, "inter": 14, "arimo": None}
 
 #: Weights to instance. Regular for reading, SemiBold for labels and titles;
 #: 600 rather than 700 because a 7.5pt uppercase label in true bold turns into
 #: a black smear at print resolution.
-WEIGHTS = {"regular": 400, "semibold": 600}
+WEIGHTS = {
+    "source-serif-4": {"regular": 400, "semibold": 600},
+    "inter": {"regular": 400, "semibold": 600},
+    # True bold: the paper form sets its labels in Arial Bold.
+    "arimo": {"regular": 400, "bold": 700},
+}
 
 #: What the document can actually print.
 #:
@@ -84,10 +93,11 @@ def _build(family: str, raw: bytes, style: str, weight: int) -> Path:
     """Instance one weight, subset it to Latin, and write it as woff2."""
     font = TTFont(io.BytesIO(raw))
 
-    # Pin both axes, collapsing the variable font to a single static instance.
-    font = instancer.instantiateVariableFont(
-        font, {"wght": weight, "opsz": OPTICAL_SIZE[family]}, inplace=True
-    )
+    # Pin every axis, collapsing the variable font to a single static instance.
+    axes = {"wght": weight}
+    if OPTICAL_SIZE[family] is not None:
+        axes["opsz"] = OPTICAL_SIZE[family]
+    font = instancer.instantiateVariableFont(font, axes, inplace=True)
 
     options = subset.Options()
     options.layout_features = ["kern", "liga", "tnum", "calt"]
@@ -112,7 +122,7 @@ def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for family, url in SOURCES.items():
         raw = _fetch(url)
-        for style, weight in WEIGHTS.items():
+        for style, weight in WEIGHTS[family].items():
             path = _build(family, raw, style, weight)
             print(f"  {path.name:34} {path.stat().st_size / 1024:6.1f} KB")
     return 0
