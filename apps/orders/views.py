@@ -85,20 +85,27 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     # follows the billing and certification worklists, which gate on their
     # workflow verb rather than on `view`.
     def get_queryset(self):
-        """Narrow by identification progress, or by the order's derived stage.
+        """Narrow by identification progress and/or the order's derived stage.
 
         Both live here rather than in ``filter_fields`` for the same reason: the
         whitelist filter backend matches fields, and neither of these is one.
         ``identification`` compares two columns; ``stage`` is computed from the
         stones and the bill by :func:`order_stage`, and
         :func:`orders_at_stage` re-expresses that derivation as SQL.
+
+        The two combine rather than one overriding the other. A hold or a
+        cancellation outranks identification in the derivation, so
+        ``stage=on_hold`` alone would still return orders with stones left to
+        type - wrong for a screen that lists only finished identification.
+        Re-annotating ``identified`` after ``orders_at_stage`` has already done
+        so replaces the alias on the same join, so the count is not inflated.
         """
         queryset = super().get_queryset()
         params = getattr(self.request, "query_params", {})
 
         stage = str(params.get("stage", "")).lower()
         if stage:
-            return orders_at_stage(queryset, stage)
+            queryset = orders_at_stage(queryset, stage)
 
         wanted = str(params.get("identification", "")).lower()
         if wanted == "pending":

@@ -465,6 +465,38 @@ def test_identification_filter_splits_the_list_in_two(admin_user, auth_client):
     assert refs() == {pending.reference_number, complete.reference_number}
 
 
+def test_stage_and_identification_filters_combine(admin_user, auth_client, user):
+    """A hold outranks identification, so the stage alone is not enough.
+
+    Both orders below are on hold; only one has every stone typed. The
+    Identification page asks for finished identification *and* a stage, and a
+    stage that silently replaced the identification filter would slip the
+    half-typed order back onto a screen meant only for finished ones.
+    """
+    from apps.gems.enums import OrderHold
+    from apps.orders.services import hold_order
+
+    stone_type = StoneTypeFactory()
+    partial = OrderFactory(stone_count=2)
+    add_stone(partial, stone_type=stone_type)
+    full = OrderFactory(stone_count=1)
+    add_stone(full, stone_type=stone_type)
+    for order in (partial, full):
+        hold_order(order, status=OrderHold.ON_HOLD, reason="Customer away.", user=user)
+
+    client = auth_client(admin_user)
+
+    def refs(params):
+        response = client.get(f"/api/v1/orders/{params}")
+        assert response.status_code == 200, response.data
+        return {row["reference_number"] for row in response.data["results"]}
+
+    # The stage by itself still returns both - that is what a hold means.
+    assert refs("?stage=on_hold") == {partial.reference_number, full.reference_number}
+    assert refs("?stage=on_hold&identification=complete") == {full.reference_number}
+    assert refs("?stage=on_hold&identification=pending") == {partial.reference_number}
+
+
 def test_an_unknown_identification_value_is_ignored(admin_user, auth_client):
     """A stale link degrades to the plain list rather than erroring."""
     OrderFactory(stone_count=1)
