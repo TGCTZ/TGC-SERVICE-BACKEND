@@ -11,7 +11,7 @@ tells us asynchronously. There is no manual payment entry anywhere in the system
 | [00 Overview](00_GEPG_INTEGRATION_OVERVIEW.md) | Configuration, architecture, message catalogue |
 | [01 Bill submission](01_BILL_SUBMISSION.md) | `billSubReq` - getting a control number |
 | [02 Payment notification](02_PAYMENT_NOTIFICATION.md) | `pmtSpNtfReq` - the callback that settles a bill |
-| [03 Bill cancellation](03_BILL_CANCELLATION.md) | `billCancReq` - **specification only** |
+| [03 Bill cancellation](03_BILL_CANCELLATION.md) | `billCanclReq` - **specification only** |
 | [04 Reconciliation](04_RECONCILIATION.md) | `sucSpPmtReq` - **specification only** |
 | [05 SMS](05_SMS_INTEGRATION.md) | Beem Africa - **specification only** |
 

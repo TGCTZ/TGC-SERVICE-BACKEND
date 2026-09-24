@@ -13,8 +13,7 @@ reading current data is correct. Here it would be a bug.
 A certificate stores its own copy of every finding it prints. Roughly two dozen
 `*_snapshot` columns on `apps/certificates/models/certificate.py` hold the stone
 type, weight and unit, colour, origin, species, variety, shape and cut,
-transparency, optic character, treatment, nature type, dimensions, refractive
-index, specific gravity, comments, instruments, report number, both
+transparency, optic character, treatment, nature type, refractive index, specific gravity, comments, instruments, report number, both
 gemmologists' names, and the photograph.
 
 All of that is reachable through `certificate.report`. It is deliberately not
@@ -44,10 +43,13 @@ Four details of the snapshotting are easy to get wrong later:
   certificate says it was signed by. There are two: `gemmologist` from the
   report's `identified_by`, and `gemmologist_two` from its `verified_by`.
 
-Instruments are stored as a JSON list of `{name, reading}` rather than rows,
-because they are words on a document rather than a relation anyone queries. A
-blank reading becomes `""`, so the document shows the instrument alone rather
-than an empty value hanging off it.
+Instruments are stored as a JSON list of `{name, used}` rather than rows,
+because they are words on a document rather than a relation anyone queries. It
+covers **every** instrument the lab had at issue, not just the ones used - the
+certificate prints the full checklist with a tick against each one used. Freezing
+the list means adding an instrument later cannot add an unticked row to an old
+document, and an inactive instrument still appears when the report used it: the
+tick is a fact about the stone. No reading is recorded, only whether it was used.
 
 ## Issuing
 

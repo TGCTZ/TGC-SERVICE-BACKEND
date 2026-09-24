@@ -150,7 +150,7 @@ these differently.
 | DRF `TokenAuthentication` | `simplejwt` | One token per user — no multi-device sessions, no selective revocation |
 | `django-guardian` | Django `Group`/`Permission` | Object-level permissions solve a problem this system does not have |
 | Custom role/permission tables | Django `Group`/`Permission` | Reimplements what Django ships, and loses admin integration |
-| `django-safedelete` | Custom `SoftDeleteModel` | Roughly 80 lines, no dependency, and fully understood by whoever maintains it |
+| `django-safedelete` | Soft delete on the custom `BaseModel` (`apps/core/models/base.py`) | Roughly 80 lines, no dependency, and fully understood by whoever maintains it |
 | `psycopg2` | `psycopg` 3 | v2 is maintenance-only |
 | `poetry` / `pip-tools` | `uv` | Faster, and now the direction the ecosystem is moving |
 | `black` + `flake8` + `isort` | `ruff` | One tool, one config, materially faster |

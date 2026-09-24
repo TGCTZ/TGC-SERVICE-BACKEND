@@ -131,6 +131,12 @@ to filter on at all. `orders_at_stage()` re-expresses the derivation as SQL with
 `Exists`/`OuterRef`, and a test asserts it agrees with the Python version across
 every stage — which is what makes keeping the value derived affordable.
 
+The two **combine** — `?stage=on_hold&identification=complete` means both. A
+hold or a cancellation outranks identification in the derivation, so a stage
+filter on its own can still return orders with stones left to type; the
+Identification screen, which lists only finished identification, relies on
+sending both.
+
 Like every other unknown parameter, an unrecognised value is ignored.
 
 ## Ordering

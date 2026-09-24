@@ -113,8 +113,14 @@ An action that is not listed falls back to the method map, so ordinary CRUD and
 | `POST /orders/{id}/hold/` | `orders.hold_order` |
 | `POST /orders/{id}/release/` | `orders.hold_order` |
 | `POST /stones/{id}/transition/` | `orders.transition_stone` |
+| `GET /identification-reports/worklist/` | `identification.add_identificationreport` |
 | `POST /identification-reports/{id}/finalize/` | `identification.finalize_report` |
+| `GET /identification-reports/gemmologist-candidates/` | `identification.finalize_report` |
+| `GET /bills/worklist/` | `billing.generate_bill` |
+| `GET /bills/preview/` | `billing.generate_bill` |
 | `POST /bills/generate/` | `billing.generate_bill` |
+| `POST /bills/{id}/simulate-payment/` | `billing.generate_bill` *(development only)* |
+| `GET /certificates/worklist/` | `certificates.issue_certificate` |
 | `POST /certificates/` | `certificates.issue_certificate` |
 | `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
 | `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |

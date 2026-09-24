@@ -74,7 +74,10 @@ identification.
    (`POST /orders/{id}/stones/`). This creates the `Stone` record (`received`)
    and, via the type, **fixes the price**. The system caps this at the order's
    `stone_count`.
-2. The **findings** is **not** recorded yet — it comes after payment
+2. A type can be **corrected** (`PUT /stones/{id}/`) until the order is
+   billed. Billing is what freezes the price onto the bill, so from then on the
+   type is locked (`RETYPEABLE_STATUSES` in `apps/orders/services/stone.py`).
+3. The **findings** is **not** recorded yet — it comes after payment
    (Stage 4).
 
 **Result:** each submitted stone becomes a `Stone` record with a known type (and
@@ -112,8 +115,8 @@ findings.
 
 1. For each **paid** stone, record the full findings on its **Identification
    Report** — weight, color (grouped GIA-style list), nature, species, variety,
-   origin, treatment, shape/cut, transparency, optic character, dimensions,
-   refractive index, specific gravity, and instrument readings (all chosen from
+   origin, treatment, shape/cut, transparency, optic character, refractive
+   index, specific gravity, and which instruments were used (all chosen from
    admin-managed reference lists).
 2. **Finalize** the report, which locks it against further edits.
 
