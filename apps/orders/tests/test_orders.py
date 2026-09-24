@@ -17,11 +17,11 @@ pytestmark = pytest.mark.django_db
 
 
 def test_create_order_allocates_a_reference_number():
-    """The service, not the client, mints ORD-YYYY-NNNN."""
+    """The service, not the client, mints ORD-<fy>-NNNNN."""
     order = create_order(customer=CustomerFactory(), stone_count=2)
 
     assert order.reference_number.startswith("ORD-")
-    assert order.reference_number.endswith("-0001")
+    assert order.reference_number.endswith("-00001")
 
 
 def test_reference_numbers_do_not_reuse_a_deleted_one():

@@ -59,7 +59,7 @@ def test_create_report_allocates_a_number(paid_stone, user):
     # The shape every reference in the system takes; the year pair is a
     # financial year, so it is asserted as a shape rather than against today's
     # calendar.
-    assert re.fullmatch(r"TGC-\d{4}-\d{4}", report.report_number)
+    assert re.fullmatch(r"TGC-\d{4}-\d{5}", report.report_number)
     assert report.identified_by == user
     assert not report.is_finalized
 
@@ -153,7 +153,7 @@ def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_cl
     )
 
     assert response.status_code == 201, response.data
-    assert re.fullmatch(r"TGC-\d{4}-\d{4}", response.data["report_number"])
+    assert re.fullmatch(r"TGC-\d{4}-\d{5}", response.data["report_number"])
     assert response.data["identified_by_label"] is not None
 
 

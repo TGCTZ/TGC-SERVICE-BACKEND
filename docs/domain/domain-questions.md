@@ -25,7 +25,7 @@
 >   total, else `partially_paid` (still provisional).
 > - **C3** — certificates **can be revoked** (still provisional).
 > - **C4** — a **finalized** report is **locked** (no further edits).
-> - **C6** — one reference format systemwide: `PREFIX-<yy><yy>-NNNN` over the
+> - **C6** — one reference format systemwide: `PREFIX-<yy><yy>-NNNNN` over the
 >   **financial** year (July–June) with both years as two digits, so 2026/2027
 >   reads `2627`. The sequence restarts each financial year. Prefixes: `ORD-`,
 >   `BILL-`, `CERT-`, and `TGC-` for identification report numbers.

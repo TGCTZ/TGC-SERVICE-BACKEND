@@ -184,7 +184,7 @@ collected
 
 | Field | Example |
 | --- | --- |
-| Stone | Stone #A of Order ORD-2026-0042 |
+| Stone | Stone #A of Order ORD-2627-00042 |
 | From status | `under_identification` |
 | To status | `billed` |
 | Changed by | gemmologist J. Doe |

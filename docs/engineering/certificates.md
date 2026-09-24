@@ -72,7 +72,7 @@ sit above both in the layer order.
 
 On success the stone transitions to `certified`, and the certificate takes a
 number from `generate_reference_number(Certificate, "certificate_number",
-"CERT")` — `CERT-2627-0001`, scanning `all_objects` so a soft-deleted row never
+"CERT")` — `CERT-2627-00001`, scanning `all_objects` so a soft-deleted row never
 reissues a number it once held.
 
 ## Revoking
@@ -245,9 +245,9 @@ the identification report is created, by `generate_reference_number()` in
 `apps/core/services.py` — the same generator every other reference uses:
 
 ```
-TGC-2627-0765
-    └─┬┘ └─┬┘
-      │    sequence
+TGC-2627-00765
+    └─┬┘ └─┬─┘
+      │     sequence
       financial year 2026/2027
 ```
 
@@ -257,7 +257,7 @@ The Tanzanian financial year runs **July to June**, so August 2026 and March
 Three things about this are decisions rather than details:
 
 - **One generator, one shape.** Orders, bills, reports and certificates all read
-  `PREFIX-<yy><yy>-NNNN`, so a number read aloud or typed into a search box is
+  `PREFIX-<yy><yy>-NNNNN`, so a number read aloud or typed into a search box is
   recognisable without knowing which document it came from. Report numbers used
   to carry slashes, which made them unsafe in a filename or a URL path segment —
   `certificate_number` reaches both.
@@ -269,9 +269,13 @@ Three things about this are decisions rather than details:
 - **The sequence restarts each financial year.** The year pair says *when*; the
   sequence says *how many since July*. Each prefix counts on its own, because
   the scan is stemmed on the prefix as well as the year pair.
-- **The width is fixed at four digits.** `Max()` orders lexically, which is
-  correct only because the sequence is zero-padded to a constant width. Changing
-  the width is not a cosmetic change.
+- **The width is fixed at five digits** - 99,999 of each document a year.
+  `Max()` orders lexically, which is correct only because the sequence is
+  zero-padded to a constant width. Changing the width is not a cosmetic change:
+  with `0010` and `00011` in the same year, `0010` sorts higher, the generator
+  keeps handing out 11, and the unique constraint rejects it. It went from four
+  to five on a flushed database; a live one would need its existing numbers
+  re-padded in a data migration first.
 
 The value is snapshotted onto the certificate as `report_number_snapshot` at
 issue time, like everything else on the page.

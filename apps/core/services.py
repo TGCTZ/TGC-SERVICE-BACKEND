@@ -22,8 +22,8 @@ def financial_year(when=None) -> tuple[int, int]:
     return moment.year - 1, moment.year
 
 
-def generate_reference_number(model, field: str, prefix: str, *, width: int = 4) -> str:
-    """Return the next human-readable reference, e.g. ``ORD-2627-0001``.
+def generate_reference_number(model, field: str, prefix: str, *, width: int = 5) -> str:
+    """Return the next human-readable reference, e.g. ``ORD-2627-00001``.
 
     One shape for every identifier the system issues - orders, bills, reports and
     certificates - so a number read aloud or typed into a search box is
@@ -58,6 +58,9 @@ def generate_reference_number(model, field: str, prefix: str, *, width: int = 4)
     )
     # Max() orders lexically, which is what we want only because the sequence is
     # zero-padded to a fixed width - hence `width` being fixed rather than a
-    # per-call whim.
+    # per-call whim. It is also why changing `width` needs a clean sequence: with
+    # "0010" and "00011" in the same year, "0010" sorts higher, the scan keeps
+    # returning 11, and the unique constraint rejects the duplicate. Five digits
+    # (99,999 a year per document type) replaced four on a flushed database.
     sequence = int(latest.rsplit("-", 1)[1]) + 1 if latest else 1
     return f"{stem}{sequence:0{width}d}"

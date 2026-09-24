@@ -190,5 +190,7 @@ class Command(BaseCommand):
                             issue_certificate(stone)
 
         self.stdout.write(
-            self.style.SUCCESS(f"Done. Role accounts: <role>@example.com / {DEMO_PASSWORD}")
+            self.style.SUCCESS(
+                f"Done. Role accounts: <role>@example.com / {DEMO_PASSWORD}"
+            )
         )
