@@ -35,7 +35,32 @@ It is named after the row it creates, not the stage it serves - that stage is
 
 `superadmin` is resolved as `Permission.objects.all()` rather than a literal
 list, so a newly added model is covered without editing the file. It is not a
-station - it is the break-glass account.
+station - it is the break-glass account. The one exclusion is the notification
+subscriptions below.
+
+### Notification subscriptions
+
+A permission to *act* is not the same as the work *waiting on* you. Manager and
+superadmin hold every workflow action so they can step in anywhere, and if the
+pipeline's notifications went to everyone holding the action, they would hear
+about every handoff in the lab while being the next step for none of it.
+
+So each `NotificationKind` has its own opt-in permission,
+`notifications.receive_<kind>`, and `notify_subscribers()` sends only to holders
+of that. `roles.py` grants each one to the desk that is next:
+
+| Subscription | Granted to |
+|---|---|
+| `receive_order_received` | `gemmologist` |
+| `receive_ready_to_bill` | `accountant` |
+| `receive_bill_paid` | `gemmologist` |
+| `receive_ready_to_certify` | `gemmologist` |
+| `receive_ready_for_collection` | `receptionist` |
+
+`manager` holds none, and `setup_roles` withholds them from `superadmin`. They
+are ordinary permissions, so a manager who does come to own a desk can be given
+one from the roles screen. Because they follow any role held, a user who is
+both manager and gemmologist still hears as the bench.
 
 ### Pricing is the stone catalogue
 

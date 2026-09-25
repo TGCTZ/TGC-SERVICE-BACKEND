@@ -30,6 +30,7 @@ urlpatterns = [
     path("api/v1/", include("apps.identification.urls")),
     path("api/v1/", include("apps.certificates.urls")),
     path("api/v1/", include("apps.audit.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
     # Gateway callbacks: server-to-server XML, registered with GePG out of band,
     # so deliberately outside the versioned API. See apps/billing/webhooks.py.
     path("gepg/", include("apps.billing.urls_webhooks")),

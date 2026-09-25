@@ -54,6 +54,7 @@ LOCAL_APPS = [
     "apps.core",  # L1 - base models, managers, shared DRF machinery
     "apps.users",  # L2 - custom user, authentication, RBAC
     "apps.audit",  # L2 - activity-log and system-log read APIs
+    "apps.notifications",  # L2 - per-user in-app notifications
     "apps.gems",  # L2 - domain enums and stone reference tables
     "apps.orders",  # L3 - customers, orders and stones
     "apps.billing",  # L4 - bills, payments and the GePG gateway

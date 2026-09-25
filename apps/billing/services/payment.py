@@ -10,6 +10,8 @@ from django.db import transaction
 
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import BillStatus, StoneStatus
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
 from apps.orders.services import transition_stone
 
 from ..gateways.gepg import build_payment_ack, parse_payment_notification
@@ -74,6 +76,12 @@ def _apply_payment(header: dict, txn: dict, raw: str) -> None:
         # The gateway is the actor here, so there is no user to attribute.
         for stone in bill.order.stones.all():
             transition_stone(stone, StoneStatus.PAID, note="Bill settled via GePG")
+        notify_subscribers(
+            NotificationKind.BILL_PAID,
+            title=f"Order {bill.order.reference_number} has been paid",
+            body=f"Bill {bill.bill_number} is settled; findings can now be recorded.",
+            link="/worklists/findings",
+        )
     else:
         bill.status = BillStatus.PARTIALLY_PAID
     bill.save(update_fields=["status", "updated_at"])

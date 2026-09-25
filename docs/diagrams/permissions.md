@@ -98,7 +98,7 @@ which is idempotent and safe to re-run.
 flowchart LR
     CODE["ROLE_PERMISSIONS<br/><b>apps/users/roles.py</b>"] --> CMD["manage.py setup_roles"]
     CMD --> RESOLVE{"which role?"}
-    RESOLVE -->|superadmin| DYN["Permission.objects.all()<br/><i>resolved at run time</i>"]
+    RESOLVE -->|superadmin| DYN["Permission.objects.all()<br/><i>resolved at run time,<br/>minus notification subscriptions</i>"]
     RESOLVE -->|others| LIT["literal label list"]
     DYN --> GROUPS[("auth_group<br/>+ auth_group_permissions")]
     LIT --> GROUPS
@@ -110,7 +110,7 @@ flowchart LR
 
 | Role | Scope |
 | --- | --- |
-| `superadmin` | Every permission, resolved dynamically |
+| `superadmin` | Every permission bar notification subscriptions, resolved dynamically |
 | `manager` | Full CRUD across the domain, users, roles, audit read |
 | `receptionist` | Customers and orders, and handing finished certificates back. **Not** stones — typing one is the bench's job |
 | `gemmologist` | The bench: stones, identification, findings and certificates. No billing |

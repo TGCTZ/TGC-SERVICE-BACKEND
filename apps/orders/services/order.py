@@ -6,6 +6,8 @@ from django.utils import timezone
 from apps.core.exceptions import ServiceError
 from apps.core.services import generate_reference_number
 from apps.gems.enums import BillStatus, OrderHold
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
 
 from ..models import Customer, Order
 
@@ -59,6 +61,14 @@ def create_order(
     if user is not None:
         order.created_by = user
     order.save()
+
+    notify_subscribers(
+        NotificationKind.ORDER_RECEIVED,
+        title=f"New order {order.reference_number}",
+        body=f"{stone_count} stone(s) from {customer} awaiting identification.",
+        link="/worklists/identification",
+        exclude=user,
+    )
     return order
 
 

@@ -4,6 +4,8 @@ from django.db import transaction
 
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import StoneStatus
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
 
 from ..models import Order, StatusHistory, Stone
 
@@ -104,6 +106,17 @@ def add_stone(order: Order, *, stone_type, user=None) -> Stone:
         changed_by=user,
         note="Identified",
     )
+
+    # Only the stone that completes the order: the bill prices every stone at
+    # once, so accounts has nothing to act on until the last one is typed.
+    if identified + 1 == order.stone_count:
+        notify_subscribers(
+            NotificationKind.READY_TO_BILL,
+            title=f"Order {order.reference_number} is ready to bill",
+            body=f"All {order.stone_count} stone(s) have been identified.",
+            link="/worklists/billing",
+            exclude=user,
+        )
     return stone
 
 

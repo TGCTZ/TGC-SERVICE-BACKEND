@@ -30,7 +30,15 @@ class Command(BaseCommand):
 
             if role == "superadmin":
                 # Resolved dynamically so new models are covered automatically.
-                permissions = list(Permission.objects.all())
+                # Notification subscriptions are the exception: superadmin can do
+                # any job, but no work waits on it, and hearing about every
+                # handoff would bury the few messages it does need.
+                permissions = list(
+                    Permission.objects.exclude(
+                        content_type__app_label="notifications",
+                        codename__startswith="receive_",
+                    )
+                )
             else:
                 permissions = self._resolve(labels)
 

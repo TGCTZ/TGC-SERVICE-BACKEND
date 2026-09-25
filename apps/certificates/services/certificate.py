@@ -8,6 +8,8 @@ from apps.core.exceptions import ServiceError
 from apps.core.services import generate_reference_number
 from apps.gems.enums import BillStatus, CertificateStatus, StoneStatus
 from apps.gems.models import Instrument
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
 from apps.orders.services import transition_stone
 
 from ..models import Certificate
@@ -128,7 +130,29 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         user=user,
         note=f"Certified {certificate.certificate_number}",
     )
+    _notify_if_order_ready_for_collection(stone.order, user)
     return certificate
+
+
+def _notify_if_order_ready_for_collection(order, user) -> None:
+    """Tell reception once every stone in the order is certified.
+
+    Reception is found through ``orders.add_order`` - the desk that takes orders
+    in is the desk that hands them back. Once per order, because the customer
+    collects the order, not a stone at a time.
+    """
+    outstanding = order.stones.exclude(
+        status__in=(StoneStatus.CERTIFIED, StoneStatus.CANCELLED)
+    ).exists()
+    if outstanding:
+        return
+    notify_subscribers(
+        NotificationKind.READY_FOR_COLLECTION,
+        title=f"Order {order.reference_number} is ready for collection",
+        body=f"All certificates are issued. Contact {order.customer} to collect.",
+        link=f"/orders?search={order.reference_number}",
+        exclude=user,
+    )
 
 
 def revoke_certificate(certificate: Certificate, *, user=None) -> Certificate:

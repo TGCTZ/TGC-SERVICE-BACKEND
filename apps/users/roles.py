@@ -14,6 +14,16 @@ account, granted everything dynamically so a newly added model is covered
 without editing this file.
 """
 
+
+def _notified(*kinds: str) -> list[str]:
+    """Subscriptions to the handoffs a desk is the next step for.
+
+    Kept apart from the action permissions on purpose: holding a permission
+    means a role *may* act, a subscription means the work is *waiting on* it.
+    """
+    return [f"notifications.receive_{kind}" for kind in kinds]
+
+
 #: The bench. Named here so the identification app can ask "who is a
 #: gemmologist?" without hardcoding a string that this file might rename.
 GEMMOLOGIST_ROLE = "gemmologist"
@@ -57,8 +67,13 @@ MODULE_GATES = {
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     # Full access. Also granted every permission dynamically by setup_roles, so
-    # new models are covered without editing this file.
+    # new models are covered without editing this file - except notification
+    # subscriptions: the break-glass account is not a desk any work waits on.
     "superadmin": [],
+    # Holds every workflow action so it can step in anywhere, and for that very
+    # reason subscribes to no handoffs: it would hear about all the lab's work
+    # and be the next step for none of it. Grant one from the roles screen if a
+    # manager does come to own a desk.
     "manager": (
         _perms("users", USER_MODELS, CRUD)
         + _perms("gems", GEMS_MODELS, CRUD)
@@ -93,6 +108,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Kept: handover moves a stone to collected.
         "orders.transition_stone",
         "orders.view_statushistory",
+        # Reception hands finished orders back, so it hears when one is ready.
+        *_notified("ready_for_collection"),
         MODULE_GATES["orders"],
         MODULE_GATES["reference"],
     ],
@@ -113,6 +130,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         *_perms("certificates", CERTIFICATE_MODELS, ("add", "view")),
         "certificates.issue_certificate",
         "orders.view_statushistory",
+        # The bench is the next step three times: typing a new order's stones,
+        # recording findings once paid, and certifying once finalized.
+        *_notified("order_received", "bill_paid", "ready_to_certify"),
         # The orders module too: the preliminary queue and the stone it writes
         # both live under /orders/.
         MODULE_GATES["orders"],
@@ -129,6 +149,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         *_perms("billing", ("serviceprovider",), CRUD),
         "billing.generate_bill",
         "gems.change_stonetype",
+        *_notified("ready_to_bill"),
         MODULE_GATES["billing"],
         MODULE_GATES["reference"],
     ],

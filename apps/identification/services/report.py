@@ -5,7 +5,9 @@ from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
 from apps.core.services import generate_reference_number
-from apps.gems.enums import BillStatus
+from apps.gems.enums import BillStatus, StoneStatus
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
 from apps.orders.services import update_stone
 
 from ..models import IdentificationReport
@@ -221,4 +223,29 @@ def finalize_report(
             "updated_by",
         ]
     )
+    _notify_if_order_ready_for_certification(report.stone.order, user)
     return report
+
+
+def _notify_if_order_ready_for_certification(order, user) -> None:
+    """Tell the certifiers once every stone in the order has final findings.
+
+    Once per order rather than per report: a ten-stone order would otherwise
+    raise ten notifications for what the certifier treats as one batch.
+    Cancelled stones will never be certified, so they do not hold the order up.
+    """
+    finalized = IdentificationReport.objects.filter(is_finalized=True).values("stone_id")
+    outstanding = (
+        order.stones.exclude(status=StoneStatus.CANCELLED)
+        .exclude(pk__in=finalized)
+        .exists()
+    )
+    if outstanding:
+        return
+    notify_subscribers(
+        NotificationKind.READY_TO_CERTIFY,
+        title=f"Order {order.reference_number} is ready for certification",
+        body="Findings are finalized for every stone.",
+        link="/worklists/certification",
+        exclude=user,
+    )

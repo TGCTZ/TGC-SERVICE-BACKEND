@@ -69,12 +69,19 @@ def test_setup_roles_prune_removes_a_retired_module_gate(roles):
 
 
 def test_superadmin_gets_every_permission(roles):
-    """The superadmin role resolves dynamically, so new models are covered."""
+    """The superadmin role resolves dynamically, so new models are covered.
+
+    Every permission bar the notification subscriptions, which say whose desk
+    work waits on rather than what a role may do - see apps.notifications.
+    """
     from django.contrib.auth.models import Group, Permission
 
     superadmin = Group.objects.get(name="superadmin")
+    grantable = Permission.objects.exclude(
+        content_type__app_label="notifications", codename__startswith="receive_"
+    )
 
-    assert superadmin.permissions.count() == Permission.objects.count()
+    assert superadmin.permissions.count() == grantable.count()
 
 
 def test_viewer_cannot_create_a_product(viewer_user, auth_client):
