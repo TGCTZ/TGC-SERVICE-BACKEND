@@ -50,6 +50,7 @@ from apps.gems.enums import (
     CertificateStatus,
     NatureType,
     OrderHold,
+    Region,
     StoneStatus,
     Treatment,
 )
@@ -188,6 +189,13 @@ def _counted(queryset, field: str):
     return (
         queryset.order_by().values(field).annotate(n=Count("id")).values_list(field, "n")
     )
+
+
+def _region_name(value: str) -> str | None:
+    """A region's label; free text kept from before the list, tidied."""
+    if not value:
+        return None
+    return dict(Region.choices).get(value) or value.strip().title()
 
 
 def _stage_label(key: str) -> str:
@@ -755,8 +763,5 @@ def market(period: Period) -> dict:
         "stone_types": _top(
             _counted(_in(Stone.objects.all(), "created_at", period), "stone_type__name")
         ),
-        # Typed free-hand at reception, so "arusha " and "Arusha" are one region.
-        "regions": _top(
-            (region.strip().title() if region else None, n) for region, n in regions
-        ),
+        "regions": _top((_region_name(region), n) for region, n in regions),
     }

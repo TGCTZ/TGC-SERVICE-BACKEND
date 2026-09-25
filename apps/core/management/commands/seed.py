@@ -57,19 +57,6 @@ COLORS = (
 ORIGINS = ("Tanzania", "Madagascar", "Sri Lanka", "Myanmar", "Mozambique")
 
 # --history-months only: enough spread for the market statistics to have shape.
-REGIONS = (
-    "Arusha",
-    "Manyara",
-    "Dar es Salaam",
-    "Morogoro",
-    "Tanga",
-    "Dodoma",
-    "Mwanza",
-    "Geita",
-    "Mbeya",
-    "Lindi",
-    "Ruvuma",
-)
 CHANNELS = ("CRDB Bank", "NMB Bank", "M-Pesa", "Tigo Pesa", "Airtel Money")
 NATURE_WEIGHTS = (
     ("natural", 70),
@@ -316,7 +303,7 @@ class Command(BaseCommand):
             if customers and random.random() < 0.35:
                 customer = random.choice(customers)
             else:
-                customer = CustomerFactory(region=random.choice(REGIONS))
+                customer = CustomerFactory()
                 customers.append(customer)
 
             stone_count = random.randint(1, 4)

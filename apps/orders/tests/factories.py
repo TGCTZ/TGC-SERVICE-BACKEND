@@ -7,7 +7,7 @@ sees on a freshly seeded database.
 import factory
 from factory.django import DjangoModelFactory
 
-from apps.gems.enums import StoneStatus
+from apps.gems.enums import Region, StoneStatus
 from apps.gems.tests.factories import StoneTypeFactory
 from apps.orders.models import Customer, Order, Stone
 
@@ -23,7 +23,7 @@ class CustomerFactory(DjangoModelFactory):
     last_name = factory.Faker("last_name")
     phone = factory.Sequence(lambda n: f"2557{n:08d}")
     email = factory.Faker("email")
-    region = factory.Faker("city")
+    region = factory.Faker("random_element", elements=Region.values)
 
 
 class OrderFactory(DjangoModelFactory):

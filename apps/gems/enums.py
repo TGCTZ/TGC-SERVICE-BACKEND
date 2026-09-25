@@ -162,3 +162,49 @@ class CertificateStatus(models.TextChoices):
     ISSUED = ("issued", "Issued")
     REVOKED = ("revoked", "Revoked")
     REISSUED = ("reissued", "Reissued")
+
+
+class Region(models.TextChoices):
+    """Tanzania's administrative regions (mikoa) - where a customer is from.
+
+    All 31: the 26 on the mainland, then the 5 in Zanzibar, each alphabetical.
+    Checked against the official list in September 2026; the newest is Songwe,
+    split from Mbeya in 2016. Labels are the official Swahili names - Pwani, not
+    Coast; Kaskazini Pemba, not Pemba North - and the English names that people
+    also type are matched by :func:`apps.gems.regions.normalize_region`.
+
+    Mirrored for the dropdowns in the frontend's ``src/lib/regions.ts``.
+    """
+
+    ARUSHA = ("arusha", "Arusha")
+    DAR_ES_SALAAM = ("dar_es_salaam", "Dar es Salaam")
+    DODOMA = ("dodoma", "Dodoma")
+    GEITA = ("geita", "Geita")
+    IRINGA = ("iringa", "Iringa")
+    KAGERA = ("kagera", "Kagera")
+    KATAVI = ("katavi", "Katavi")
+    KIGOMA = ("kigoma", "Kigoma")
+    KILIMANJARO = ("kilimanjaro", "Kilimanjaro")
+    LINDI = ("lindi", "Lindi")
+    MANYARA = ("manyara", "Manyara")
+    MARA = ("mara", "Mara")
+    MBEYA = ("mbeya", "Mbeya")
+    MOROGORO = ("morogoro", "Morogoro")
+    MTWARA = ("mtwara", "Mtwara")
+    MWANZA = ("mwanza", "Mwanza")
+    NJOMBE = ("njombe", "Njombe")
+    PWANI = ("pwani", "Pwani")
+    RUKWA = ("rukwa", "Rukwa")
+    RUVUMA = ("ruvuma", "Ruvuma")
+    SHINYANGA = ("shinyanga", "Shinyanga")
+    SIMIYU = ("simiyu", "Simiyu")
+    SINGIDA = ("singida", "Singida")
+    SONGWE = ("songwe", "Songwe")
+    TABORA = ("tabora", "Tabora")
+    TANGA = ("tanga", "Tanga")
+    # Zanzibar
+    KASKAZINI_PEMBA = ("kaskazini_pemba", "Kaskazini Pemba")
+    KASKAZINI_UNGUJA = ("kaskazini_unguja", "Kaskazini Unguja")
+    KUSINI_PEMBA = ("kusini_pemba", "Kusini Pemba")
+    KUSINI_UNGUJA = ("kusini_unguja", "Kusini Unguja")
+    MJINI_MAGHARIBI = ("mjini_magharibi", "Mjini Magharibi")
