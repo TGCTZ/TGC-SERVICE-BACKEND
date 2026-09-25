@@ -114,8 +114,8 @@
        PAGE BANDS - A4 landscape is 297 x 210mm.
 
          y 0      revoked banner (only on a revoked certificate)   h 7
-         y 8      header: emblem / titles / logo                   h 24
-         y 35     info bar: report number and date                 h 8
+         y 8      header: the masthead banner                      h 26
+         y 36     info bar: report number and date                 h 8
          y 46     the three columns                                h 154
          (10mm bottom margin; no footer)
 
@@ -136,45 +136,31 @@
     }
 
     /* ---------- Header ---------- */
-    /* A single blue rule closes the masthead. Gold lives further down the page
-       - the column headers and the stamp box - where it accents one thing at a
-       time rather than stacking rules across the full width of the sheet. */
+    /* One pre-composed image: the coat of arms, the ministry and lab titles
+       and the TGC logo over the ministry's flag banner. It is built at the
+       band's own 277:26 proportions (2300 x 216px, ~211dpi), so it fills the
+       band edge to edge; object-fit only matters if a replacement of another
+       shape is dropped in, and then it crops rather than squashes. */
     .header {
       top: 8mm;
-      height: 24mm;
+      height: 26mm;
     }
 
-    /* The marks are pinned to the corners and the titles centred on the sheet
-       independently, so an emblem of a different aspect ratio cannot nudge the
-       lab's name off centre. */
-    .header .mark {
-      position: absolute;
-      top: 0;
-      width: 24mm;
-      height: 22mm;
-      text-align: center;
+    .header img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
-    .header .mark img {
-      max-width: 100%;
-      max-height: 22mm;
-      object-fit: contain;
-    }
-
-    .header .mark.left { left: 0; }
-    .header .mark.right { right: 0; }
-
-    /* Tighter leading than the body's 1.3: display type wants less, and it keeps
-       the three title lines compact and centred in the 24mm header. */
+    /* Printed only when header-banner.jpg is missing: the lab's name now lives
+       in the image's pixels, and a certificate must never go out without the
+       name of the body that issued it. Tighter leading than the body's 1.3,
+       as display type wants. */
     .header .titles {
       font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
       line-height: 1.1;
-      position: absolute;
-      top: 3mm;
-      /* The space between the two 24mm marks, with 4mm clear of each; centred
-         on the sheet, so the titles sit over the middle column. */
-      left: 28mm;
-      right: 28mm;
+      padding-top: 4mm;
       text-align: center;
       white-space: nowrap;
       color: var(--tgc-blue);
@@ -213,7 +199,7 @@
 
     /* ---------- Info bar ---------- */
     .info-bar {
-      top: 35mm;
+      top: 36mm;
       height: 8mm;
       display: flex;
       justify-content: space-between;
@@ -502,17 +488,15 @@
   {% endif %}
 
   <div class="band header">
-    <div class="mark left">
-      {% if coat_of_arms %}<img src="{{ coat_of_arms }}" alt="">{% endif %}
-    </div>
-    <div class="titles">
-      <div class="ministry">{{ ministry_name }}</div>
-      <div class="lab">{{ lab_name }}</div>
-      <div class="doc">Gemstone Identification Report</div>
-    </div>
-    <div class="mark right">
-      {% if tgc_logo %}<img src="{{ tgc_logo }}" alt="">{% endif %}
-    </div>
+    {% if header_banner %}
+      <img src="{{ header_banner }}" alt="The United Republic of Tanzania, Ministry of Minerals: Tanzania Gemmological Centre, Gemstone Identification Report">
+    {% else %}
+      <div class="titles">
+        <div class="ministry">{{ ministry_name }}</div>
+        <div class="lab">{{ lab_name }}</div>
+        <div class="doc">Gemstone Identification Report</div>
+      </div>
+    {% endif %}
   </div>
 
   <div class="band info-bar">

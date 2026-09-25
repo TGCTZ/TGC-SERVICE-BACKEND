@@ -33,8 +33,7 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "certificates" /
 #: ``"TANZANIA"`` - so a typo in the real filename went unnoticed for months
 #: while production quietly used whichever file matched first.
 ASSETS = {
-    "coat_of_arms": "coat-of-arms.png",
-    "tgc_logo": "tgc-logo.png",
+    "header_banner": "header-banner.jpg",
     "official_stamp": "official-stamp.png",
 }
 
