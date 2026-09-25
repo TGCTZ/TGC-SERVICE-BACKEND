@@ -60,6 +60,7 @@ LOCAL_APPS = [
     "apps.billing",  # L4 - bills, payments and the GePG gateway
     "apps.identification",  # L4 - full gemmological identification
     "apps.certificates",  # L5 - certificates and their PDF documents
+    "apps.analytics",  # L6 - management statistics over all of the above
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -128,6 +129,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("TIME_ZONE", default="UTC")
+# The lab's own calendar. Storage stays in UTC; statistics bucket by this zone,
+# or a payment at 22:00 in Dar es Salaam would count towards the wrong day.
+LAB_TIME_ZONE = env("LAB_TIME_ZONE", default="Africa/Dar_es_Salaam")
 USE_I18N = True
 USE_TZ = True
 

@@ -91,6 +91,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         ]
         + ["auth.view_group", "auth.add_group", "auth.change_group", "auth.delete_group"]
         + ["auth.view_permission", "auditlog.view_logentry", "audit.view_systemlog"]
+        + ["analytics.view_statistics"]
         + list(MODULE_GATES.values())
     ),
     # Front desk: registers customers and their orders, and hands finished
