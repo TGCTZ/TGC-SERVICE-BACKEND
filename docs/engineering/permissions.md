@@ -24,6 +24,7 @@ stage of the stone's journey and onto one of the four worklists.
 | Role | Station | Scope |
 |---|---|---|
 | `superadmin` | - | Every permission, resolved dynamically at run time |
+| `admin` | - | Every permission by default, like `superadmin`, one rank below it |
 | `manager` | Back office | Full CRUD across the domain, users, roles, audit |
 | `receptionist` | Front desk | Customers, orders, handover. Does **not** identify stones |
 | `gemmologist` | The bench | Both identification stages, finalize, and issuing certificates |
@@ -33,10 +34,15 @@ stage of the stone's journey and onto one of the four worklists.
 It is named after the row it creates, not the stage it serves - that stage is
 **identification**, and it belongs to the bench, not to reception.
 
-`superadmin` is resolved as `Permission.objects.all()` rather than a literal
-list, so a newly added model is covered without editing the file. It is not a
-station - it is the break-glass account. The one exclusion is the notification
-subscriptions below.
+`superadmin` and `admin` (`FULL_ACCESS_ROLES`) are resolved as
+`Permission.objects.all()` rather than a literal list, so a newly added model is
+covered without editing the file. Neither is a station: `superadmin` is the
+break-glass account, `admin` runs the system under it. The one exclusion is the
+notification subscriptions below.
+
+`setup_roles` resets every declared role to the code, `admin` included - a
+superadmin who narrows `admin` on the roles screen will see it widened again the
+next time the command runs.
 
 ### Notification subscriptions
 
@@ -99,6 +105,30 @@ for anyone who already holds it. Neither shows up in a diff.
 `superadmin` is the escape hatch that repairs a broken permission setup, so
 allowing it to be narrowed would let an administrator lock everyone out
 irrecoverably. Enforced in `apps/users/services/roles.py`.
+
+## The hierarchy
+
+`ROLE_RANKS` orders the roles: `superadmin` 100, `admin` 90, `manager` 50, and
+every other role - the stations and any role made on the roles screen - 10. A
+user's rank is that of their highest role (a Django superuser is 100; no role
+at all is 0). Everyone manages only what ranks **strictly below** them:
+
+| Rule | Why |
+|---|---|
+| Edit, rename or delete a role only below your rank; a rename checks the new name too | No widening your own role, and no renaming a role to `admin` to take its rank |
+| Give or take away a role only below your rank | No promoting yourself or a peer, and no stripping a superior |
+| Edit or delete an account only below your rank, or your own | No resetting a superior's email or deactivating them |
+| A role gains only permissions its editor holds | No building a role above yourself and handing it out |
+
+`superadmin` is the exception at the top: it manages everything, other
+superadmins included, so the break-glass accounts can repair one another. Its
+own role stays protected even from itself. So only a superadmin may edit,
+delete or assign `admin`, and managers no longer edit the `manager` role or make
+managers - admins do.
+
+Protection answers "may anyone change this?" (a 400); rank answers "may *you*?"
+(a 403). The role and user serializers expose `can_manage` / `can_assign` so the
+screens hide what the API would refuse.
 
 ## Enforcement
 

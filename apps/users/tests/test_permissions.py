@@ -118,13 +118,17 @@ def test_admin_can_create_a_stone_type(admin_user, auth_client):
 
 
 def test_protected_role_cannot_be_deleted(admin_user, auth_client, roles):
-    """The superadmin role is the recovery path and must not be removable."""
+    """The superadmin role is the recovery path and must not be removable.
+
+    A manager does not even see it, so the delete is a 404; the 400 a
+    superadmin gets for trying is in ``test_hierarchy``.
+    """
     from django.contrib.auth.models import Group
 
     superadmin = Group.objects.get(name="superadmin")
     response = auth_client(admin_user).delete(f"/api/v1/roles/{superadmin.pk}/")
 
-    assert response.status_code == 400
+    assert response.status_code == 404
     assert Group.objects.filter(name="superadmin").exists()
 
 

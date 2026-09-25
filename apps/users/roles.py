@@ -8,10 +8,16 @@ Roles map onto Django ``Group`` rows; the strings are permission labels in
 ``<app_label>.<codename>`` form.
 
 The four business roles mirror the lab's actual stations - reception, the
-gemmology bench, accounts, and administration - so each one maps onto a stage of
-the stone's journey. ``superadmin`` is not a station; it is the break-glass
-account, granted everything dynamically so a newly added model is covered
-without editing this file.
+gemmology bench, accounts, and management - so each one maps onto a stage of
+the stone's journey. Above them sit two roles that are not stations:
+
+- ``admin`` runs the system: every permission by default, managers included in
+  what it manages, but one rank below the top.
+- ``superadmin`` is the break-glass account, and the only role that may edit,
+  delete or hand out ``admin``.
+
+Both are granted everything dynamically, so a newly added model is covered
+without editing this file. Who may manage whom is set by :data:`ROLE_RANKS`.
 """
 
 
@@ -70,6 +76,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     # new models are covered without editing this file - except notification
     # subscriptions: the break-glass account is not a desk any work waits on.
     "superadmin": [],
+    # Everything by default, like superadmin - see FULL_ACCESS_ROLES - but one
+    # rank below it: only a superadmin may edit, delete or assign this role, so
+    # an admin can run the whole lab without reshaping the level above it.
+    "admin": [],
     # Holds every workflow action so it can step in anywhere, and for that very
     # reason subscribes to no handoffs: it would hear about all the lab's work
     # and be the next step for none of it. Grant one from the roles screen if a
@@ -159,3 +169,18 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
 # Roles the API refuses to rename, delete or re-scope. Without this, a
 # privileged user could narrow superadmin and lock everyone out irrecoverably.
 PROTECTED_ROLES = frozenset({"superadmin"})
+
+# Roles setup_roles resolves to every permission rather than to a list, so a new
+# model is covered without editing this file. Notification subscriptions are
+# left out: neither role is a desk that work waits on.
+FULL_ACCESS_ROLES = frozenset({"superadmin", "admin"})
+
+# Who outranks whom. A user may manage - edit, delete, assign or take away, and
+# manage the people holding - only roles ranked strictly below their own
+# highest role, so no one can raise themselves or a peer. Superadmin is the top
+# and manages everything, other superadmins included. Every role not listed -
+# the stations, and any role created on the roles screen - sits at BASE_RANK;
+# a user with no role at all is at 0.
+ROLE_RANKS = {"superadmin": 100, "admin": 90, "manager": 50}
+BASE_RANK = 10
+TOP_RANK = ROLE_RANKS["superadmin"]

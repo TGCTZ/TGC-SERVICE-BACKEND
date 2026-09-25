@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.core.models import ModuleGate
-from apps.users.roles import ROLE_PERMISSIONS
+from apps.users.roles import FULL_ACCESS_ROLES, ROLE_PERMISSIONS
 
 
 class Command(BaseCommand):
@@ -28,11 +28,11 @@ class Command(BaseCommand):
         for role, labels in ROLE_PERMISSIONS.items():
             group, created = Group.objects.get_or_create(name=role)
 
-            if role == "superadmin":
+            if role in FULL_ACCESS_ROLES:
                 # Resolved dynamically so new models are covered automatically.
-                # Notification subscriptions are the exception: superadmin can do
-                # any job, but no work waits on it, and hearing about every
-                # handoff would bury the few messages it does need.
+                # Notification subscriptions are the exception: these roles can
+                # do any job, but no work waits on them, and hearing about every
+                # handoff would bury the few messages they do need.
                 permissions = list(
                     Permission.objects.exclude(
                         content_type__app_label="notifications",

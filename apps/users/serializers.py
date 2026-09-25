@@ -98,22 +98,82 @@ class PermissionLabelField(serializers.RelatedField):
             self.fail("does_not_exist", label=data)
 
 
+def requester_rank(context: dict) -> int | None:
+    """The requesting user's rank, worked out once per response.
+
+    Cached in the serializer context, which a list's rows share, so a page of
+    roles or users costs one rank lookup rather than one per row.
+    """
+    from apps.users.services.roles import user_rank
+
+    if "requester_rank" not in context:
+        request = context.get("request")
+        user = getattr(request, "user", None)
+        authenticated = user is not None and user.is_authenticated
+        context["requester_rank"] = user_rank(user) if authenticated else None
+    return context["requester_rank"]
+
+
 class RoleSerializer(serializers.ModelSerializer):
     """A role, exposed as a group plus its permission labels."""
 
+    # Declared by hand to drop the model's automatic UniqueValidator, which runs
+    # before validate_name and would answer "already exists" for a hidden role.
+    name = serializers.CharField(max_length=150)
     permissions = PermissionLabelField(many=True, required=False)
     is_protected = serializers.SerializerMethodField()
+    can_manage = serializers.SerializerMethodField()
+    can_assign = serializers.SerializerMethodField()
     user_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
-        fields = ("id", "name", "permissions", "is_protected", "user_count")
+        fields = (
+            "id",
+            "name",
+            "permissions",
+            "is_protected",
+            "can_manage",
+            "can_assign",
+            "user_count",
+        )
+
+    def validate_name(self, value: str) -> str:
+        """Refuse a name that ranks above the requester, then a duplicate.
+
+        In that order, so trying to create "superadmin" is not answered with
+        "already exists" - which would tell a manager or an admin that a role
+        they are not shown is there.
+        """
+        from apps.users.services.roles import hidden_role_names
+
+        request = self.context.get("request")
+        if request is not None and value in hidden_role_names(request.user):
+            raise serializers.ValidationError("This role name is reserved.")
+
+        duplicates = Group.objects.filter(name=value)
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise serializers.ValidationError("A role with this name already exists.")
+        return value
 
     def get_is_protected(self, obj) -> bool:
         """True when the API refuses to rename, delete or re-scope this role."""
         from apps.users.roles import PROTECTED_ROLES
 
         return obj.name in PROTECTED_ROLES
+
+    def get_can_manage(self, obj) -> bool:
+        """True when the requester may rename, re-permission or delete this role."""
+        return not self.get_is_protected(obj) and self.get_can_assign(obj)
+
+    def get_can_assign(self, obj) -> bool:
+        """True when the requester may give this role to someone, or take it away."""
+        from apps.users.services.roles import rank_allows, role_rank
+
+        actor_rank = requester_rank(self.context)
+        return actor_rank is not None and rank_allows(actor_rank, role_rank(obj.name))
 
     def get_user_count(self, obj) -> int:
         """How many users hold this role."""
@@ -124,6 +184,7 @@ class UserSerializer(AuditFieldsMixin):
     """Full user representation used by the ``/users/`` endpoints."""
 
     full_name = serializers.CharField(read_only=True)
+    can_manage = serializers.SerializerMethodField()
     roles = serializers.SlugRelatedField(
         source="groups",
         many=True,
@@ -171,6 +232,7 @@ class UserSerializer(AuditFieldsMixin):
             "last_login_at",
             "email_verified_at",
             "roles",
+            "can_manage",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = (
@@ -178,6 +240,32 @@ class UserSerializer(AuditFieldsMixin):
             "email_verified_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
+
+    def __init__(self, *args, **kwargs):
+        """Resolve ``roles`` only among the roles the requester is shown.
+
+        A hidden role named in a payload then fails as "does not exist", the
+        same as a typo, rather than as a 403 that confirms it is real.
+        """
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        roles = self.fields.get("roles")
+        if request is not None and roles is not None and not roles.read_only:
+            from apps.users.services.roles import hidden_role_names
+
+            roles.child_relation.queryset = Group.objects.exclude(
+                name__in=hidden_role_names(request.user)
+            )
+
+    def get_can_manage(self, obj) -> bool:
+        """True when the requester may edit or delete this account."""
+        from apps.users.services.roles import rank_allows, user_rank
+
+        request = self.context.get("request")
+        if request is not None and request.user.pk == obj.pk:
+            return True
+        actor_rank = requester_rank(self.context)
+        return actor_rank is not None and rank_allows(actor_rank, user_rank(obj))
 
     def create(self, validated_data):
         """Create a user, hashing the password rather than storing it raw."""

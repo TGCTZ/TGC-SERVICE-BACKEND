@@ -34,7 +34,15 @@ from .serializers import (
     UserStatusSerializer,
 )
 from .services.auth import change_password, record_login, register_user
-from .services.roles import assert_role_mutable
+from .services.roles import (
+    assert_can_assign,
+    assert_can_create_role,
+    assert_can_grant,
+    assert_can_manage_role,
+    assert_can_manage_user,
+    hidden_role_names,
+    permission_labels,
+)
 
 User = get_user_model()
 
@@ -150,6 +158,47 @@ class UserViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     )
     date_filter_fields = ("created_at", "updated_at", "last_login_at", "date_of_birth")
 
+    # Roles can arrive with a create, an update, or the roles action; all three
+    # go through the same rank checks - see services/roles.py.
+
+    def get_queryset(self):
+        """Leave out accounts ranked above the requester; fetching one is a 404.
+
+        Superusers count as the top rank, so they vanish along with superadmin.
+        """
+        queryset = super().get_queryset()
+        hidden = hidden_role_names(self.request.user)
+        if not hidden:
+            return queryset
+        return queryset.exclude(groups__name__in=hidden).exclude(is_superuser=True)
+
+    def perform_create(self, serializer):
+        """Refuse to create an account holding a role the requester does not outrank."""
+        groups = serializer.validated_data.get("groups")
+        if groups is not None:
+            assert_can_assign(
+                self.request.user, before=set(), after={group.name for group in groups}
+            )
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        """Refuse to edit a superior's account, or to change roles beyond one's rank."""
+        user = serializer.instance
+        assert_can_manage_user(self.request.user, user)
+        groups = serializer.validated_data.get("groups")
+        if groups is not None:
+            assert_can_assign(
+                self.request.user,
+                before={group.name for group in user.groups.all()},
+                after={group.name for group in groups},
+            )
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        """Refuse to delete an account ranked at or above the requester."""
+        assert_can_manage_user(self.request.user, instance)
+        super().perform_destroy(instance)
+
     @extend_schema(request=RoleSerializer, responses=UserSerializer)
     @action(detail=True, methods=["put"], url_path="roles")
     def set_roles(self, request, pk=None):
@@ -157,7 +206,10 @@ class UserViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         from .services.roles import sync_user_roles
 
         user = self.get_object()
-        sync_user_roles(user=user, role_names=request.data.get("roles", []))
+        assert_can_manage_user(request.user, user)
+        sync_user_roles(
+            user=user, role_names=request.data.get("roles", []), actor=request.user
+        )
         return Response(self.get_serializer(user).data)
 
 
@@ -203,14 +255,39 @@ class RoleViewSet(viewsets.ModelViewSet):
     search_fields = ("name",)
     ordering_fields = ("id", "name")
 
+    def get_queryset(self):
+        """Leave out roles ranked above the requester; fetching one by id is a 404."""
+        return (
+            super().get_queryset().exclude(name__in=hidden_role_names(self.request.user))
+        )
+
+    def perform_create(self, serializer):
+        """Create a role below the requester, holding only what they can grant."""
+        assert_can_create_role(self.request.user, serializer.validated_data["name"])
+        assert_can_grant(
+            self.request.user,
+            before=set(),
+            after=permission_labels(serializer.validated_data.get("permissions", [])),
+        )
+        serializer.save()
+
     def perform_update(self, serializer):
-        """Block changes to protected roles."""
-        assert_role_mutable(serializer.instance)
+        """Block changes to protected roles, and to roles at or above the requester."""
+        role = serializer.instance
+        assert_can_manage_role(
+            self.request.user, role, new_name=serializer.validated_data.get("name")
+        )
+        if "permissions" in serializer.validated_data:
+            assert_can_grant(
+                self.request.user,
+                before=permission_labels(role.permissions.all()),
+                after=permission_labels(serializer.validated_data["permissions"]),
+            )
         serializer.save()
 
     def perform_destroy(self, instance):
-        """Block deletion of protected roles."""
-        assert_role_mutable(instance)
+        """Block deletion of protected roles, and of roles at or above the requester."""
+        assert_can_manage_role(self.request.user, instance)
         instance.delete()
 
 
