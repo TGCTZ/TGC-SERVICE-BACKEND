@@ -33,14 +33,9 @@ def admin_role_user(roles):
     return _holding("admin")
 
 
-def _new_user(**overrides):
-    return {
-        "first_name": "New",
-        "last_name": "Person",
-        "username": "newperson",
-        "email": "newperson@example.com",
-        **overrides,
-    }
+def _new_user(role: str):
+    """What the Users screen sends: an email and a role, nothing else."""
+    return {"email": "newperson@example.com", "role": role}
 
 
 def _role_names(client) -> set[str]:
@@ -140,9 +135,7 @@ def test_an_admin_never_learns_that_superadmin_exists(
     created = client.post("/api/v1/roles/", {"name": "superadmin"}, format="json")
     assert created.status_code == 400
     assert "already exists" not in str(created.data)
-    assigned = client.post(
-        "/api/v1/users/", _new_user(roles=["superadmin"]), format="json"
-    )
+    assigned = client.post("/api/v1/users/", _new_user("superadmin"), format="json")
     assert assigned.status_code == 400
     assert "does not exist" in str(assigned.data)
 
@@ -178,7 +171,7 @@ def test_a_manager_hands_out_only_roles_below_manager(
 ):
     """Strictly below: not even the manager role itself."""
     response = auth_client(admin_user).post(
-        "/api/v1/users/", _new_user(roles=[role]), format="json"
+        "/api/v1/users/", _new_user(role), format="json"
     )
 
     assert response.status_code == status, response.data

@@ -6,36 +6,12 @@ from rest_framework_simplejwt.token_blacklist.models import (
 )
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
 
 User = get_user_model()
-
-
-@transaction.atomic
-def register_user(*, password: str, roles: list[str] | None = None, **fields):
-    """Create an account, hash its password and attach its initial roles.
-
-    Args:
-        password: Raw password; hashed before it reaches the database.
-        roles: Group names to assign. Unknown names are rejected outright
-            rather than silently ignored, since a typo would otherwise create
-            an account with fewer permissions than intended.
-        **fields: Remaining user fields.
-
-    Returns:
-        The newly created user.
-
-    Raises:
-        ServiceError: If any requested role does not exist.
-    """
-    user = User.objects.create_user(password=password, **fields)
-    if roles:
-        _attach_roles(user, roles)
-    return user
 
 
 @transaction.atomic
@@ -79,12 +55,3 @@ def record_login(user) -> None:
     """
     user.last_login_at = timezone.now()
     user.save(update_fields=["last_login_at", "updated_at"])
-
-
-def _attach_roles(user, roles: list[str]) -> None:
-    """Set a user's groups from a list of role names."""
-    groups = list(Group.objects.filter(name__in=roles))
-    missing = set(roles) - {group.name for group in groups}
-    if missing:
-        raise ServiceError(f"Unknown role(s): {', '.join(sorted(missing))}")
-    user.groups.set(groups)

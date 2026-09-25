@@ -74,6 +74,11 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     last_login_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
     is_staff = models.BooleanField(default=False)
+    # Set on accounts created from the Users screen and cleared, in order, by
+    # the user's first login - see apps/users/authentication.py. False by
+    # default, so every account that predates the flow is left alone.
+    must_change_password = models.BooleanField(default=False)
+    must_complete_profile = models.BooleanField(default=False)
 
     objects = UserManager()
     all_objects = models.Manager()

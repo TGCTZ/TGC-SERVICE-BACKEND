@@ -5,7 +5,7 @@ import contextlib
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.generics import CreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,18 +22,26 @@ from apps.core.viewsets import BaseModelViewSet
 from .models import Gender, IdentityDetail, UserStatus
 from .serializers import (
     ChangePasswordSerializer,
+    FirstLoginPasswordSerializer,
+    FirstLoginProfileSerializer,
     GenderSerializer,
     IdentityDetailSerializer,
     LoginSerializer,
     LogoutSerializer,
     MeSerializer,
     PermissionSerializer,
-    RegisterSerializer,
     RoleSerializer,
+    UserCreateSerializer,
     UserSerializer,
     UserStatusSerializer,
 )
-from .services.auth import change_password, record_login, register_user
+from .services.accounts import (
+    complete_first_login_password,
+    complete_first_login_profile,
+    create_user_account,
+    reset_temporary_password,
+)
+from .services.auth import change_password, record_login
 from .services.roles import (
     assert_can_assign,
     assert_can_create_role,
@@ -45,24 +53,6 @@ from .services.roles import (
 )
 
 User = get_user_model()
-
-
-class RegisterView(CreateAPIView):
-    """Public self-registration."""
-
-    serializer_class = RegisterSerializer
-    permission_classes = [AllowAny]
-    throttle_scope = "auth"
-
-    def create(self, request, *args, **kwargs):
-        """Validate the payload, then hand off to the auth service."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = register_user(**serializer.validated_data)
-        return Response(
-            MeSerializer(user, context=self.get_serializer_context()).data,
-            status=status.HTTP_201_CREATED,
-        )
 
 
 class LoginView(TokenObtainPairView):
@@ -115,6 +105,44 @@ class MeView(RetrieveUpdateAPIView):
     def get_object(self):
         """Always the requesting user - there is no id in the URL to tamper with."""
         return self.request.user
+
+
+class FirstLoginPasswordView(APIView):
+    """First login, step one: replace the temporary password with the user's own."""
+
+    serializer_class = FirstLoginPasswordSerializer
+    throttle_scope = "auth"
+
+    @extend_schema(request=FirstLoginPasswordSerializer, responses={200: dict})
+    def post(self, request):
+        """Set the password; answer with a fresh token pair and the user."""
+        serializer = FirstLoginPasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        tokens = complete_first_login_password(
+            user=request.user, password=serializer.validated_data["password"]
+        )
+        return Response(
+            {
+                **tokens,
+                "user": MeSerializer(request.user, context={"request": request}).data,
+            }
+        )
+
+
+class FirstLoginProfileView(APIView):
+    """First login, step two: the profile the system needs before anything else."""
+
+    serializer_class = FirstLoginProfileSerializer
+
+    @extend_schema(request=FirstLoginProfileSerializer, responses=MeSerializer)
+    def post(self, request):
+        """Save the profile and open the app to the user."""
+        serializer = FirstLoginProfileSerializer(request.user, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        complete_first_login_profile(user=request.user, serializer=serializer)
+        return Response(MeSerializer(request.user, context={"request": request}).data)
 
 
 class ChangePasswordView(APIView):
@@ -172,14 +200,48 @@ class UserViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             return queryset
         return queryset.exclude(groups__name__in=hidden).exclude(is_superuser=True)
 
-    def perform_create(self, serializer):
-        """Refuse to create an account holding a role the requester does not outrank."""
-        groups = serializer.validated_data.get("groups")
-        if groups is not None:
-            assert_can_assign(
-                self.request.user, before=set(), after={group.name for group in groups}
-            )
-        super().perform_create(serializer)
+    # No self-registration: this is the only way an account is made. Reset
+    # issues a password, so it asks for change_user rather than add_user.
+    action_permissions = {"reset_password": ["users.change_user"]}
+
+    def get_serializer_class(self):
+        """Creating takes only an email and a role; everything else is the full record."""
+        if self.action == "create":
+            return UserCreateSerializer
+        return super().get_serializer_class()
+
+    @extend_schema(request=UserCreateSerializer, responses={201: UserSerializer})
+    def create(self, request, *args, **kwargs):
+        """Create the account and email its credentials.
+
+        The temporary password is in this response and nowhere else afterwards,
+        so whoever created the account can pass it on if the email goes astray.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user, password = create_user_account(
+            email=serializer.validated_data["email"],
+            role=serializer.validated_data["role"],
+            actor=request.user,
+        )
+        data = UserSerializer(user, context=self.get_serializer_context()).data
+        return Response(
+            {**data, "temporary_password": password}, status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(request=None, responses=UserSerializer)
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        """Issue a new temporary password, email it, and show it once."""
+        from apps.core.exceptions import ServiceError
+
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            raise ServiceError("Change your own password from Settings.")
+        assert_can_manage_user(request.user, user)
+        password = reset_temporary_password(user=user)
+        data = self.get_serializer(user).data
+        return Response({**data, "temporary_password": password})
 
     def perform_update(self, serializer):
         """Refuse to edit a superior's account, or to change roles beyond one's rank."""
@@ -231,6 +293,16 @@ class GenderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     search_fields = ("name", "description")
     filter_fields = ("is_active",)
     ordering_fields = ("id", "name", "is_active", "created_at")
+
+    def get_permissions(self):
+        """Anyone signed in may read the options; changing them stays gated.
+
+        Every user's own profile offers a gender - the first-login step
+        requires one - whatever their role's model permissions say.
+        """
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
 
 class IdentityDetailViewSet(BaseModelViewSet, viewsets.ModelViewSet):

@@ -147,7 +147,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Simple JWT, plus holding new accounts to their first login.
+        "apps.users.authentication.OnboardingJWTAuthentication",
     ],
     # Deny by default. Every view declares its own permissions explicitly, so
     # forgetting to do so fails closed rather than open.
@@ -204,6 +205,17 @@ CERTIFICATE_MINISTRY_NAME = env(
 # only from inside the office is a QR that does not work. The legacy system
 # built this from ``request.build_absolute_uri`` and silently emitted no QR at
 # all whenever the request was None.
+# Where staff sign in; the link in the new-account email points here.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# Outgoing mail, as one URL: smtp+tls://user:password@host:587 in production.
+# The console default prints mail to the server log instead of sending it.
+EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="Tanzania Gemmological Centre <no-reply@tgc.go.tz>"
+)
+
 CERTIFICATE_VERIFY_BASE_URL = env(
     "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
 )

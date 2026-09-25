@@ -6,6 +6,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.core.serializers import AuditFieldsMixin
 
@@ -233,11 +234,15 @@ class UserSerializer(AuditFieldsMixin):
             "email_verified_at",
             "roles",
             "can_manage",
+            "must_change_password",
+            "must_complete_profile",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = (
             "last_login_at",
             "email_verified_at",
+            "must_change_password",
+            "must_complete_profile",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
 
@@ -334,32 +339,68 @@ class IdentityDetailSerializer(AuditFieldsMixin):
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
 
 
-class RegisterSerializer(serializers.ModelSerializer):
-    """Public self-registration payload."""
+class UserCreateSerializer(serializers.Serializer):
+    """Creating an account takes only an email and a role.
 
-    password = serializers.CharField(write_only=True, validators=[validate_password])
+    Everything else is either the system's to set - country, status, a
+    temporary password - or the new user's to fill in at first login.
+    """
+
+    email = serializers.EmailField()
+    role = serializers.SlugRelatedField(slug_field="name", queryset=Group.objects.all())
+
+    def __init__(self, *args, **kwargs):
+        """Offer only the roles the requester is shown - see ``hidden_role_names``."""
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None:
+            from apps.users.services.roles import hidden_role_names
+
+            self.fields["role"].queryset = Group.objects.exclude(
+                name__in=hidden_role_names(request.user)
+            )
+
+    def validate_email(self, value: str) -> str:
+        """One account per email, deleted accounts included - the column is unique."""
+        value = User.objects.normalize_email(value)
+        if User.all_objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError(
+                "An account with this email already exists."
+            )
+        return value
+
+
+class FirstLoginPasswordSerializer(serializers.Serializer):
+    """The password a new user chooses in place of their temporary one."""
+
+    password = serializers.CharField(write_only=True)
     password_confirm = serializers.CharField(write_only=True)
 
-    class Meta:
-        model = User
-        fields = (
-            "first_name",
-            "middle_name",
-            "last_name",
-            "username",
-            "email",
-            "phone_number",
-            "password",
-            "password_confirm",
-        )
-
     def validate(self, attrs):
-        """Reject a mismatched confirmation before anything is written."""
+        """Match the confirmation, then apply the project's password rules."""
         if attrs["password"] != attrs.pop("password_confirm"):
             raise serializers.ValidationError(
                 {"password_confirm": "The two password fields do not match."}
             )
+        request = self.context.get("request")
+        try:
+            validate_password(attrs["password"], user=getattr(request, "user", None))
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
         return attrs
+
+
+class FirstLoginProfileSerializer(serializers.ModelSerializer):
+    """What a new user must tell the system about themselves before starting."""
+
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    phone_number = serializers.CharField(max_length=50)
+    gender = serializers.PrimaryKeyRelatedField(queryset=Gender.objects.all())
+
+    class Meta:
+        model = User
+        fields = ("first_name", "middle_name", "last_name", "phone_number", "gender")
 
 
 class ChangePasswordSerializer(serializers.Serializer):
