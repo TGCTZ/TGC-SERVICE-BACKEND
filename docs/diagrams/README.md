@@ -9,7 +9,7 @@ them without a build step.
 | [Middleware stack](middleware-stack.md) | What touches a request before a view sees it, and why the order is what it is |
 | [Read request](read-request.md) | How `GET /api/v1/stones/` becomes a paginated JSON page |
 | [Write request](write-request.md) | How a `POST` is validated, persisted, stamped and audited |
-| [Authentication](authentication.md) | Register, login, refresh rotation, logout and password change |
+| [Authentication](authentication.md) | Login, first login, refresh rotation, logout and password change |
 | [Permissions](permissions.md) | How a user, their groups and a request method resolve to allow or deny |
 | [Query layer](query-layer.md) | How `search`, `filter[...]`, `ordering` and the trashed flags compose |
 | [Soft delete and audit](soft-delete-audit.md) | Why a delete is an update, and what compensates for it |

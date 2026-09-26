@@ -18,8 +18,10 @@ Django creates four permissions per model automatically: `add_`, `change_`,
 `apps/users/roles.py` holds `ROLE_PERMISSIONS`, a dict of role name to
 permission labels. `manage.py setup_roles` applies it and is safe to re-run.
 
-The four business roles mirror the lab's actual stations, so each maps onto a
-stage of the stone's journey and onto one of the four worklists.
+There are six roles. Four mirror the lab's stations - the back office, the front
+desk, the bench and accounts - so each maps onto a stage of the stone's journey.
+Two sit above them to run the system. Who may manage whom is set by rank; see
+[The hierarchy](#the-hierarchy).
 
 | Role | Station | Scope |
 |---|---|---|
@@ -191,8 +193,17 @@ reserved for verbs that change state — issuing, revoking, transitioning — wh
 Some permissions guard a whole UI section rather than a table: `module_orders`,
 `module_identification`, `module_billing`, `module_certificates`,
 `module_reference`, `module_user`, `module_settings`, `module_audit`. They have
-no model of their
-own, so they hang off `apps/core/models/gates.py` - an unmanaged model that
-creates no table but does create permissions.
+no model of their own, so they hang off `apps/core/models/gates.py` - an
+unmanaged model that creates no table but does create permissions.
 
-The same trick carries `audit.view_systemlog` in `apps/audit/models.py`.
+The gates are **presentation only**: the frontend hides a sidebar group (or an
+Administration section) whose gate the user lacks, on top of each item's own
+model permission. No endpoint checks them, so a hidden page still opens from a
+direct link - access control stays with the model permissions. Unticking a gate
+on the roles screen is how an admin tidies a role's navigation without stripping
+the permissions its pages need.
+
+The same unmanaged-model trick carries `audit.view_systemlog`
+(`apps/audit/models.py`) and `analytics.view_statistics`
+(`apps/analytics/models.py`); unlike the gates, both are enforced by their
+endpoints.

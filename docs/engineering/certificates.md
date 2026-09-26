@@ -118,8 +118,8 @@ Lab identity on the page — ministry, lab name, address — comes from
 
 ## Images, and why everything is a data URI
 
-Every image in the document — the logo, the marks, the stone photograph, the QR
-code — is embedded as a base64 `data:` URI. Nothing is a path or a URL.
+Every image in the document — the header banner, the stamp, the stone photograph,
+the QR code — is embedded as a base64 `data:` URI. Nothing is a path or a URL.
 
 This is why `write_pdf()` is called with **no `base_url`**: there is nothing
 left to resolve against the filesystem. The document renders identically from a
@@ -128,27 +128,34 @@ on `collectstatic` having run. The cost is a few hundred kilobytes per
 certificate, which is the right trade for a file that has to be reproducible
 years later.
 
-### The lab's marks
+### The lab's images
 
-`ASSETS` in `services/assets.py` is an explicit filename map. The legacy loader
-probed six spellings per asset and fell through to a substring match, so a typo
-in a real filename went unnoticed for months while production quietly used
-whichever file happened to match first.
+`ASSETS` in `services/assets.py` maps each name the template uses to one file in
+`apps/certificates/static/certificates/img/`. The map is explicit - one name, one
+file - so a misnamed file is reported as missing instead of being guessed at.
 
-A missing file returns `None` with a one-time warning rather than raising — a
-lab without its stamp on file still gets a certificate. Loaded assets are cached
-for the life of the process.
+| Name | File | Where it prints |
+| --- | --- | --- |
+| `header_banner` | `header-banner.jpg` | The whole header band, 277 × 26mm |
+| `official_stamp` | `official-stamp.png` | The stamp box in column 1 |
 
-> **Two marks are not yet on file.** `apps/certificates/static/certificates/img/`
-> currently holds only `tgc-logo.png`.
->
-> | File | Effect while missing |
-> | --- | --- |
-> | `official-stamp.png` | The stamp box prints "Stamp not on file" |
-> | `coat-of-arms.png` | The header mark simply does not render |
->
-> Sizing guidance is in that directory's own README: header marks at most 20mm,
-> the stamp at most 22mm, roughly 600px on the long edge, PNG with transparency.
+The header is one pre-composed image: the ministry's flag banner with the coat of
+arms, the titles and the TGC logo drawn in. It is a JPEG because it is a
+photographic texture (PNG was four times the size), built at the band's own
+277:26 proportions so it fills the band without cropping. `coat-of-arms.png` and
+`tgc-logo.png` are kept in the folder as the banner's sources; the template no
+longer embeds them on their own.
+
+A missing file returns `None` with a one-time warning rather than raising, so a
+certificate still renders:
+
+- no stamp - the box is left empty, since it is where the lab stamps by hand;
+- no banner - the header prints the ministry, lab and document titles as text,
+  because the lab's name exists nowhere else on the page.
+
+Found files are cached for the life of the process, so replacing one needs a
+restart (or `forget_assets()`); a missing file is re-checked on every render.
+Sizing and format guidance is in that directory's own `README.md`.
 
 ### The stone photograph
 

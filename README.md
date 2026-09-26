@@ -66,7 +66,15 @@ Health probes sit outside the versioned API, so they survive a version bump:
 | `GET /api/health/ready/` | Readiness. Checks the database and pending migrations; 503 if either fails. |
 
 Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
-of `superadmin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
+of `superadmin`, `admin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
+For the dashboard's management statistics to have trends to show, seed a fresh
+database with history instead:
+`uv run python manage.py seed --orders 150 --history-months 12`.
+
+Outside the demo data, accounts are created from the Users screen by an email and
+a role - there is no sign-up. New users get a temporary password by email and
+must set their own and complete their profile on first sign-in; see
+[Accounts and first login](docs/engineering/accounts.md).
 
 ## Everyday commands
 
@@ -88,14 +96,18 @@ how it is built.
 | Document | What it covers |
 |---|---|
 | [Business workflow](docs/domain/business-workflow.md) | The stone's journey: stages, roles, status lifecycle |
-| [Domain questions](docs/domain/domain-questions.md) | Business decisions — settled, and still open |
+| [Business decisions](docs/domain/decisions.md) | The rules behind the workflow - settled, provisional, still open |
 | [Project structure](docs/engineering/project-structure.md) | Every app and layer, and what belongs in each |
 | [Diagrams](docs/diagrams/README.md) | Request flows, drawn — start here if you prefer pictures |
 | [API lifecycle](docs/engineering/api-lifecycle.md) | A request traced from URL to response |
 | [Testing the API](docs/engineering/testing-the-api.md) | Swagger, `api.http`, the query contract, the test suite |
-| [Permissions](docs/engineering/permissions.md) | Roles, permissions, module gates, workflow verbs |
+| [Permissions](docs/engineering/permissions.md) | Roles, the hierarchy, permissions, module gates, workflow verbs |
+| [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, the credentials email, first login, password resets |
 | [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
 | [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
+| [Management statistics](docs/engineering/analytics.md) | The dashboard's figures: what each counts, periods, currencies |
+| [Reference data](docs/domain/reference-data.md) | The lookup lists, and Tanzania's regions |
+| [Operations](docs/engineering/operations.md) | Configuration, email, and what to run after a deploy |
 | [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
 | [Adding an app](docs/engineering/adding-an-app.md) | The shape every domain app follows |
 | [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |
@@ -108,11 +120,13 @@ apps/
   core/            L1 - base models, managers, shared DRF machinery
   users/           L2 - custom user, authentication, RBAC
   audit/           L2 - activity-log and system-log read APIs
+  notifications/   L2 - per-user in-app notifications
   gems/            L2 - domain enums and the stone reference tables
   orders/          L3 - customers, orders, stones, status trail
   billing/         L4 - bills, payments, the GePG gateway
   identification/  L4 - full gemmological identification
   certificates/    L5 - certificates and their PDF documents
+  analytics/       L6 - management statistics over all of the above
 docs/              engineering, domain and GePG documentation
 api.http           a runnable request collection for the whole pipeline
 ```

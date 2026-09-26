@@ -3,9 +3,9 @@
 > How a customer's stones move through TGC-SYSTEM, end to end — the stages, who
 > acts at each one, and how a stone's status changes along the way.
 >
-> This describes the **business process**, not the code. For the data model see
-> the ERD in [`domain-questions.md`](domain-questions.md); for open decisions
-> that affect this flow, see Parts B and C of that same file.
+> This describes the **business process**, not the code. For the data model and
+> the decisions behind this flow - settled, provisional and still open - see
+> [Business decisions](decisions.md).
 >
 > Items marked **(assumption)** depend on a question not yet answered by the
 > team — treat them as provisional.
@@ -120,8 +120,8 @@ findings.
    admin-managed reference lists).
 2. **Finalize** the report, which locks it against further edits.
 
-> **(assumption)** Whether a finalized report can still be edited is open
-> question C4.
+> Settled: a finalized report is locked for good, because the certificate is
+> printed from it.
 
 **Result:** each paid stone has one finalized identification report; status
 advances toward certification.
@@ -141,8 +141,9 @@ advances toward certification.
    [certificates.md](../engineering/certificates.md).
 4. The customer collects the certified stones; handover is recorded.
 
-> **(assumption)** Whether payment must be **complete before** a certificate is
-> issued is open question B4. Certificate re-issuance and revocation are C3.
+> **(provisional)** A certificate is issued only once the bill is fully paid.
+> Revocation is settled; re-issuing is still an open question - see
+> [Business decisions](decisions.md).
 
 **Result:** each stone is certified and, once collected, closed out.
 
@@ -258,22 +259,19 @@ is a refund question rather than a status change.
 8. Workflow **stages are fixed** (defined in code, not staff-editable).
 9. A **status audit trail is mandatory** — every transition is logged.
 
-*(These are the confirmed decisions — Part A of `domain-questions.md`.)*
+*(The full list, with where each rule lives in code, is in
+[Business decisions](decisions.md).)*
 
 ---
 
 ## 6. Open points that change this workflow
 
-Answers to these will update the stages above. See `domain-questions.md`.
+Two rules are built on defaults the lab has not confirmed, and a few questions
+are still open; each would change a stage above. They are tracked in
+[Business decisions](decisions.md#provisional):
 
-| Ref | Question | Affects |
-| --- | --- | --- |
-| B4 | Must a bill be paid before certification? | Stages 3→5 |
-| C2 | Partial payments, bill cancellation? | Stage 3 |
-| C3 | Certificate re-issue / revocation? | Stage 5 |
-| C4 | Finalized report editable? | Stage 4 |
-| C6 | Human-readable order/certificate numbers? | Stages 1, 5 |
-
-*(Resolved and no longer open: B1/B6 production removed · B2 flat pricing ·
-B3 weight unit ct/g · B5 status list · C5 roles.)*
-```
+| Point | Affects |
+| --- | --- |
+| Certificate only after the bill is fully paid (provisional) | Stages 3 → 5 |
+| Partial payments; cancelling or reissuing a bill | Stage 3 |
+| Re-issuing a certificate | Stage 5 |

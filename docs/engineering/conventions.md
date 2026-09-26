@@ -87,6 +87,19 @@ code already says what. A docstring that restates the signature is noise.
 A comment earns its place by explaining a constraint, a trade-off or a
 surprising ordering. Comments that narrate readable code get deleted.
 
+- **State the reason as it stands today, not the history.** "Misses are not
+  cached, or a new file would not show until a restart" - not "the loader used
+  to cache misses". Git and the pull request record what changed; a comment that
+  tells a story goes stale the day the story is forgotten. The exception is a
+  constraint that still binds, such as matching numbers already printed.
+- **Keep module and function docs short enough to read in passing** - roughly
+  ten lines of prose before `Args:`. Design rationale longer than that belongs in
+  `docs/`, with the docstring pointing at it.
+- **No leftovers** from templates, scaffolds or other frameworks.
+- **Docs change with the code.** A pull request that changes behaviour updates
+  the doc describing it; `scripts/check_docs.py` catches dead links, not stale
+  prose.
+
 ## 14. Secrets never have defaults
 
 `SECRET_KEY` has no fallback: a missing value must crash on boot rather than
