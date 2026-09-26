@@ -202,9 +202,11 @@ CERTIFICATE_MINISTRY_NAME = env(
 #
 # An absolute URL, because a certificate can be rendered with no request in
 # hand - a background job, a management command, a test - and a QR that resolves
-# only from inside the office is a QR that does not work. The legacy system
-# built this from ``request.build_absolute_uri`` and silently emitted no QR at
-# all whenever the request was None.
+# only from inside the office is a QR that does not work.
+CERTIFICATE_VERIFY_BASE_URL = env(
+    "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
+)
+
 # Where staff sign in; the link in the new-account email points here.
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
@@ -214,10 +216,6 @@ EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
 vars().update(EMAIL_CONFIG)
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default="Tanzania Gemmological Centre <no-reply@tgc.go.tz>"
-)
-
-CERTIFICATE_VERIFY_BASE_URL = env(
-    "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
 )
 
 # Models are registered explicitly in apps.core.audit by walking BaseModel

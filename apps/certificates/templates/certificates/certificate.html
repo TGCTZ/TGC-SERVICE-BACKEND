@@ -7,9 +7,8 @@
   same place on every sheet whether the comments field is empty or three lines
   long, so the boxes are placed first and the data pours into them. Flexbox is
   used only to centre content *inside* a box, never to decide where a box goes.
-  (The previous version sized the page with `height: 100%` against a body of
-  auto height, which collapses; the columns then had no space to grow into and
-  everything crowded into the top half of the sheet.)
+  The sheet has an explicit height for the same reason: `height: 100%` against
+  a body of auto height collapses, and the columns crowd into the top half.
 
   The coordinates are collected in the two tables below - PAGE BANDS and the
   per-column blocks - so the layout can be re-proportioned by editing numbers
@@ -90,8 +89,8 @@
        its name, the document's title, the headers and every label. "TGC Sans"
        (Inter) carries what the instruments measured. Both are embedded by
        services/assets.py as data: URIs, because the render host has neither
-       installed and an unembedded face substitutes silently rather than
-       failing - which is how this document came to be set in DejaVu Serif.
+       installed and an unembedded face substitutes silently (as DejaVu
+       Serif) rather than failing.
 
        The fallbacks are there for the case where a font file has gone missing;
        the document still renders, just not in its own clothes. */
@@ -562,8 +561,8 @@
         <tr><td class="label">Treatment</td><td class="value">{{ certificate.treatment_snapshot|default:"—" }}</td></tr>
         <tr><td class="label">Origin</td><td class="value">{{ certificate.origin_snapshot|default:"—" }}</td></tr>
         {% comment %}
-          ORIGIN is the geographic source. The legacy template printed
-          nature_type there by mistake; both are shown, each in its own row.
+          ORIGIN is the geographic source - not the nature type (natural,
+          synthetic...), which has its own row above.
         {% endcomment %}
         <tr>
           <td class="label comment">Comment</td>

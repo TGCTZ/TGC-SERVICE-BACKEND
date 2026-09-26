@@ -155,10 +155,9 @@ def orders_at_stage(queryset, stage: str):
     with them. Filtering therefore means expressing that derivation as SQL
     rather than reading a field.
 
-    The alternative was a denormalised ``stage`` column kept in step by every
-    service that touches a stone. That is one write to forget - and the forgotten
-    one would leave an order claiming to be ready for collection while a stone
-    sits on the bench, silently, until a customer is told to come in.
+    A stored ``stage`` column would need every service that touches a stone to
+    update it; one forgotten write and an order claims "ready for collection"
+    with a stone still on the bench.
 
     Each branch here mirrors one branch of ``order_stage``, **in the same
     order**, by excluding everything the branches above it would have caught.

@@ -493,10 +493,9 @@ def test_verify_page_answers_plainly_for_an_unknown_number(client):
 def test_a_mark_supplied_later_appears_without_a_restart(request, monkeypatch, tmp_path):
     """Dropping a mark into the asset directory must not need a process restart.
 
-    The loader used to be wrapped in ``functools.cache``, which remembered the
-    *miss* as readily as the hit: a lab that supplied its stamp at noon went on
-    getting the empty placeholder box until someone restarted the server, and
-    nothing about a new PNG makes Django's autoreloader restart one.
+    A loader that cached the *miss* as readily as the hit would keep printing
+    the empty box after the stamp is supplied, until a restart - and nothing
+    about a new PNG makes Django's autoreloader restart one.
     """
     # Both ends: the loader must not start with a real mark already encoded,
     # and must not leave this temporary one behind for the next test.
@@ -558,9 +557,9 @@ def test_no_template_syntax_leaks_onto_the_document(certifiable_stone):
 
     Django's ``{# ... #}`` is a *single-line* comment. Spread one over two
     lines and the remainder is not a comment at all - it is content, and it
-    prints on the certificate. That has happened more than once while editing
-    this template, and it is invisible in a unit test that only reads the
-    context, so it is asserted against the rendered HTML here.
+    prints on the certificate. It is an easy slip when editing the template and
+    invisible to a test that only reads the context, so it is asserted against
+    the rendered HTML here.
     """
     certificate = issue_certificate(certifiable_stone)
 

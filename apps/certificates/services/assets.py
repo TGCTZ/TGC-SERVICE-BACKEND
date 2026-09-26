@@ -28,10 +28,9 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "certificates" /
 
 #: Filenames under :data:`ASSET_DIR`, by the name the template asks for.
 #:
-#: An explicit map rather than the legacy system's extension-probing loader,
-#: which tried six spellings per asset and fell through to a substring match on
-#: ``"TANZANIA"`` - so a typo in the real filename went unnoticed for months
-#: while production quietly used whichever file matched first.
+#: One name, one file, spelled out: a misnamed file is then reported missing,
+#: rather than the loader guessing at spellings and quietly using whichever
+#: similar file it finds.
 ASSETS = {
     "header_banner": "header-banner.jpg",
     "official_stamp": "official-stamp.png",
@@ -58,13 +57,12 @@ def asset_data_uri(name: str) -> str | None:
     do not change between renders, and re-reading a 500KB PNG per certificate
     is pure waste.
 
-    A file that was *not* found is deliberately not cached. Under
-    ``functools.cache`` the miss was remembered too, so a lab that supplied its
-    stamp at noon went on getting the empty box until someone restarted the
-    process - and nothing in a new PNG makes Django's autoreloader restart one.
-    Re-checking costs a single ``stat`` per render, which is nothing next to
-    rendering a PDF, and it makes the promise in ``static/certificates/img``'s
-    README true: drop the file in and it appears on the next render.
+    A file that was *not* found is deliberately not cached: caching the miss
+    would keep printing the empty box after the file is added, until a restart -
+    and a new image does not trigger Django's autoreloader. Re-checking costs a
+    single ``stat`` per render, and it keeps the promise in
+    ``static/certificates/img``'s README: drop the file in and it appears on the
+    next render.
 
     Returns None rather than raising when a file is missing, so a lab that has
     not supplied its stamp yet still gets a certificate - the template falls
@@ -165,8 +163,7 @@ def font_faces() -> str:
     render host carries DejaVu and nothing else, and the system package list
     installs no fonts at all, so a face named but not embedded does not fail -
     it *substitutes*, silently, and the lab issues a subtly different document
-    without anyone noticing. That is how this template came to render in DejaVu
-    Serif in the first place.
+    without anyone noticing.
 
     A face whose file is missing is skipped rather than raising, and the
     template's fallback stack catches it. A certificate that renders in the
