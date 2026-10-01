@@ -16,7 +16,8 @@ Identification comes *before* billing, because typing the stone is what
 determines the fee. Each arrow is a service with its own guard, and each stage
 has a worklist that is the queue someone actually works from.
 
-The React client lives alongside this one, in [`../frontend`](../frontend/README.md).
+The React client lives in the
+[TGC-SERVICE-FRONTEND](https://github.com/TGCTZ/TGC-SERVICE-FRONTEND) repository.
 
 ## Stack
 
