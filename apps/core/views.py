@@ -104,6 +104,12 @@ class ConfigView(APIView):
     outsider something about it that they have no business knowing.
     """
 
+    @extend_schema(
+        responses=inline_serializer(
+            name="DeploymentConfig",
+            fields={"simulate_payments": serializers.BooleanField(read_only=True)},
+        ),
+    )
     def get(self, request, *args, **kwargs) -> Response:
         """Report what this deployment allows.
 

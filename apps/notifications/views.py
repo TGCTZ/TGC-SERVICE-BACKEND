@@ -44,6 +44,9 @@ class NotificationViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     def get_queryset(self):
         """The requesting user's notifications, optionally only unread ones."""
+        if getattr(self, "swagger_fake_view", False):
+            # Schema generation needs model metadata without an authenticated user.
+            return Notification.objects.none()
         queryset = Notification.objects.filter(recipient=self.request.user)
         unread = str(self.request.query_params.get("unread", "")).lower()
         if unread in TRUE_VALUES:

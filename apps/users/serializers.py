@@ -1,5 +1,6 @@
 """Serializers for users, roles and authentication."""
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -58,6 +59,7 @@ class PermissionSerializer(serializers.ModelSerializer):
         return f"{obj.content_type.app_label}.{obj.codename}"
 
 
+@extend_schema_field(str)
 class PermissionLabelField(serializers.RelatedField):
     """A permission addressed as ``app_label.codename``.
 

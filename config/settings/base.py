@@ -188,6 +188,13 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    # Reuse shared choice sets and distinguish each domain's status vocabulary.
+    "ENUM_NAME_OVERRIDES": {
+        "StoneStatusEnum": "apps.gems.enums.StoneStatus",
+        "BillStatusEnum": "apps.gems.enums.BillStatus",
+        "CertificateStatusEnum": "apps.gems.enums.CertificateStatus",
+        "WeightUnitEnum": "apps.gems.enums.WeightUnit",
+    },
 }
 
 # Printed on every certificate PDF. Environment-driven so a second lab, or a
