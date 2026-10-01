@@ -59,14 +59,14 @@ layer. The rule is one line long and worth enforcing in review:
 | L1 | `apps.core` | Base models, managers, shared DRF machinery. Imports nothing local. |
 | L2 | `apps.users` | Custom user, authentication, RBAC. |
 | L2 | `apps.audit` | Read-only APIs over the activity log and log file. |
+| L2 | `apps.notifications` | Per-user notifications for workflow handoffs. |
 | L2 | `apps.gems` | Every domain enum, and the stone reference tables. |
 | L3 | `apps.orders` | Customers, orders, stones, and the stone status trail. |
 | L4 | `apps.billing` | Bills, payments, and the GePG payment gateway. |
 | L4 | `apps.identification` | Gemmological findings recorded against a stone. |
 | L5 | `apps.certificates` | Certificates and their public verification. |
+| L6 | `apps.analytics` | Management statistics over the domain apps. |
 | L6 | `apps.reports` | Read-only financial and operational reports and exports. |
-| L4 | `apps.identification` | Full gemmological identification, per stone. |
-| L5 | `apps.certificates` | Certificates and their PDF documents. |
 
 `apps.billing` and `apps.identification` sit at the same layer and must not
 import one another. Where one needs the other's state - the findings queue is

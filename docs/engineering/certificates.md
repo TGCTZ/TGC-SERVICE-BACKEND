@@ -96,10 +96,10 @@ anyone who can read a template, and there is no browser to install or keep
 alive.
 
 > **The cost is system libraries.** WeasyPrint needs pango, cairo and
-> gdk-pixbuf, and a missing one raises `OSError` at **import** time — which
-> takes the whole application down, not just this endpoint. The package list is
-> in [the backend README](../../README.md). Install them in any Dockerfile or CI
-> image before installing Python dependencies.
+> gdk-pixbuf. Its import is deferred until a certificate PDF is requested, so a
+> missing library affects PDF rendering without preventing API startup. The package
+> list is in [the backend README](../../README.md). Install them in any Dockerfile
+> or CI image before running certificate PDF tests or downloads.
 
 `certificate_context()` is deliberately split out from the render so tests can
 assert on what the document *says* without parsing PDF bytes. That is the only

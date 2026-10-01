@@ -39,11 +39,11 @@ the newest feature set.
 Versions are the **floors** declared in `pyproject.toml`; a lockfile pins what
 is actually installed. Run `uv tree` to see the resolved versions.
 
-> **`weasyprint` needs system libraries**, and a missing one raises `OSError` at
-> *import* time — which takes the whole app down, not just the PDF endpoint. On
+> **`weasyprint` needs system libraries** for certificate PDF downloads. The
+> renderer is imported on demand; missing libraries raise `OSError` when used. On
 > Debian/Ubuntu: `libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libcairo2
 > libgdk-pixbuf-2.0-0 libffi8 shared-mime-info`. Install them in any Dockerfile
-> or CI image before `uv sync`.
+> or CI image before running certificate PDF tests or downloads.
 
 ### Why each one
 

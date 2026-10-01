@@ -49,8 +49,9 @@ setting reads a variable that file does not mention.
 
 ## Before the first deploy
 
-WeasyPrint needs system libraries at import time, not just when a PDF is drawn -
-without them the whole app fails to start. See the
+WeasyPrint loads native system libraries when the certificate PDF renderer is
+first used. Other API endpoints can start without them, but certificate downloads
+require them. See the
 [README](../../README.md#quick-start) for the package list.
 
 Set up email before anyone creates an account: without `EMAIL_URL`, the

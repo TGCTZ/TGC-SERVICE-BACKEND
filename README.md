@@ -34,9 +34,10 @@ The React client lives alongside this one, in [`../frontend`](../frontend/README
 
 ## Quick start
 
-Certificate PDFs are rendered by WeasyPrint, which needs system libraries
-present **before** `uv sync` — a missing one raises `OSError` at import time and
-takes the whole app down, not just the PDF endpoint. On Debian/Ubuntu:
+Certificate PDFs are rendered by WeasyPrint, which needs native system libraries.
+Install them before using certificate PDF downloads. The renderer is loaded on
+demand, so other API endpoints and management commands can start without them.
+On Debian/Ubuntu:
 
 ```bash
 sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \

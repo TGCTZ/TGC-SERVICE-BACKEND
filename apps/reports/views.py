@@ -60,32 +60,30 @@ class ReportView(APIView):
         selected = filters.get("section", keys[0])
         if selected not in keys:
             raise PermissionDenied("You cannot read this report section.")
+        if self.kind == "financial" and filters.get("customer"):
+            raise ValidationError(
+                {"customer": "Customer filters belong to Operational reports."}
+            )
         if self.kind == "financial" and filters.get("stone_type"):
             raise ValidationError(
                 {"stone_type": "This filter belongs to Operational reports."}
             )
-        if self.kind == "operational" and (
-            filters.get("status") or filters.get("provider")
-        ):
-            raise ValidationError(
-                "Bill status and payment provider belong to Financial reports."
-            )
+        if self.kind == "operational" and filters.get("status"):
+            raise ValidationError("Bill status belongs to Financial reports.")
         sections = report_sections(keys, filters)
         choices = report_filters(keys)
-        labels = {
-            "customer": ("Customer", "customers"),
-            "stone_type": ("Stone type", "stone_types"),
-            "provider": ("Payment provider", "providers"),
-        }
         applied_filters = {}
-        for name in ("customer", "status", "provider", "stone_type"):
+        for name in ("customer", "status", "stone_type"):
             if name not in filters:
                 continue
             value = filters[name]
             if name == "status":
                 applied_filters["Bill status"] = value.replace("_", " ").title()
             else:
-                label, category = labels[name]
+                label, category = {
+                    "customer": ("Customer", "customers"),
+                    "stone_type": ("Stone type", "stone_types"),
+                }[name]
                 applied_filters[label] = next(
                     (
                         choice["label"]

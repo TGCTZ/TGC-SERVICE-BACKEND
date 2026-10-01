@@ -16,7 +16,7 @@ from apps.billing.models import Bill, Payment
 from apps.certificates.models import Certificate
 from apps.core.current_user import reset_current_user, set_current_user
 from apps.identification.models import IdentificationReport
-from apps.orders.tests.factories import CustomerFactory, OrderFactory, StoneFactory
+from apps.orders.tests.factories import OrderFactory, StoneFactory
 
 pytestmark = pytest.mark.django_db
 LAB = ZoneInfo("Africa/Dar_es_Salaam")
@@ -276,25 +276,56 @@ def test_invalid_filters_return_validation_errors(api_client, admin_user, filter
     )
 
 
-def test_filter_choices_only_come_from_authorized_sources(api_client, user):
-    """The report must not require or accidentally expose the full customer catalog."""
-    _grant(user, "billing.view_bill")
-    visible = _bill()
-    hidden = CustomerFactory()
+def test_financial_rows_use_control_numbers_without_exposing_customer_data(
+    api_client, user
+):
+    """Financial reports identify bills by gateway number, not customer identity."""
+    _grant(user, "billing.view_bill", "billing.view_payment")
+    visible = _bill(control_number="991234567890")
+    _payment(visible)
     api_client.force_authenticate(user)
     response = api_client.get("/api/v1/reports/financial/", DATES)
-    ids = [choice["id"] for choice in response.data["filters"]["customers"]]
-    assert visible.order.customer_id in ids
-    assert hidden.pk not in ids
+    assert response.status_code == 200
+    assert response.data["columns"][2] == {
+        "key": "control_number",
+        "label": "Control number",
+        "kind": "text",
+    }
+    assert response.data["results"][0]["control_number"] == visible.control_number
+    assert "customer" not in response.data["results"][0]
+    assert response.data["filters"]["customers"] == []
+
+    collections = api_client.get(
+        "/api/v1/reports/financial/", DATES | {"section": "collections"}
+    )
+    assert "provider" not in {column["key"] for column in collections.data["columns"]}
+    assert "provider" not in collections.data["results"][0]
 
 
-def test_xlsx_exports_every_page_and_keeps_customer_formulas_as_text(
+def test_operational_reports_keep_customer_filter_and_column(api_client, user):
+    """Customer identification remains useful for operational work tracking."""
+    _grant(user, "orders.view_order")
+    order = OrderFactory(received_date="2026-09-05")
+    api_client.force_authenticate(user)
+    response = api_client.get(
+        "/api/v1/reports/operational/", DATES | {"customer": order.customer_id}
+    )
+    assert response.status_code == 200
+    assert response.data["columns"][2] == {
+        "key": "customer",
+        "label": "Customer",
+        "kind": "text",
+    }
+    assert response.data["results"][0]["customer"] == order.customer.full_name
+
+
+def test_xlsx_exports_every_page_and_keeps_control_numbers_as_text(
     api_client, admin_user
 ):
-    """Downloads are complete and user-controlled text never becomes an Excel formula."""
-    customer = CustomerFactory(first_name="=1+1", last_name="")
-    for _ in range(3):
-        _bill(order=OrderFactory(customer=customer))
+    """Downloads are complete and gateway values remain text in Excel."""
+    values = [f"=1+1+{number}" for number in range(3)]
+    for value in values:
+        _bill(control_number=value)
     api_client.force_authenticate(admin_user)
     response = api_client.get(
         "/api/v1/reports/financial/export/", DATES | {"page_size": 1}
@@ -303,8 +334,13 @@ def test_xlsx_exports_every_page_and_keeps_customer_formulas_as_text(
     assert "attachment;" in response["Content-Disposition"]
     workbook = load_workbook(BytesIO(response.content))
     sheet = workbook["Billing summary"]
-    matching = [cell for row in sheet for cell in row if cell.value == "=1+1"]
-    assert len(matching) == 3
+    assert sheet["A1"].value == "Date"
+    assert sheet.max_row == 4
+    assert "Matching records" not in {
+        cell.value for row in sheet.iter_rows() for cell in row
+    }
+    matching = [cell for row in sheet for cell in row if cell.value in values]
+    assert {cell.value for cell in matching} == set(values)
     assert all(cell.data_type == "s" for cell in matching)
 
 

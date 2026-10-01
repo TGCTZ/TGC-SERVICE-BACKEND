@@ -17,7 +17,6 @@ class ReportQuerySerializer(serializers.Serializer):
     section = serializers.ChoiceField(choices=tuple(SECTIONS), required=False)
     customer = serializers.IntegerField(min_value=1, required=False)
     status = serializers.ChoiceField(choices=BillStatus.choices, required=False)
-    provider = serializers.CharField(max_length=10, required=False)
     stone_type = serializers.IntegerField(min_value=1, required=False)
     page = serializers.IntegerField(min_value=1, default=1)
     page_size = serializers.IntegerField(min_value=1, max_value=100, default=15)

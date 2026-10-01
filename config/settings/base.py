@@ -60,6 +60,7 @@ LOCAL_APPS = [
     "apps.billing",  # L4 - bills, payments and the GePG gateway
     "apps.identification",  # L4 - gemmological findings
     "apps.certificates",  # L5 - certificates and public verification
+    "apps.analytics",  # L6 - management statistics over the domain apps
     "apps.reports",  # L6 - read-only cross-domain reports
 ]
 

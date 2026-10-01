@@ -6,7 +6,7 @@ the tooling and the prose honest about each other.
 
 ## 1. Layering
 
-Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L5`.
+Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L6`.
 Imports point downward only. Two apps in the same layer must not import each
 other's models; shared data moves down into `apps.core`.
 

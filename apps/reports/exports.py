@@ -15,58 +15,19 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
-from django.utils import timezone
-
 from apps.core.exceptions import ServiceError
 
-from .definitions import EXPORT_ROW_LIMIT, REPORT_TIMEZONE
+from .definitions import EXPORT_ROW_LIMIT
 from .selectors import report_columns, report_rows
 
 
-def _metadata(report):
-    return [
-        ("Report", report["title"]),
-        ("From", report["range"]["from"]),
-        ("To", report["range"]["to"]),
-        ("Timezone", str(REPORT_TIMEZONE)),
-        (
-            "Generated at",
-            timezone.localtime(report["generated_at"], REPORT_TIMEZONE).isoformat(),
-        ),
-        *[(name, str(value)) for name, value in report["applied_filters"].items()],
-    ]
-
-
-def _summary_lines(summary):
-    lines = [("Matching records", summary["count"])]
-    lines += [
-        (f"Total ({row['currency']})", Decimal(row["amount"]))
-        for row in summary["amounts"]
-    ]
-    lines += [
-        (f"Current status: {row['status']}", row["count"]) for row in summary["statuses"]
-    ]
-    lines.append(
-        (
-            "Undated records excluded (all dates, matching other filters)",
-            summary["missing_dates"],
-        )
-    )
-    return lines
-
-
-def _xlsx(report, sections):
+def _xlsx(sections):
     workbook = Workbook(write_only=True)
     for key, section in sections.items():
         summary = section["summary"]
         sheet = workbook.create_sheet(summary["title"][:31])
-        metadata = [
-            *_metadata(report),
-            ("Description", summary["description"]),
-            *_summary_lines(summary),
-        ]
         columns = report_columns(key)
-        sheet.freeze_panes = f"A{len(metadata) + 3}"
+        sheet.freeze_panes = "A2"
         widths = [
             40
             if column["key"] == "customer"
@@ -75,22 +36,6 @@ def _xlsx(report, sections):
         ]
         for index, width in enumerate(widths, 1):
             sheet.column_dimensions[get_column_letter(index)].width = width
-        for row_number, (name, value) in enumerate(metadata, 1):
-            sheet.row_dimensions[row_number].height = 15 * max(
-                ceil(len(str(name)) / widths[0]), ceil(len(str(value)) / widths[1])
-            )
-            # Force strings to remain text, including customer input beginning '='.
-            cells = []
-            for item in (name, value):
-                cell = WriteOnlyCell(sheet, value=item)
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
-                if isinstance(item, str):
-                    cell.data_type = "s"
-                elif isinstance(item, Decimal):
-                    cell.number_format = "#,##0.00"
-                cells.append(cell)
-            sheet.append(cells)
-        sheet.append([])
         headers = []
         for column in columns:
             cell = WriteOnlyCell(sheet, value=column["label"])
@@ -99,7 +44,7 @@ def _xlsx(report, sections):
         sheet.append(headers)
         for row_number, row in enumerate(
             report_rows(key, section["queryset"].iterator(chunk_size=500)),
-            len(metadata) + 3,
+            2,
         ):
             sheet.row_dimensions[row_number].height = 15 * max(
                 ceil(len(str(row[column["key"]])) / width)
@@ -122,14 +67,7 @@ def _xlsx(report, sections):
     return output.getvalue()
 
 
-def _page_number(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica", 8)
-    canvas.drawRightString(doc.pagesize[0] - 28, 16, f"Page {doc.page}")
-    canvas.restoreState()
-
-
-def _pdf(report, sections):
+def _pdf(sections):
     output = BytesIO()
     document = SimpleDocTemplate(
         output,
@@ -142,26 +80,19 @@ def _pdf(report, sections):
     styles = getSampleStyleSheet()
     styles["BodyText"].fontSize = 8
     styles["BodyText"].leading = 10
+    story = []
     money_style = ParagraphStyle(
         "ReportMoney", parent=styles["BodyText"], alignment=TA_RIGHT
     )
-    story = [Paragraph(escape(report["title"]), styles["Title"])]
-    for name, value in _metadata(report):
-        story.append(Paragraph(escape(f"{name}: {value}"), styles["BodyText"]))
+    section_title_style = ParagraphStyle(
+        "ReportSectionTitle", parent=styles["BodyText"], fontName="Helvetica-Bold"
+    )
     for key, section in sections.items():
         summary = section["summary"]
-        story += [
-            Spacer(1, 16),
-            Paragraph(escape(summary["title"]), styles["Heading2"]),
-            Paragraph(escape(summary["description"]), styles["BodyText"]),
-        ]
-        for name, value in _summary_lines(summary):
-            if isinstance(value, Decimal):
-                value = f"{value:,.2f}"
-            story.append(Paragraph(escape(f"{name}: {value}"), styles["BodyText"]))
-        story.append(Spacer(1, 8))
         columns = report_columns(key)
         data = [
+            [Paragraph(escape(summary["title"]), section_title_style)]
+            + [""] * (len(columns) - 1),
             [Paragraph(escape(column["label"]), styles["BodyText"]) for column in columns]
         ]
         for row in report_rows(key, section["queryset"].iterator(chunk_size=500)):
@@ -173,29 +104,27 @@ def _pdf(report, sections):
                     for column in columns
                 ]
             )
-        if len(data) == 1:
-            story.append(
-                Paragraph("Nothing recorded in this period.", styles["BodyText"])
+        table = LongTable(
+            data,
+            colWidths=[document.width / len(columns)] * len(columns),
+            repeatRows=2,
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("SPAN", (0, 0), (-1, 0)),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                    ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#e7eef0")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#ccd5d8")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
             )
-        else:
-            table = LongTable(
-                data,
-                colWidths=[document.width / len(columns)] * len(columns),
-                repeatRows=1,
-            )
-            table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e7eef0")),
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#ccd5d8")),
-                        ("TOPPADDING", (0, 0), (-1, -1), 5),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                    ]
-                )
-            )
-            story.append(table)
-    document.build(story, onFirstPage=_page_number, onLaterPages=_page_number)
+        )
+        story.append(table)
+        story.append(Spacer(1, 12))
+    document.build(story)
     return output.getvalue()
 
 
@@ -208,4 +137,4 @@ def export_report(report: dict, sections: dict, *, file_type: str) -> bytes:
         raise ServiceError(
             f"Exports allow at most {EXPORT_ROW_LIMIT:,} rows. Narrow the report filters."
         )
-    return _xlsx(report, sections) if file_type == "xlsx" else _pdf(report, sections)
+    return _xlsx(sections) if file_type == "xlsx" else _pdf(sections)

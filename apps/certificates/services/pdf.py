@@ -2,17 +2,15 @@
 
 WeasyPrint takes HTML + CSS and returns PDF bytes - no headless browser, and the
 document stays editable by anyone who can read a template. The cost is system
-libraries (pango, cairo, gdk-pixbuf); a missing one raises ``OSError`` at import
-time, so it takes the whole app down rather than just this endpoint. See
-``backend/README.md`` for the package list.
+libraries (pango, cairo, gdk-pixbuf). Load the renderer only when a PDF is
+requested so missing native libraries do not prevent other API endpoints and
+management commands from starting. See ``backend/README.md`` for the package list.
 
 The layout is a port of the document the lab already issues: A4 landscape, three
 columns, one page. It is driven entirely from the certificate's own snapshot
 columns - never from the live report - so a document reproduced years later says
 exactly what it said on the day it was issued.
 """
-
-from weasyprint import HTML
 
 from django.conf import settings
 from django.template.loader import render_to_string
@@ -94,6 +92,9 @@ def render_certificate_pdf(certificate: Certificate) -> bytes:
         REVOKED watermark - refusing would leave staff unable to reconcile
         paperwork, and the watermark carries the meaning.
     """
+    # WeasyPrint loads native libraries during import; only PDFs need them.
+    from weasyprint import HTML
+
     html = render_to_string(TEMPLATE, certificate_context(certificate))
     # No base_url: every image in the document is an inline data: URI, so there
     # is nothing left to resolve against the filesystem. See services/assets.py.

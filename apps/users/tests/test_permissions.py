@@ -133,7 +133,12 @@ def test_a_role_round_trips_a_permission_whose_codename_is_ambiguous(
         "the ambiguity this guards against no longer exists in the schema"
     )
 
-    role = Group.objects.get(name="administrator")
+    role = Group.objects.create(name="auditor")
+    role.permissions.add(
+        Permission.objects.get(
+            content_type__app_label="auditlog", codename="view_logentry"
+        )
+    )
     client = auth_client(admin_user)
 
     read = client.get(f"/api/v1/roles/{role.pk}/")
@@ -148,7 +153,7 @@ def test_a_role_round_trips_a_permission_whose_codename_is_ambiguous(
     assert set(write.data["permissions"]) == set(read.data["permissions"])
 
 
-def test_an_unknown_permission_label_is_rejected(admin_user, auth_client, roles):
+def test_put_with_an_unknown_permission_label_is_rejected(admin_user, auth_client, roles):
     """A bad label is a 400 naming it, not a silent drop."""
     from django.contrib.auth.models import Group
 

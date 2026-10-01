@@ -79,21 +79,23 @@ def _source(key):
         return source, "trx_dt_tm", "bill__order__customer"
     if key == "orders":
         return (
-            Order.objects.select_related("customer").filter(
+            Order.objects.select_related("customer", "bill").filter(
                 customer__deleted_at__isnull=True
             ),
             "received_date",
             "customer",
         )
     if key == "stones":
-        source = Stone.objects.select_related("order__customer", "stone_type")
+        source = Stone.objects.select_related(
+            "order__customer", "order__bill", "stone_type"
+        )
         date_field = "created_at"
         customer_path = "order__customer"
         parent_path = "order"
     else:
         model = IdentificationReport if key == "findings" else Certificate
         source = model.objects.select_related(
-            "stone__order__customer", "stone__stone_type"
+            "stone__order__customer", "stone__order__bill", "stone__stone_type"
         )
         date_field = "identified_at" if key == "findings" else "issued_at"
         customer_path = "stone__order__customer"
@@ -105,7 +107,7 @@ def _source(key):
         source.filter(
             **{
                 f"{parent_path}__deleted_at__isnull": True,
-                f"{customer_path}__deleted_at__isnull": True,
+                f"{parent_path}__customer__deleted_at__isnull": True,
             }
         ),
         date_field,
@@ -120,8 +122,6 @@ def section_queryset(key: str, filters: dict):
         queryset = queryset.filter(**{customer_path: filters["customer"]})
     if key in ("billing", "outstanding") and filters.get("status"):
         queryset = queryset.filter(status=filters["status"])
-    if key in ("collections", "exceptions") and filters.get("provider"):
-        queryset = queryset.filter(psp_code=filters["provider"])
     if key in ("orders", "stones", "findings", "certificates") and filters.get(
         "stone_type"
     ):
@@ -208,26 +208,19 @@ def report_sections(keys: list[str], filters: dict) -> dict:
 
 
 def report_filters(keys: list[str]) -> dict:
-    """Derive filter choices from permitted sources, without broad customer access."""
+    """Derive customer and stone-type choices from permitted operational sources."""
     customers = {}
     stone_types = {}
-    providers = {}
     for key in keys:
         queryset, _, customer_path = _source(key)
-        fields = [
-            f"{customer_path}__{field}"
-            for field in ("id", "first_name", "middle_name", "last_name")
-        ]
-        for row in queryset.order_by().values_list(*fields).distinct():
-            if row[0] is not None:
-                customers[row[0]] = " ".join(part for part in row[1:] if part)
-        if key in ("collections", "exceptions"):
-            providers.update(
-                queryset.order_by()
-                .exclude(psp_code="")
-                .values_list("psp_code", "psp_name")
-                .distinct()
-            )
+        if key in ("orders", "stones", "findings", "certificates"):
+            customer_fields = [
+                f"{customer_path}__{name}"
+                for name in ("id", "first_name", "middle_name", "last_name")
+            ]
+            for row in queryset.order_by().values_list(*customer_fields).distinct():
+                if row[0] is not None:
+                    customers[row[0]] = " ".join(part for part in row[1:] if part)
         if key in ("orders", "stones", "findings", "certificates"):
             path = {
                 "orders": "stones__stone_type",
@@ -252,10 +245,6 @@ def report_filters(keys: list[str]) -> dict:
             {"id": pk, "label": name}
             for pk, name in sorted(stone_types.items(), key=lambda item: item[1])
         ],
-        "providers": [
-            {"id": code, "label": name or code}
-            for code, name in sorted(providers.items())
-        ],
     }
 
 
@@ -264,7 +253,13 @@ def report_columns(key: str) -> list[dict]:
     fields = [
         ("event_date", "Date", "date"),
         ("reference", "Reference", "text"),
-        ("customer", "Customer", "text"),
+        (
+            "control_number",
+            "Control number",
+            "text",
+        )
+        if key in ("billing", "outstanding", "collections", "exceptions")
+        else ("customer", "Customer", "text"),
     ]
     if key != "orders":
         fields.append(("order", "Order", "text"))
@@ -275,8 +270,6 @@ def report_columns(key: str) -> list[dict]:
                 ("paid", "Paid so far", "money"),
                 ("balance", "Owed today", "money"),
             ]
-        if key in ("collections", "exceptions"):
-            fields.append(("provider", "Payment provider", "text"))
     else:
         fields.append(
             ("stones", "Submitted stones", "text")
@@ -294,16 +287,17 @@ def report_rows(key: str, objects) -> list[dict]:
     for obj in objects:
         if key in ("collections", "exceptions"):
             order = obj.bill.order if obj.bill_id else None
+            control_number = obj.bill.control_number if obj.bill_id else ""
             event_date = obj.trx_dt_tm
             row = {
                 "reference": obj.trx_id or obj.pay_ref_id,
                 "currency": obj.report_currency,
                 "amount": str(obj.paid_amount or Decimal("0.00")),
-                "provider": obj.psp_name or obj.psp_code,
                 "status": "Processed" if obj.is_processed else "Unprocessed",
             }
         elif key in ("billing", "outstanding"):
             order, event_date = obj.order, obj.issued_at
+            control_number = obj.control_number
             row = {
                 "reference": obj.bill_number,
                 "currency": obj.currency,
@@ -314,10 +308,14 @@ def report_rows(key: str, objects) -> list[dict]:
                 row.update(paid=str(obj.amount_paid), balance=str(obj.balance))
         elif key == "orders":
             order, event_date = obj, obj.received_date
+            bill = getattr(order, "bill", None)
+            control_number = bill.control_number if bill else ""
             row = {"reference": obj.reference_number, "stones": obj.stone_count}
         else:
             stone = obj if key == "stones" else obj.stone
             order = stone.order
+            bill = getattr(order, "bill", None)
+            control_number = bill.control_number if bill else ""
             event_date = (
                 obj.created_at
                 if key == "stones"
@@ -338,13 +336,15 @@ def report_rows(key: str, objects) -> list[dict]:
             if isinstance(event_date, datetime)
             else event_date
         )
-        rows.append(
-            {
-                "id": obj.pk,
-                "event_date": local_date.isoformat(),
-                "customer": order.customer.full_name if order else obj.pyr_name,
-                "order": order.reference_number if order else "",
-                **row,
-            }
-        )
+        row_data = {
+            "id": obj.pk,
+            "event_date": local_date.isoformat(),
+            "order": order.reference_number if order else "",
+            **row,
+        }
+        if key in ("billing", "outstanding", "collections", "exceptions"):
+            row_data["control_number"] = control_number
+        else:
+            row_data["customer"] = order.customer.full_name if order else obj.pyr_name
+        rows.append(row_data)
     return rows
