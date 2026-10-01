@@ -94,3 +94,77 @@ jobs:
 
       - name: Test
         run: uv run pytest --cov --cov-report=term-missing
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: backend-production
+      cancel-in-progress: false
+    steps:
+      - name: Verify deployment trigger
+        run: echo "Deploying tested commit $GITHUB_SHA"
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/tgc-actions"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+
+      - name: Verify SSH connection
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh \
+            -i "$HOME/.ssh/tgc-actions" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            "$SSH_USER@$SSH_HOST" whoami
+
+      - name: Deploy backend
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh \
+            -i "$HOME/.ssh/tgc-actions" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            "$SSH_USER@$SSH_HOST" "bash -s -- '$DEPLOY_SHA'" <<'REMOTE'
+          set -euo pipefail
+          cd /var/www/tgc/service/backend
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Backend working tree is not clean; stopping deployment." >&2
+            exit 1
+          fi
+          git fetch origin "$1"
+          git checkout --detach "$1"
+          /home/mtakatigs/.local/bin/uv sync --frozen --no-dev
+          /home/mtakatigs/.local/bin/uv run python manage.py migrate --noinput
+          /home/mtakatigs/.local/bin/uv run python manage.py collectstatic --noinput
+          sudo -n /usr/bin/systemctl restart tgc-backend.service
+          REMOTE
+
+      - name: Check production health
+        run: |
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --output /dev/null https://tgc.mtakati.online/api/health/ready/; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production API did not become healthy within 60 seconds." >&2
+          exit 1
