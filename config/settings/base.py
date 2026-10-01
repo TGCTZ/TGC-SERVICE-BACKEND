@@ -54,7 +54,13 @@ LOCAL_APPS = [
     "apps.core",  # L1 - base models, managers, shared DRF machinery
     "apps.users",  # L2 - custom user, authentication, RBAC
     "apps.audit",  # L2 - activity-log and system-log read APIs
-    "apps.catalog",  # L3 - product domain
+    "apps.notifications",  # L2 - per-user in-app notifications
+    "apps.gems",  # L2 - domain enums and stone reference tables
+    "apps.orders",  # L3 - customers, orders and stones
+    "apps.billing",  # L4 - bills, payments and the GePG gateway
+    "apps.identification",  # L4 - gemmological findings
+    "apps.certificates",  # L5 - certificates and public verification
+    "apps.reports",  # L6 - read-only cross-domain reports
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -123,6 +129,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("TIME_ZONE", default="UTC")
+# The lab's own calendar. Storage stays in UTC; report filters and seed data use
+# this zone, so dates match the lab's local calendar.
+LAB_TIME_ZONE = env("LAB_TIME_ZONE", default="Africa/Dar_es_Salaam")
 USE_I18N = True
 USE_TZ = True
 
@@ -138,7 +147,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Simple JWT, plus holding new accounts to their first login.
+        "apps.users.authentication.OnboardingJWTAuthentication",
     ],
     # Deny by default. Every view declares its own permissions explicitly, so
     # forgetting to do so fails closed rather than open.
@@ -169,13 +179,51 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Django API Template",
-    "DESCRIPTION": "Reusable Django REST API starter.",
+    "TITLE": "TGC Service API",
+    "DESCRIPTION": (
+        "Tanzania Gemmological Centre - stone identification, billing through "
+        "the GePG gateway, and certification."
+    ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    # Reuse shared choice sets and distinguish each domain's status vocabulary.
+    "ENUM_NAME_OVERRIDES": {
+        "StoneStatusEnum": "apps.gems.enums.StoneStatus",
+        "BillStatusEnum": "apps.gems.enums.BillStatus",
+        "CertificateStatusEnum": "apps.gems.enums.CertificateStatus",
+        "WeightUnitEnum": "apps.gems.enums.WeightUnit",
+    },
 }
+
+# Printed on every certificate PDF. Environment-driven so a second lab, or a
+# rename, needs no code change.
+CERTIFICATE_LAB_NAME = env("CERTIFICATE_LAB_NAME", default="Tanzania Gemmological Centre")
+CERTIFICATE_LAB_ADDRESS = env("CERTIFICATE_LAB_ADDRESS", default="")
+CERTIFICATE_MINISTRY_NAME = env(
+    "CERTIFICATE_MINISTRY_NAME", default="Ministry of Minerals"
+)
+
+# Where the QR code printed on a certificate points.
+#
+# An absolute URL, because a certificate can be rendered with no request in
+# hand - a background job, a management command, a test - and a QR that resolves
+# only from inside the office is a QR that does not work.
+CERTIFICATE_VERIFY_BASE_URL = env(
+    "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
+)
+
+# Where staff sign in; the link in the new-account email points here.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# Outgoing mail, as one URL: smtp+tls://user:password@host:587 in production.
+# The console default prints mail to the server log instead of sending it.
+EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="Tanzania Gemmological Centre <no-reply@tgc.go.tz>"
+)
 
 # Models are registered explicitly in apps.core.audit by walking BaseModel
 # subclasses, so auditlog must not blanket-register everything itself.
@@ -206,3 +254,36 @@ LOGGING = {
         "level": env("LOG_LEVEL", default="INFO"),
     },
 }
+
+# --- GePG payment gateway ----------------------------------------------------
+# The Tanzanian government payment gateway. Bills are submitted for a control
+# number, and payment is confirmed asynchronously on a callback - there is no
+# manual payment entry anywhere in the system.
+
+GEPG_BILL_CREATE_URL = env("GEPG_BILL_CREATE_URL", default="")
+GEPG_BILL_CANCEL_URL = env("GEPG_BILL_CANCEL_URL", default="")
+GEPG_RECONCILIATION_URL = env("GEPG_RECONCILIATION_URL", default="")
+
+GEPG_SP_GRP_CODE = env("GEPG_SP_GRP_CODE", default="")
+GEPG_SYS_CODE = env("GEPG_SYS_CODE", default="")
+GEPG_SP_CODE = env("GEPG_SP_CODE", default="")
+GEPG_SUB_SP_CODE = env("GEPG_SUB_SP_CODE", default="")
+GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
+GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
+
+GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=False)
+# No default: a signing passphrase is a secret, and a blank one would let an
+# unsigned payload reach the gateway without anyone noticing.
+GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
+GEPG_PRIVATE_KEY_PATH = env(
+    "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")
+)
+GEPG_PUBLIC_CERT_PATH = env(
+    "GEPG_PUBLIC_CERT_PATH", default=str(BASE_DIR / "certificates" / "public.pfx")
+)
+
+GEPG_BILL_EXPIRY_DAYS = env.int("GEPG_BILL_EXPIRY_DAYS", default=365)
+
+# Skips the network call and returns a fake control number, so the whole
+# order -> bill -> payment -> certificate flow can be walked offline.
+GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)

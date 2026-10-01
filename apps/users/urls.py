@@ -6,6 +6,8 @@ from django.urls import include, path
 
 from .views import (
     ChangePasswordView,
+    FirstLoginPasswordView,
+    FirstLoginProfileView,
     GenderViewSet,
     IdentityDetailViewSet,
     LoginView,
@@ -13,7 +15,6 @@ from .views import (
     MeView,
     PermissionViewSet,
     RefreshView,
-    RegisterView,
     RoleViewSet,
     UserStatusViewSet,
     UserViewSet,
@@ -28,12 +29,21 @@ router.register("roles", RoleViewSet, basename="role")
 router.register("permissions", PermissionViewSet, basename="permission")
 
 auth_patterns = [
-    path("register/", RegisterView.as_view(), name="auth-register"),
     path("login/", LoginView.as_view(), name="auth-login"),
     path("refresh/", RefreshView.as_view(), name="auth-refresh"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("me/", MeView.as_view(), name="auth-me"),
     path("password/", ChangePasswordView.as_view(), name="auth-password"),
+    path(
+        "first-login/password/",
+        FirstLoginPasswordView.as_view(),
+        name="auth-first-login-password",
+    ),
+    path(
+        "first-login/profile/",
+        FirstLoginProfileView.as_view(),
+        name="auth-first-login-profile",
+    ),
 ]
 
 urlpatterns = [

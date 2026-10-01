@@ -33,3 +33,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]           # heavier - on push, not every commit
+
+      - id: docs-links
+        name: documentation links resolve
+        entry: uv run python scripts/check_docs.py
+        language: system
+        pass_filenames: false
+        files: \.md$              # only when documentation actually changed

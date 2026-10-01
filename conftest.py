@@ -32,25 +32,45 @@ def user(db):
 
 @pytest.fixture
 def admin_user(db, roles):
-    """A user holding the admin role."""
+    """A user holding the manager role."""
     from django.contrib.auth.models import Group
 
     from apps.users.tests.factories import UserFactory
 
     account = UserFactory()
-    account.groups.add(Group.objects.get(name="admin"))
+    account.groups.add(Group.objects.get(name="manager"))
     return account
 
 
 @pytest.fixture
 def viewer_user(db, roles):
-    """A user holding the read-only viewer role."""
+    """A user holding the receptionist role - the least privileged station.
+
+    Named for what the suite uses it to prove: that a role without write
+    permission on a resource is refused.
+    """
     from django.contrib.auth.models import Group
 
     from apps.users.tests.factories import UserFactory
 
     account = UserFactory()
-    account.groups.add(Group.objects.get(name="viewer"))
+    account.groups.add(Group.objects.get(name="receptionist"))
+    return account
+
+
+@pytest.fixture
+def gemmologist_user(db, roles):
+    """A user holding the gemmologist role - the bench.
+
+    Preliminary and full identification are both this role's work, so it is the
+    positive case wherever ``viewer_user`` (reception) is the negative one.
+    """
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    account = UserFactory()
+    account.groups.add(Group.objects.get(name="gemmologist"))
     return account
 
 

@@ -1,6 +1,6 @@
 """Factories for the users app.
 
-Shared with the ``seed_demo`` management command so demo data and test data
+Shared with the ``seed`` management command so demo data and test data
 never drift apart.
 """
 
@@ -60,6 +60,10 @@ class IdentityDetailFactory(DjangoModelFactory):
 
     class Meta:
         model = IdentityDetail
+        # The link to the user is a OneToOne, so a second call for the same
+        # account must return the existing row rather than violate the
+        # constraint - which is what made seed fail on a second run.
+        django_get_or_create = ("user",)
 
     user = factory.SubFactory(UserFactory)
     id_type = factory.Iterator(["Passport", "National ID", "Driving Licence"])

@@ -1,10 +1,23 @@
-# Django API Template
+# TGC Service - API
 
-A reusable Django REST Framework starting point: authentication, role-based
-access control, soft deletes, an audit trail, a whitelist-driven query layer,
-OpenAPI docs and a real test suite, all working on day one.
+The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
-Clone it, delete the domain apps you do not need, and start building.
+A customer brings stones in; a gemmologist identifies each one's type, which
+prices it; the order is billed through the GePG government payment gateway;
+once settled the gemmologist records the findings; and the stone is
+finally certified with a printable PDF certificate.
+
+```
+received -> under identification -> billed -> paid -> certified
+         -> ready for collection -> collected
+```
+
+Identification comes *before* billing, because typing the stone is what
+determines the fee. Each arrow is a service with its own guard, and each stage
+has a worklist that is the queue someone actually works from.
+
+The React client lives in the
+[TGC-SERVICE-FRONTEND](https://github.com/TGCTZ/TGC-SERVICE-FRONTEND) repository.
 
 ## Stack
 
@@ -22,16 +35,26 @@ Clone it, delete the domain apps you do not need, and start building.
 
 ## Quick start
 
+Certificate PDFs are rendered by WeasyPrint, which needs native system libraries.
+Install them before using certificate PDF downloads. The renderer is loaded on
+demand, so other API endpoints and management commands can start without them.
+On Debian/Ubuntu:
+
+```bash
+sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+  libcairo2 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+```
+
 ```bash
 uv sync
 cp .env.example .env
 uv run python -c "from django.core.management.utils import get_random_secret_key as k; print(k())"
 # paste the result into SECRET_KEY in .env, then create the database:
-createdb -U postgres djangoapitemplate
+createdb -U postgres tgcservice
 
 uv run python manage.py migrate
 uv run python manage.py setup_roles
-uv run python manage.py seed_demo
+uv run python manage.py seed
 uv run python manage.py runserver
 ```
 
@@ -44,8 +67,16 @@ Health probes sit outside the versioned API, so they survive a version bump:
 | `GET /api/health/` | Liveness. Touches nothing external; 200 while the process runs. |
 | `GET /api/health/ready/` | Readiness. Checks the database and pending migrations; 503 if either fails. |
 
-Demo accounts are `<role>@example.com` with the password printed by `seed_demo`,
-for each of `superadmin`, `admin`, `manager`, `editor` and `viewer`.
+Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
+of `superadmin`, `admin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
+For reports to have useful history to show, seed a fresh
+database with history instead:
+`uv run python manage.py seed --orders 150 --history-months 12`.
+
+Outside the demo data, accounts are created from the Users screen by an email and
+a role - there is no sign-up. New users get a temporary password by email and
+must set their own and complete their profile on first sign-in; see
+[Accounts and first login](docs/engineering/accounts.md).
 
 ## Everyday commands
 
@@ -54,33 +85,52 @@ uv run pytest                       # run the suite
 uv run pytest --cov                 # with coverage
 uv run ruff check . && uv run ruff format .
 uv run pre-commit install           # once per clone
+uv run python scripts/check_docs.py # documentation links still resolve
 uv run python manage.py setup_roles # re-apply the role matrix after editing roles.py
+uv run python manage.py setup_roles --prune  # also drop roles the matrix no longer declares
 ```
 
 ## Documentation
 
-New to the codebase? Read them in this order.
+New to the codebase? Read them in this order — what the system does first, then
+how it is built.
 
 | Document | What it covers |
 |---|---|
-| [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |
+| [Business workflow](docs/domain/business-workflow.md) | The stone's journey: stages, roles, status lifecycle |
+| [Business decisions](docs/domain/decisions.md) | The rules behind the workflow - settled, provisional, still open |
+| [Project structure](docs/engineering/project-structure.md) | Every app and layer, and what belongs in each |
 | [Diagrams](docs/diagrams/README.md) | Request flows, drawn — start here if you prefer pictures |
-| [Project structure](docs/engineering/project-structure.md) | Every folder, and what belongs in it |
-| [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
 | [API lifecycle](docs/engineering/api-lifecycle.md) | A request traced from URL to response |
-| [Permissions](docs/engineering/permissions.md) | How roles, permissions and gates fit together |
-| [Starting a new project](docs/engineering/starting-a-project.md) | What to strip out and what to keep |
+| [Testing the API](docs/engineering/testing-the-api.md) | Swagger, `api.http`, the query contract, the test suite |
+| [Permissions](docs/engineering/permissions.md) | Roles, the hierarchy, permissions, module gates, workflow verbs |
+| [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, the credentials email, first login, password resets |
+| [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
+| [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
+| [Reports](docs/engineering/reports.md) | Financial and operational sections, filters, and exports |
+| [Reference data](docs/domain/reference-data.md) | The lookup lists, and Tanzania's regions |
+| [Operations](docs/engineering/operations.md) | Configuration, email, and what to run after a deploy |
+| [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
+| [Adding an app](docs/engineering/adding-an-app.md) | The shape every domain app follows |
+| [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |
 
 ## Layout
 
 ```
-config/          settings package (base/development/production/test), root urls
+config/            settings package (base/development/production/test), root urls
 apps/
-  core/          L1 - base models, managers, shared DRF machinery
-  users/         L2 - custom user, authentication, RBAC
-  audit/         L2 - activity-log and system-log read APIs
-  catalog/       L3 - the product domain (the worked example)
-docs/            engineering documentation
+  core/            L1 - base models, managers, shared DRF machinery
+  users/           L2 - custom user, authentication, RBAC
+  audit/           L2 - activity-log and system-log read APIs
+  notifications/   L2 - per-user in-app notifications
+  gems/            L2 - domain enums and the stone reference tables
+  orders/          L3 - customers, orders, stones, status trail
+  billing/         L4 - bills, payments, the GePG gateway
+  identification/  L4 - full gemmological identification
+  certificates/    L5 - certificates and their PDF documents
+  reports/         L6 - read-only financial and operational reports
+docs/              engineering, domain and GePG documentation
+api.http           a runnable request collection for the whole pipeline
 ```
 
 Apps are listed in dependency-layer order. Imports point downward only: an app

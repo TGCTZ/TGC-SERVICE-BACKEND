@@ -1,27 +1,27 @@
 # Write request
 
-`POST /api/v1/products/` — and the service-layer variant beneath it.
+`POST /api/v1/customers/` — and the service-layer variant beneath it.
 
 ```mermaid
 flowchart TD
-    REQ(["POST /api/v1/products/<br/>JSON body"]) --> MW["Middleware stack"]
+    REQ(["POST /api/v1/customers/<br/>JSON body"]) --> MW["Middleware stack"]
     MW --> TX[["ATOMIC_REQUESTS opens<br/>a transaction"]]
-    TX --> GATES{"Authentication<br/>Permissions: add_product<br/>Throttling"}
+    TX --> GATES{"Authentication<br/>Permissions: add_customer<br/>Throttling"}
     GATES -->|any fail| ERRGATE["401 / 403 / 429"]
     GATES -->|pass| VALID
 
-    VALID{"ProductSerializer<br/>is_valid()"}
+    VALID{"CustomerSerializer<br/>is_valid()"}
     VALID -->|invalid| E400["400<br/>field-keyed errors"]
     VALID -->|valid| SAVE
 
     SAVE["perform_create()<br/>serializer.save()"]
-    SAVE --> MODEL["Product.save()<br/><b>BaseModel.save()</b>"]
+    SAVE --> MODEL["Customer.save()<br/><b>BaseModel.save()</b>"]
     MODEL --> STAMP["reads contextvar<br/>stamps created_by / updated_by"]
     STAMP --> INSERT[("INSERT")]
     INSERT --> SIGNAL["auditlog post_save signal"]
     SIGNAL --> LOG[("LogEntry<br/>field-level diff")]
     LOG --> COMMIT[["transaction commits"]]
-    COMMIT --> OK(["201 Created<br/>serialised product"])
+    COMMIT --> OK(["201 Created<br/>serialised customer"])
 
     style REQ stroke:#4d90d9,stroke-width:2px
     style OK stroke:#3fa860,stroke-width:2px

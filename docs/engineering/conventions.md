@@ -6,7 +6,7 @@ the tooling and the prose honest about each other.
 
 ## 1. Layering
 
-Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L3`.
+Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L6`.
 Imports point downward only. Two apps in the same layer must not import each
 other's models; shared data moves down into `apps.core`.
 
@@ -87,6 +87,19 @@ code already says what. A docstring that restates the signature is noise.
 A comment earns its place by explaining a constraint, a trade-off or a
 surprising ordering. Comments that narrate readable code get deleted.
 
+- **State the reason as it stands today, not the history.** "Misses are not
+  cached, or a new file would not show until a restart" - not "the loader used
+  to cache misses". Git and the pull request record what changed; a comment that
+  tells a story goes stale the day the story is forgotten. The exception is a
+  constraint that still binds, such as matching numbers already printed.
+- **Keep module and function docs short enough to read in passing** - roughly
+  ten lines of prose before `Args:`. Design rationale longer than that belongs in
+  `docs/`, with the docstring pointing at it.
+- **No leftovers** from templates, scaffolds or other frameworks.
+- **Docs change with the code.** A pull request that changes behaviour updates
+  the doc describing it; `scripts/check_docs.py` catches dead links, not stale
+  prose.
+
 ## 14. Secrets never have defaults
 
 `SECRET_KEY` has no fallback: a missing value must crash on boot rather than
@@ -95,7 +108,7 @@ silently run on a guessable key. `DEBUG` defaults to `False`.
 ## 15. Tests use factories, not fixtures
 
 `factory_boy` factories live in `apps/<app>/tests/factories.py` and are reused
-by `seed_demo`. One definition, two consumers. Lookup factories use
+by `seed`. One definition, two consumers. Lookup factories use
 `django_get_or_create` so re-seeding is idempotent.
 
 ## 16. Test style
@@ -123,3 +136,52 @@ ruff's `I` rules with a custom `section-order`.
 ## 20. Paths use `pathlib`
 
 Not `os.path`. Enforced by ruff `PTH`.
+
+## 21. Reads that encode a gate live in `selectors.py`
+
+A queryset that answers "what is waiting to be worked on" is a business rule, not
+a view detail. The four worklists are aggregate or cross-app predicates that the
+whitelist filter backend cannot express - `Count("stones") < F("stone_count")`,
+`order__bill__status = PAID` - so a view holding one would put a rule where
+nobody looks for it, and a second screen would soon hold a slightly different
+copy.
+
+```python
+def findings_worklist():
+    """Stones waiting for findings: bill paid, report not finalized."""
+    return Stone.objects.filter(order__bill__status=BillStatus.PAID).exclude(
+        report__is_finalized=True
+    )
+```
+
+Exposed as `@action(detail=False)` on the ViewSet that already owns the model, so
+pagination, `?search=` and `?ordering=` come for free.
+
+## 22. Workflow verbs are actions, gated by `ActionPermissions`
+
+A business action is a `POST` to its own route - `transition`, `finalize`,
+`generate`, `revoke` - not a writable field. The field is read-only precisely so
+the state cannot move without the service running and the trail being written.
+
+`StrictModelPermissions` maps by HTTP method, so every `POST` would ask for
+`add_<model>`. `ActionPermissions` lets the route name its own permission:
+
+```python
+class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
+    action_permissions = {"transition": ["orders.transition_stone"]}
+```
+
+Without it the custom workflow permissions are decorative - anyone who can
+identify a stone could also certify one. An action that is not listed falls back
+to the method map.
+
+## 23. A query-count test must stamp the actor
+
+`AuditFieldsMixin` renders `created_by` and `updated_by` as display labels, which
+dereferences both foreign keys per row. `BaseModelViewSet` joins them, and
+`apps/core/tests/test_audit_joins.py` guards that.
+
+The trap is in the test, not the code: a factory creates rows **outside** a
+request, so the actor columns are null, the label methods short-circuit, and the
+N+1 is invisible. Create rows inside `set_current_user(...)` when the count is
+what you are asserting.
