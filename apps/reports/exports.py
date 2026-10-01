@@ -93,7 +93,10 @@ def _pdf(sections):
         data = [
             [Paragraph(escape(summary["title"]), section_title_style)]
             + [""] * (len(columns) - 1),
-            [Paragraph(escape(column["label"]), styles["BodyText"]) for column in columns]
+            [
+                Paragraph(escape(column["label"]), styles["BodyText"])
+                for column in columns
+            ],
         ]
         for row in report_rows(key, section["queryset"].iterator(chunk_size=500)):
             data.append(
