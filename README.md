@@ -68,7 +68,7 @@ Health probes sit outside the versioned API, so they survive a version bump:
 
 Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
 of `superadmin`, `admin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
-For the dashboard's management statistics to have trends to show, seed a fresh
+For reports to have useful history to show, seed a fresh
 database with history instead:
 `uv run python manage.py seed --orders 150 --history-months 12`.
 
@@ -106,7 +106,7 @@ how it is built.
 | [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, the credentials email, first login, password resets |
 | [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
 | [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
-| [Management statistics](docs/engineering/analytics.md) | The dashboard's figures: what each counts, periods, currencies |
+| [Reports](docs/engineering/reports.md) | Financial and operational sections, filters, and exports |
 | [Reference data](docs/domain/reference-data.md) | The lookup lists, and Tanzania's regions |
 | [Operations](docs/engineering/operations.md) | Configuration, email, and what to run after a deploy |
 | [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
@@ -127,7 +127,7 @@ apps/
   billing/         L4 - bills, payments, the GePG gateway
   identification/  L4 - full gemmological identification
   certificates/    L5 - certificates and their PDF documents
-  analytics/       L6 - management statistics over all of the above
+  reports/         L6 - read-only financial and operational reports
 docs/              engineering, domain and GePG documentation
 api.http           a runnable request collection for the whole pipeline
 ```

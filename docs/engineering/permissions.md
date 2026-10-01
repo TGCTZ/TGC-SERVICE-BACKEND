@@ -204,6 +204,4 @@ on the roles screen is how an admin tidies a role's navigation without stripping
 the permissions its pages need.
 
 The same unmanaged-model trick carries `audit.view_systemlog`
-(`apps/audit/models.py`) and `analytics.view_statistics`
-(`apps/analytics/models.py`); unlike the gates, both are enforced by their
-endpoints.
+(`apps/audit/models.py`); unlike the gates, it is enforced by its endpoint.

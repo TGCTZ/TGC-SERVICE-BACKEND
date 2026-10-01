@@ -52,7 +52,7 @@ The full walk-through, with statuses and roles, is in
 
 | Date | Rule | Why | In code |
 | --- | --- | --- | --- |
-| 2026-09-25 | Management statistics are a separate permission, granted to manager (and above) | They put revenue beside workload; reading bills does not clear someone to see the lab's whole financial picture | `analytics.view_statistics` |
+| 2026-10-01 | The management statistics dashboard is retired in favor of Financial and Operational reports | Report access follows existing domain permissions | `apps/reports`, `apps/users/roles.py` |
 | 2026-09-25 | Roles form a hierarchy: everyone manages only the roles and people ranked below them, and does not see those above | Stops self-promotion and managers editing admins; only a superadmin manages admins | `ROLE_RANKS`, `apps/users/services/roles.py` |
 | 2026-09-25 | A customer's region is one of Tanzania's 31 regions | Free text could not be counted or searched reliably | `Region`, `apps/gems/regions.py` |
 | 2026-09-25 | No self-registration: staff create accounts from an email and a role | Every account belongs to someone the lab chose | `create_user_account` |

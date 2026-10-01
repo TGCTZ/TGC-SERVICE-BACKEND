@@ -65,7 +65,6 @@ layer. The rule is one line long and worth enforcing in review:
 | L4 | `apps.billing` | Bills, payments, and the GePG payment gateway. |
 | L4 | `apps.identification` | Gemmological findings recorded against a stone. |
 | L5 | `apps.certificates` | Certificates and their public verification. |
-| L6 | `apps.analytics` | Management statistics over the domain apps. |
 | L6 | `apps.reports` | Read-only financial and operational reports and exports. |
 
 `apps.billing` and `apps.identification` sit at the same layer and must not

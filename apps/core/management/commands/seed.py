@@ -8,7 +8,9 @@ the suite and this command can never disagree about what a valid row looks like.
 import random
 from datetime import timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
@@ -56,7 +58,7 @@ COLORS = (
 
 ORIGINS = ("Tanzania", "Madagascar", "Sri Lanka", "Myanmar", "Mozambique")
 
-# --history-months only: enough spread for the market statistics to have shape.
+# --history-months only: enough spread for reports to show useful history.
 CHANNELS = ("CRDB Bank", "NMB Bank", "M-Pesa", "Tigo Pesa", "Airtel Money")
 NATURE_WEIGHTS = (
     ("natural", 70),
@@ -103,7 +105,7 @@ class Command(BaseCommand):
             default=0,
             help="Spread the orders over this many past months and carry each "
             "as far through the pipeline as its age allows, so the management "
-            "statistics have trends to show. 0 keeps every order in the present.",
+            "reports have history to show. 0 keeps every order in the present.",
         )
 
     @transaction.atomic
@@ -276,10 +278,9 @@ class Command(BaseCommand):
         billed, paid (or not: a few never are) and certified - and is taken
         through the real services only up to the stages whose moment has
         passed. The services stamp everything "now", so each row is then moved
-        back onto its timeline. The statistics then see turnaround, trends and
-        a live backlog rather than one very busy afternoon.
+        back onto its timeline so reports show useful workflow and financial
+        history rather than one very busy afternoon.
         """
-        from apps.analytics.periods import local_date
         from apps.billing.dev import simulate_payment
         from apps.billing.models import Bill, Payment
         from apps.billing.services import generate_bill_for_order
@@ -309,7 +310,10 @@ class Command(BaseCommand):
             stone_count = random.randint(1, 4)
             order = create_order(customer=customer, stone_count=stone_count)
             Order.objects.filter(pk=order.pk).update(
-                created_at=registered, received_date=local_date(registered)
+                created_at=registered,
+                received_date=timezone.localtime(
+                    registered, ZoneInfo(settings.LAB_TIME_ZONE)
+                ).date(),
             )
 
             roll = random.random()

@@ -60,7 +60,6 @@ LOCAL_APPS = [
     "apps.billing",  # L4 - bills, payments and the GePG gateway
     "apps.identification",  # L4 - gemmological findings
     "apps.certificates",  # L5 - certificates and public verification
-    "apps.analytics",  # L6 - management statistics over the domain apps
     "apps.reports",  # L6 - read-only cross-domain reports
 ]
 
@@ -130,8 +129,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("TIME_ZONE", default="UTC")
-# The lab's own calendar. Storage stays in UTC; statistics bucket by this zone,
-# or a payment at 22:00 in Dar es Salaam would count towards the wrong day.
+# The lab's own calendar. Storage stays in UTC; report filters and seed data use
+# this zone, so dates match the lab's local calendar.
 LAB_TIME_ZONE = env("LAB_TIME_ZONE", default="Africa/Dar_es_Salaam")
 USE_I18N = True
 USE_TZ = True
