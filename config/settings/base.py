@@ -59,6 +59,7 @@ LOCAL_APPS = [
     "apps.billing",  # L4 - bills, payments and the GePG gateway
     "apps.identification",  # L4 - gemmological findings
     "apps.certificates",  # L5 - certificates and public verification
+    "apps.reports",  # L6 - read-only cross-domain reports
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

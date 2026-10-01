@@ -110,6 +110,64 @@ def test_admin_can_create_a_stone_type(admin_user, auth_client):
     assert response.status_code == 201, response.data
 
 
+def test_a_role_round_trips_a_permission_whose_codename_is_ambiguous(
+    admin_user, auth_client, roles
+):
+    """Reading a role and writing it straight back must succeed.
+
+    Regression test: ``view_logentry`` exists in both ``admin`` and
+    ``auditlog``, so matching a permission on its bare codename raises
+    MultipleObjectsReturned and every role save 500s. The API speaks full
+    ``app_label.codename`` labels for exactly this reason.
+    """
+    from django.contrib.auth.models import Group, Permission
+
+    assert Permission.objects.filter(codename="view_logentry").count() > 1, (
+        "the ambiguity this guards against no longer exists in the schema"
+    )
+
+    role = Group.objects.get(name="administrator")
+    client = auth_client(admin_user)
+
+    read = client.get(f"/api/v1/roles/{role.pk}/")
+    assert read.status_code == 200, read.data
+    assert "auditlog.view_logentry" in read.data["permissions"]
+
+    write = client.put(
+        f"/api/v1/roles/{role.pk}/",
+        {"name": role.name, "permissions": read.data["permissions"]},
+    )
+    assert write.status_code == 200, write.data
+    assert set(write.data["permissions"]) == set(read.data["permissions"])
+
+
+def test_an_unknown_permission_label_is_rejected(admin_user, auth_client, roles):
+    """A bad label is a 400 naming it, not a silent drop."""
+    from django.contrib.auth.models import Group
+
+    role = Group.objects.get(name="receptionist")
+    response = auth_client(admin_user).put(
+        f"/api/v1/roles/{role.pk}/",
+        {"name": role.name, "permissions": ["gems.no_such_permission"]},
+    )
+
+    assert response.status_code == 400
+    assert "no_such_permission" in str(response.data)
+
+
+def test_grouped_permissions_are_writable_labels(admin_user, auth_client):
+    """The matrix and the role must speak the same vocabulary.
+
+    Bare codenames grouped by app would have to be recomposed by the client,
+    and the client cannot know which app a codename belongs to.
+    """
+    response = auth_client(admin_user).get("/api/v1/permissions/grouped/")
+
+    assert response.status_code == 200, response.data
+    assert "auditlog" in response.data
+    assert all(value.startswith("auditlog.") for value in response.data["auditlog"])
+
+
 def test_protected_role_cannot_be_deleted(admin_user, auth_client, roles):
     """The superadmin role is the recovery path and must not be removable."""
     from django.contrib.auth.models import Group

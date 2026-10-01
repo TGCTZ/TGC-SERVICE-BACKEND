@@ -57,13 +57,44 @@ class PermissionSerializer(serializers.ModelSerializer):
         return f"{obj.content_type.app_label}.{obj.codename}"
 
 
+class PermissionLabelField(serializers.RelatedField):
+    """Represents a permission by its full ``app_label.codename`` label.
+
+    A bare codename is not unique: ``view_logentry`` exists in both ``admin``
+    and ``auditlog``, so resolving one with ``SlugRelatedField`` raises
+    ``MultipleObjectsReturned`` and the whole role save fails with a 500. The
+    app label is the disambiguator, and it is the same vocabulary
+    ``apps/users/roles.py`` and ``PermissionSerializer.label`` already use.
+    """
+
+    default_error_messages = {
+        "invalid": "Expected a permission label of the form 'app_label.codename'.",
+        "does_not_exist": "Unknown permission: {value}",
+    }
+
+    def to_representation(self, value) -> str:
+        """Render the permission as ``app_label.codename``."""
+        return f"{value.content_type.app_label}.{value.codename}"
+
+    def to_internal_value(self, data):
+        """Resolve a label back to its permission row."""
+        app_label, separator, codename = str(data).partition(".")
+        if not separator or not codename:
+            self.fail("invalid")
+        try:
+            return self.get_queryset().get(
+                content_type__app_label=app_label, codename=codename
+            )
+        except Permission.DoesNotExist:
+            self.fail("does_not_exist", value=data)
+
+
 class RoleSerializer(serializers.ModelSerializer):
     """A role, exposed as a group plus its permission labels."""
 
-    permissions = serializers.SlugRelatedField(
+    permissions = PermissionLabelField(
         many=True,
-        slug_field="codename",
-        queryset=Permission.objects.all(),
+        queryset=Permission.objects.select_related("content_type"),
         required=False,
     )
     is_protected = serializers.SerializerMethodField()

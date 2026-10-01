@@ -352,3 +352,19 @@ GET {{host}}/api/health/
 
 ### Readiness (database + pending migrations)
 GET {{host}}/api/health/ready/
+
+### Reports: available pages and sections
+GET {{api}}/reports/
+Authorization: Bearer {{access}}
+
+### Financial reports (inclusive lab dates)
+GET {{api}}/reports/financial/?from_date=2026-09-01&to_date=2026-09-30
+Authorization: Bearer {{access}}
+
+### Operational reports
+GET {{api}}/reports/operational/?from_date=2026-09-01&to_date=2026-09-30
+Authorization: Bearer {{access}}
+
+### Financial report PDF export
+GET {{api}}/reports/financial/export/?from_date=2026-09-01&to_date=2026-09-30&file_type=pdf
+Authorization: Bearer {{access}}
