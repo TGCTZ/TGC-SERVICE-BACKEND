@@ -45,6 +45,9 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
+          
+      - name: Prepare log directory
+        run: mkdir -p logs
 
       - name: Security check against production settings
         # Django's own deployment audit: HSTS, secure cookies, DEBUG, and a
