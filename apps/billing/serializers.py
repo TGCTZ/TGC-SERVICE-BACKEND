@@ -1,5 +1,7 @@
 """Serializers for the billing domain."""
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
@@ -144,4 +146,43 @@ class GenerateBillSerializer(serializers.Serializer):
 
     service_provider = serializers.PrimaryKeyRelatedField(
         queryset=ServiceProvider.objects.all(), required=False, allow_null=True
+    )
+
+
+class BillPreviewItemSerializer(serializers.Serializer):
+    """One line the bill *would* carry, priced but not written."""
+
+    stone = serializers.IntegerField()
+    label = serializers.CharField()
+    description = serializers.CharField()
+    category = serializers.CharField()
+    # Null when the stone's category carries no fee - a configuration gap the
+    # screen names rather than hides.
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2, allow_null=True)
+
+
+class BillPreviewSerializer(serializers.Serializer):
+    """What generating a bill for an order would produce.
+
+    Read-only and side-effect free: this is the figures shown to whoever is
+    about to commit to them.
+    """
+
+    items = BillPreviewItemSerializer(many=True)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2)
+    currency = serializers.CharField()
+    #: Reasons the order cannot be billed. Empty means it can.
+    blockers = serializers.ListField(child=serializers.CharField())
+
+
+class SimulatePaymentSerializer(serializers.Serializer):
+    """Payload for the development-only payment simulation.
+
+    ``amount`` is optional and defaults to the balance outstanding. Pass less to
+    reach ``PARTIALLY_PAID``, which nothing else in the system can produce
+    offline.
+    """
+
+    amount = serializers.DecimalField(
+        max_digits=15, decimal_places=2, min_value=Decimal("0.01"), required=False
     )

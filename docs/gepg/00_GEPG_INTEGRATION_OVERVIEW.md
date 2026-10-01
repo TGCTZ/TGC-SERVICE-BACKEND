@@ -1,262 +1,215 @@
-# GEPG Integration - Overview & Index
+# GePG Integration — Overview
 
-> Ported from the previous system. Real credentials have been redacted to
-> `<set-in-.env>`; set the actual values in `.env` (see `.env.example`). Some
-> file paths in these docs refer to the previous codebase — in TGC-SYSTEM the
-> GePG code lives in `apps/billing/` (gateway in `apps/billing/gateways/`).
+GePG is the Tanzanian government's electronic payment gateway. The lab does not
+take money directly: a bill is submitted to GePG, which issues a **control
+number**, the customer pays that number at any bank or mobile wallet, and GePG
+tells us afterwards. There is no manual payment entry anywhere in the system.
 
-## Table of Contents
+This document describes what is configured and what is wired up. The individual
+message contracts are in the numbered documents beside it.
 
-This documentation suite provides comprehensive information about the TGC Mifumo GEPG (Government Electronic Payment Gateway) integration.
-
-### Documentation Files
-
-1. **[Bill Submission](01_BILL_SUBMISSION.md)** - Creating and submitting bills to GEPG
-2. **[Payment Notification](02_PAYMENT_NOTIFICATION.md)** - Receiving and processing payment notifications from GEPG
-3. **[Bill Cancellation](03_BILL_CANCELLATION.md)** - Cancelling bills in GEPG
-4. **[Reconciliation](04_RECONCILIATION.md)** - Reconciling payments with GEPG
-5. **[SMS Integration](05_SMS_INTEGRATION.md)** - SMS notifications via Beem Africa
+| Document | Message | State |
+| --- | --- | --- |
+| [01 Bill submission](01_BILL_SUBMISSION.md) | `billSubReq` | Implemented |
+| [02 Payment notification](02_PAYMENT_NOTIFICATION.md) | `pmtSpNtfReq` | Implemented |
+| [03 Bill cancellation](03_BILL_CANCELLATION.md) | `billCanclReq` | Specification only |
+| [04 Reconciliation](04_RECONCILIATION.md) | `sucSpPmtReq` | Specification only |
+| [05 SMS notifications](05_SMS_INTEGRATION.md) | Beem Africa | Specification only |
 
 ---
 
-## System Architecture
+## What is wired up
+
+Two outbound calls and two inbound callbacks. That is the whole integration.
 
 ```
-TGC Mifumo System ←→ GEPG (Government Payment Gateway)
-     ↓                    ↓
-Identification Services  Production Shop Orders
-     ↓                    ↓
-   Billing System ←→ Payment Processing
-                         ↓
-                   SMS Notifications
+outbound   POST <GEPG_BILL_CREATE_URL>         billSubReq   → control number
+inbound    POST /gepg/bill/response/           billSubRes   → late control number
+inbound    POST /gepg/payments/notification/   pmtSpNtfReq  → settles the bill
+```
+
+A bill is raised per **order**, not per stone, and is priced from the stone
+**category** of each stone on it.
+
+Both callbacks sit **outside** `/api/v1/`, because their URLs are registered
+with GePG out of band and have to survive an API version bump. They are plain
+Django views — unauthenticated, CSRF-exempt — and they answer in XML on every
+path, including failure. The reasoning is in the module docstring of
+[`apps/billing/webhooks.py`](../../apps/billing/webhooks.py).
+
+### Where the code lives
+
+| Concern | Module |
+| --- | --- |
+| Bill and payment services | [`apps/billing/services/`](../../apps/billing/services/) |
+| XML building and parsing | [`apps/billing/gateways/gepg.py`](../../apps/billing/gateways/gepg.py) |
+| PKCS#12 loading and signing | [`apps/billing/gateways/signing.py`](../../apps/billing/gateways/signing.py) |
+| The two inbound callbacks | [`apps/billing/webhooks.py`](../../apps/billing/webhooks.py) |
+| Models | [`apps/billing/models/`](../../apps/billing/models/) |
+| Development simulation | [`apps/billing/dev.py`](../../apps/billing/dev.py) |
+
+---
+
+## Configuration
+
+All values come from the environment. Every credential defaults to an empty
+string, so a misconfigured deployment fails visibly rather than talking to the
+wrong gateway.
+
+### Endpoints
+
+```
+GEPG_BILL_CREATE_URL=https://<gepg-host>/api/bill/20/submission
+GEPG_BILL_CANCEL_URL=https://<gepg-host>/api/bill/20/cancellation      # read by nothing
+GEPG_RECONCILIATION_URL=https://<gepg-host>/api/reconciliation/20/request  # read by nothing
+```
+
+The last two are configured but **not used** — the features they belong to are
+documents 03 and 04, which are specifications.
+
+### Identity
+
+```
+GEPG_SP_GRP_CODE=<set-in-.env>        service provider group
+GEPG_SYS_CODE=<set-in-.env>           the system registered with GePG
+GEPG_SP_CODE=<set-in-.env>            service provider
+GEPG_SUB_SP_CODE=<set-in-.env>        sub service provider
+GEPG_COLL_CENT_CODE=<set-in-.env>     collection centre
+GEPG_GFS_CODE=<set-in-.env>           the revenue code every bill item carries
+```
+
+### Signing
+
+```
+GEPG_USE_DIGITAL_SIGNATURE=False                    # opt-in, off by default
+GEPG_PRIVATE_KEY_PATH=certificates/private.pfx      # PKCS#12, signs outbound
+GEPG_CERTIFICATE_PASSWORD=<set-in-.env>             # no default; a blank one would
+                                                    # let an unsigned payload through
+GEPG_PUBLIC_CERT_PATH=certificates/public.pfx       # read by nothing — see Gaps
+```
+
+### Behaviour
+
+```
+GEPG_BILL_EXPIRY_DAYS=365      how long a control number stays payable
+GEPG_SIMULATE=False            skip the network; see "Working offline"
 ```
 
 ---
 
-## Configuration Overview
+## What actually happens
 
-### Environment Variables
+### Raising a bill
 
-The GEPG integration is configured via environment variables in `.env`:
+`generate_bill_for_order()` prices each stone from its category, freezes the
+charge onto the line item, allocates a `BILL-YYYY-NNNN` number, and submits.
 
-#### GEPG API Endpoints
-- `GEPG_BILL_CREATE_URL`: http://154.118.230.202:80/api/bill/20/submission
-- `GEPG_BILL_UPDATE_URL`: http://154.118.230.202:80/api/bill/20/change-submission
-- `GEPG_BILL_CANCEL_URL`: http://154.118.230.202:80/api/bill/20/cancellation
-- `GEPG_RECONCILIATION_URL`: http://154.118.230.202:80/api/reconciliation/20/request
+GePG can answer in three ways:
 
-#### GEPG Service Provider Configuration
-- `GEPG_SP_GRP_CODE`: SP99631
-- `GEPG_SYS_CODE`: LTGC002
-- `GEPG_SP_CODE`: SP99631
-- `GEPG_SUB_SP_CODE`: 1001
-- `GEPG_COLL_CENT_CODE`: CC1014000199631
-- `GEPG_GFS_CODE`: 142201660128
+| Answer | What happens |
+| --- | --- |
+| Control number in `billSubRes` | Stored immediately |
+| Acknowledgement only (`7101`/`7241`) | The number arrives later on the response callback |
+| The literal `PENDING` | **Not stored.** `control_number` stays empty |
 
-#### Security Settings
-- `GEPG_USE_DIGITAL_SIGNATURE`: True
-- `GEPG_CERTIFICATE_PASSWORD`: <set-in-.env>
+That last case is deliberate. The unique constraint on control numbers excludes
+blanks, so an empty string is a legitimate "not yet"; storing `"PENDING"` would
+occupy the slot the real number needs and make every un-numbered bill collide
+with every other.
 
-#### SMS Configuration (Beem Africa)
-- `BEEM_AFRICA_API_KEY`: <set-in-.env>
-- `BEEM_AFRICA_SECRET_KEY`: [Base64 encoded]
+### Receiving a payment
 
----
+The notification handler is **idempotent on `trx_id`**: the payment row is
+fetched or created by transaction id, and the bill's status is recomputed only
+when a genuinely new payment lands. GePG redelivers, so this matters.
 
-## Core Components
+Settlement compares the sum of payments against the bill total:
 
-### 1. Models (`billing_app/models.py`)
-- **Bill**: Main billing entity with GEPG integration
-- **BillItem**: Individual line items for bills
-- **Payment**: Payment records from GEPG
-- **ReconciliationRequest**: Reconciliation tracking
+- covered in full → `paid`, and every stone on the order transitions to `paid`
+- covered in part → `partially_paid`, and nothing moves
 
-### 2. Services (`billing_app/services/`)
-- **gepg_service.py**: Core GEPG API integration
-- **crypto_utils.py**: Digital signature and encryption
-- **sms_service.py**: SMS notification handling
+The endpoint answers **HTTP 200 with an XML acknowledgement on every path**,
+including a parse failure — where it returns code `7102`. Returning a 4xx would
+make GePG treat the delivery as failed and send it again, which is exactly what
+the idempotency above exists to survive rather than invite.
 
-### 3. API Views (`billing_app/views.py`)
-- Payment notification endpoint
-- Bill management endpoints
-- Reconciliation endpoints
-
-### 4. URL Configuration (`billing_app/urls.py`)
-- API routing for GEPG callbacks
-- Internal API endpoints
+XML is parsed with `defusedxml`, not the standard library. The endpoint is
+public, and `xml.etree.ElementTree` is documented as unsafe against hostile
+input.
 
 ---
 
-## Integration Flow
+## Working offline
 
-### Outbound (TGC → GEPG)
-1. **Bill Creation**: System generates bill → Signs XML → Sends to GEPG
-2. **Bill Update**: Modify existing bill → Signs XML → Sends to GEPG
-3. **Bill Cancellation**: Cancel bill → Signs XML → Sends to GEPG
-4. **Reconciliation Request**: Request payment data → Signs XML → Sends to GEPG
+Set `GEPG_SIMULATE=True`. Bill submission then skips the network and returns a
+plausible control number.
 
-### Inbound (GEPG → TGC)
-1. **Payment Notification**: GEPG sends payment → System verifies → Updates bill → Sends SMS
-2. **Reconciliation Response**: GEPG sends payment list → System processes → Updates records
+With `DEBUG` on as well, the Bills screen grows a **Simulate payment** action.
+It settles a bill by feeding a synthetic notification through the **real**
+handler, so the whole path — parse, record, settle, transition the stones — runs
+exactly as it would in production. It takes an amount, so a part-paid bill can
+be produced as well as a settled one; leaving it blank pays the outstanding
+balance.
 
----
-
-## Security Features
-
-### Digital Signatures
-- All outbound requests are digitally signed using PKCS#12 certificates
-- Signatures ensure message integrity and authenticity
-- Certificate password protected
-
-### XML Encryption
-- Sensitive data encrypted in XML payloads
-- AES encryption for data protection
-
-### Authentication
-- CSRF exemption for GEPG callbacks (external system)
-- Internal endpoints protected by Django authentication
+Behind it: `POST /api/v1/bills/{id}/simulate-payment/`, which answers **404**
+unless the server has **both** `DEBUG` and `GEPG_SIMULATE` on. A 404 rather than
+a 403, so a production deployment does not advertise that the endpoint exists.
 
 ---
 
-## Key Features
+## Data model
 
-### ✅ Bill Management
-- Create bills for identification services
-- Create bills for production shop orders
-- Update bill amounts and details
-- Cancel bills when needed
-- Automatic control number generation
+The columns that matter to this integration, on
+[`apps/billing/models/bill.py`](../../apps/billing/models/bill.py):
 
-### ✅ Payment Processing
-- Real-time payment notifications from GEPG
-- Automatic bill status updates
-- Payment verification and validation
-- Duplicate payment prevention
+### `Bill`
 
-### ✅ Reconciliation
-- Manual reconciliation requests
-- Automatic payment matching
-- Discrepancy detection
-- Audit trail maintenance
+| Column | Notes |
+| --- | --- |
+| `bill_number` | `BILL-YYYY-NNNN`, allocated locally |
+| `control_number` | Issued by GePG; empty until it arrives |
+| `order` | One-to-one — one bill per order |
+| `total_amount` | Sum of the line items |
+| `status` | `pending`, `partially_paid`, `paid`, `cancelled`, `expired` |
+| `bill_type`, `pay_type` | Small integers, both defaulting to `1` |
+| `status_code`, `status_desc` | The raw gateway strings from submission |
+| `gepg_submitted_at` | When it went out |
 
-### ✅ SMS Notifications
-- Payment confirmation SMS
-- Bill generation notifications
-- Custom message templates
-- Beem Africa integration
+`cancelled` and `expired` are declared but never written — see document 03.
 
----
+### `Payment`
 
-## Database Schema
+| Column | Notes |
+| --- | --- |
+| `bill` | Foreign key |
+| `trx_id` | GePG's transaction id — the idempotency key |
+| `gepg_bill_id` | The bill id as GePG knows it |
+| `paid_amount`, `bill_amount` | Decimals |
+| `trx_dt_tm` | When the customer paid |
+| `pyr_name`, `pyr_cell_num`, `pyr_email` | Who paid |
 
-### Bill Table
-- `bill_id`: Unique identifier (e.g., BILL-S-NO-001-47)
-- `control_number`: GEPG control number
-- `amount`: Bill amount
-- `status`: PENDING, PAID, CANCELLED, EXPIRED
-- `bill_type`: IDENTIFICATION, PRODUCTION_SHOP
-- `is_gepg_submitted`: Boolean flag
-- `gepg_submission_date`: Timestamp
-
-### Payment Table
-- `payment_id`: Unique identifier
-- `bill`: Foreign key to Bill
-- `transaction_id`: GEPG transaction ID
-- `amount`: Payment amount
-- `payment_date`: Payment timestamp
-- `payer_phone`: Customer phone number
-- `payer_name`: Customer name
+`trx_id` carries a **partial** unique constraint that excludes blanks and
+soft-deleted rows, not `unique=True` — the same rule every natural key in the
+project follows.
 
 ---
 
-## Error Handling
+## Gaps
 
-### Common Scenarios
-1. **Network Failures**: Retry mechanism with exponential backoff
-2. **Invalid Signatures**: Logging and notification
-3. **Duplicate Payments**: Detection and prevention
-4. **Bill Not Found**: Graceful error responses
-5. **GEPG API Errors**: Detailed error logging
+None of these is closed. They are listed roughly in order of how much they
+would cost to be wrong about.
 
----
-
-## Monitoring & Logging
-
-### Log Locations
-- Application logs: Django logging framework
-- GEPG request/response logs: Detailed XML logging
-- Payment notifications: Timestamped records
-- Error logs: Exception tracking
-
-### Key Metrics
-- Bill submission success rate
-- Payment notification processing time
-- Reconciliation accuracy
-- SMS delivery rate
-
----
-
-## Testing
-
-### Test Scenarios
-1. Bill creation and submission
-2. Payment notification processing
-3. Bill cancellation
-4. Reconciliation requests
-5. SMS delivery
-6. Error handling
-
-### Test Data
-- Use test GEPG environment
-- Test control numbers
-- Mock payment notifications
-- Sample XML payloads
-
----
-
-## Deployment Considerations
-
-### Prerequisites
-- PostgreSQL database
-- PKCS#12 certificate file
-- GEPG API access credentials
-- Beem Africa SMS credentials
-- Python 3.x with Django
-
-### Configuration Steps
-1. Set up environment variables
-2. Install certificate
-3. Configure database
-4. Run migrations
-5. Test GEPG connectivity
-6. Verify SMS integration
-
----
-
-## Support & Maintenance
-
-### Regular Tasks
-- Monitor payment notifications
-- Review reconciliation reports
-- Update certificates before expiry
-- Check SMS delivery status
-- Review error logs
-
-### Troubleshooting
-- Check GEPG API connectivity
-- Verify certificate validity
-- Review XML signatures
-- Check database connections
-- Validate environment variables
-
----
-
-## Next Steps
-
-For detailed information about each feature, please refer to the specific documentation files listed at the top of this document.
-
----
-
-**Last Updated**: January 2026  
-**Version**: 1.0  
-**Maintained By**: TGC Mifumo Development Team
+1. **No inbound signature verification.** `GEPG_PUBLIC_CERT_PATH` is configured
+   but never read. The notification endpoint is public, unauthenticated and
+   CSRF-exempt, so a forged `pmtSpNtfReq` will mark a bill paid. This is the
+   most serious open item in the project.
+2. **Signing fails open.** A missing or unreadable PKCS#12 key logs an error and
+   sends the payload **unsigned** rather than refusing. Combined with the
+   default being off, assume outbound messages are currently unsigned.
+3. **No retry.** A network failure leaves a bill with no control number and no
+   path forward — no re-submit, no queue, no dead letter. The gateway call logs
+   and returns; nothing picks it back up.
+4. **No cancellation, no reconciliation, no SMS.** Documents 03, 04 and 05
+   describe protocols, not implementations.
+5. **No expiry enforcement.** `GEPG_BILL_EXPIRY_DAYS` is sent to GePG, but
+   nothing locally moves a bill to `expired` when the date passes.

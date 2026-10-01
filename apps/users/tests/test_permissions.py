@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.gems.tests.factories import StoneTypeFactory
+from apps.gems.tests.factories import StoneCategoryFactory, StoneTypeFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -43,7 +43,7 @@ def test_setup_roles_prune_removes_a_retired_role(roles):
     call_command("setup_roles", "--prune", verbosity=0)
 
     assert not Group.objects.filter(name="retired").exists()
-    assert Group.objects.filter(name="administrator").exists()
+    assert Group.objects.filter(name="manager").exists()
 
 
 def test_setup_roles_prune_removes_a_retired_module_gate(roles):
@@ -69,12 +69,19 @@ def test_setup_roles_prune_removes_a_retired_module_gate(roles):
 
 
 def test_superadmin_gets_every_permission(roles):
-    """The superadmin role resolves dynamically, so new models are covered."""
+    """The superadmin role resolves dynamically, so new models are covered.
+
+    Every permission bar the notification subscriptions, which say whose desk
+    work waits on rather than what a role may do - see apps.notifications.
+    """
     from django.contrib.auth.models import Group, Permission
 
     superadmin = Group.objects.get(name="superadmin")
+    grantable = Permission.objects.exclude(
+        content_type__app_label="notifications", codename__startswith="receive_"
+    )
 
-    assert superadmin.permissions.count() == Permission.objects.count()
+    assert superadmin.permissions.count() == grantable.count()
 
 
 def test_viewer_cannot_create_a_product(viewer_user, auth_client):
@@ -104,7 +111,7 @@ def test_admin_can_create_a_stone_type(admin_user, auth_client):
     """A role with add_stonetype may create."""
     response = auth_client(admin_user).post(
         "/api/v1/stone-types/",
-        {"name": "New Stone Type", "category": "precious", "price": "19.99"},
+        {"name": "New Stone Type", "category": StoneCategoryFactory().pk},
     )
 
     assert response.status_code == 201, response.data
@@ -169,11 +176,86 @@ def test_grouped_permissions_are_writable_labels(admin_user, auth_client):
 
 
 def test_protected_role_cannot_be_deleted(admin_user, auth_client, roles):
-    """The superadmin role is the recovery path and must not be removable."""
+    """The superadmin role is the recovery path and must not be removable.
+
+    A manager does not even see it, so the delete is a 404; the 400 a
+    superadmin gets for trying is in ``test_hierarchy``.
+    """
     from django.contrib.auth.models import Group
 
     superadmin = Group.objects.get(name="superadmin")
     response = auth_client(admin_user).delete(f"/api/v1/roles/{superadmin.pk}/")
 
-    assert response.status_code == 400
+    assert response.status_code == 404
     assert Group.objects.filter(name="superadmin").exists()
+
+
+def test_role_permissions_are_addressed_by_app_label_and_codename(
+    roles, admin_user, auth_client
+):
+    """A role's permissions read and write as ``app_label.codename``.
+
+    A bare codename is not unique - ``view_logentry`` exists in both ``admin``
+    and ``auditlog`` - so addressing one without its app label would resolve to
+    two rows and 500 the request.
+    """
+    from django.contrib.auth.models import Group, Permission
+
+    duplicated = Permission.objects.filter(codename="view_logentry")
+    assert duplicated.count() > 1, "expected the collision this test guards"
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["auditlog.view_logentry"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.data["permissions"] == ["auditlog.view_logentry"]
+
+    granted = role.permissions.get()
+    assert granted.content_type.app_label == "auditlog"
+
+
+def test_editing_a_role_permission_set_leaves_its_name_alone(
+    roles, admin_user, auth_client
+):
+    """The permission matrix sends only ``permissions``, and that is enough.
+
+    It never shows the user a name, so it must not have to send one back - a
+    full replace would either be rejected for the missing field or overwrite a
+    name the screen never displayed.
+    """
+    from django.contrib.auth.models import Group
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["users.view_user"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    role.refresh_from_db()
+    assert role.name == "auditor"
+
+
+def test_an_unknown_permission_label_is_rejected(roles, admin_user, auth_client):
+    """A label that names nothing is a 400, not a crash."""
+    from django.contrib.auth.models import Group
+
+    role = Group.objects.create(name="auditor")
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/v1/roles/{role.id}/",
+        {"permissions": ["users.view_nothing"]},
+        format="json",
+    )
+
+    assert response.status_code == 400

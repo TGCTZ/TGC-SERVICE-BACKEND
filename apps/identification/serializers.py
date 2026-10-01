@@ -3,6 +3,7 @@
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
+from apps.gems.enums import WeightUnit
 from apps.gems.serializers import (
     ColorSerializer,
     InstrumentSerializer,
@@ -13,10 +14,11 @@ from apps.gems.serializers import (
 )
 
 from .models import IdentificationReport, InstrumentUsed
+from .selectors import gemmologist_candidates
 
 
 class InstrumentUsedSerializer(AuditFieldsMixin):
-    """An instrument used during a report, with its reading."""
+    """An instrument used during a report."""
 
     instrument_detail = InstrumentSerializer(source="instrument", read_only=True)
 
@@ -27,7 +29,6 @@ class InstrumentUsedSerializer(AuditFieldsMixin):
             "report",
             "instrument",
             "instrument_detail",
-            "reading",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
@@ -47,7 +48,38 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     order_reference = serializers.CharField(
         source="stone.order.reference_number", read_only=True
     )
+    # The customer, alongside the order they came in on. A reference number
+    # alone identifies the paperwork; the name is what identifies the visit to
+    # anyone reading a list of them.
+    customer_name = serializers.CharField(
+        source="stone.order.customer.full_name", read_only=True
+    )
+    customer_phone = serializers.CharField(
+        source="stone.order.customer.phone", read_only=True
+    )
     identified_by_label = serializers.SerializerMethodField()
+    verified_by_label = serializers.SerializerMethodField()
+
+    # Weight is measured at the bench alongside the other findings, so it belongs on
+    # this form - but it lives on the Stone, which is what the certificate
+    # snapshots. It travels through here and the service hands it on. Read back
+    # under stone_* so the form seeds itself in one request.
+    stone_weight = serializers.DecimalField(
+        source="stone.weight", max_digits=10, decimal_places=3, read_only=True
+    )
+    stone_weight_unit = serializers.CharField(source="stone.weight_unit", read_only=True)
+    weight = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    # No default, deliberately: a default lands in validated_data on every
+    # request, so a PATCH of the conclusion alone would write to the stone.
+    weight_unit = serializers.ChoiceField(
+        choices=WeightUnit.choices, required=False, write_only=True
+    )
 
     class Meta:
         model = IdentificationReport
@@ -56,6 +88,8 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "stone",
             "stone_label",
             "order_reference",
+            "customer_name",
+            "customer_phone",
             "report_number",
             "species",
             "species_detail",
@@ -71,15 +105,20 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "transparency",
             "treatment",
             "optic_character",
-            "dimensions",
             "refractive_index",
             "specific_gravity",
+            "weight",
+            "weight_unit",
+            "stone_weight",
+            "stone_weight_unit",
             "is_polished",
             "conclusion",
             "instruments_used",
             "is_finalized",
             "identified_by",
             "identified_by_label",
+            "verified_by",
+            "verified_by_label",
             "identified_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
@@ -90,9 +129,50 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "report_number",
             "is_finalized",
             "identified_by",
+            "verified_by",
             "identified_at",
         )
 
     def get_identified_by_label(self, obj) -> str | None:
         """The gemmologist's display name, or None if unattributed."""
         return str(obj.identified_by) if obj.identified_by_id else None
+
+    def get_verified_by_label(self, obj) -> str | None:
+        """The second gemmologist's display name, or None if only one signed."""
+        return str(obj.verified_by) if obj.verified_by_id else None
+
+
+class GemmologistCandidateSerializer(serializers.Serializer):
+    """One person the caller may name as second gemmologist.
+
+    Deliberately not the full user serializer: the dialog needs a name to show
+    and an id to post back, and the bench has no business reading everyone's
+    email address to fill in a dropdown.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    label = serializers.SerializerMethodField()
+
+    def get_label(self, obj) -> str:
+        """The same rendering as ``verified_by_label`` on the report.
+
+        Shared so the name in the dropdown is the name that comes back on the
+        finalized report, rather than two spellings of the same person.
+        """
+        return str(obj)
+
+
+class FinalizeReportSerializer(serializers.Serializer):
+    """Payload for finalizing a report.
+
+    ``verified_by`` is the second gemmologist. Optional, because a report can
+    still be closed when only one person saw the stone - the certificate then
+    prints a single name rather than an empty second line.
+    """
+
+    # Narrowed to the bench rather than every user: this field is what puts a
+    # second name on a certificate that claims two qualified gemmologists saw
+    # the stone, so the check belongs on the server, not in the dialog.
+    verified_by = serializers.PrimaryKeyRelatedField(
+        queryset=gemmologist_candidates(), required=False, allow_null=True
+    )

@@ -6,12 +6,24 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.exceptions import ServiceError
+from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
 from .models import IdentificationReport, InstrumentUsed
-from .selectors import findings_worklist
-from .serializers import IdentificationReportSerializer, InstrumentUsedSerializer
+from .selectors import (
+    findings_worklist,
+)
+from .selectors import (
+    gemmologist_candidates as gemmologist_candidates_queryset,
+)
+from .serializers import (
+    FinalizeReportSerializer,
+    GemmologistCandidateSerializer,
+    IdentificationReportSerializer,
+    InstrumentUsedSerializer,
+)
 from .services import create_report, finalize_report, update_report
 
 
@@ -28,6 +40,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "shape_cut",
         "color",
         "identified_by",
+        "verified_by",
     ).prefetch_related("instruments_used", "instruments_used__instrument")
     serializer_class = IdentificationReportSerializer
 
@@ -63,7 +76,28 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     action_permissions = {
         "finalize": ["identification.finalize_report"],
         "worklist": ["identification.add_identificationreport"],
+        # Gated on finalize rather than `users.view_user`: this list exists to
+        # fill the finalize dialog, and the bench holds no permission on users.
+        "gemmologist_candidates": ["identification.finalize_report"],
     }
+
+    def check_restorable(self, instance):
+        """Refuse to restore a report whose stone has been reported on again.
+
+        Discarding a report frees its stone, so the bench may well have recorded
+        fresh findings since. Only one live report per stone is allowed, and the
+        newer one is the real record - so the older is left in the bin rather
+        than the newer one silently displaced.
+        """
+        if (
+            IdentificationReport.objects.filter(stone=instance.stone)
+            .exclude(pk=instance.pk)
+            .exists()
+        ):
+            raise ServiceError(
+                f"Stone {instance.stone.label} already has a newer report. "
+                "Delete that one first if this is the record you want back."
+            )
 
     def perform_create(self, serializer):
         """Delegate to the service, which allocates the number and checks payment."""
@@ -80,18 +114,41 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             serializer.instance, user=self.request.user, **fields
         )
 
-    @extend_schema(request=None, responses=IdentificationReportSerializer)
+    @extend_schema(
+        request=FinalizeReportSerializer, responses=IdentificationReportSerializer
+    )
     @action(detail=True, methods=["post"])
     def finalize(self, request, pk=None):
-        """Lock this report against further edits."""
-        report = finalize_report(self.get_object(), user=request.user)
+        """Lock this report against further edits, naming the second gemmologist."""
+        payload = FinalizeReportSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        report = finalize_report(
+            self.get_object(),
+            user=request.user,
+            verified_by=payload.validated_data.get("verified_by"),
+        )
         return Response(self.get_serializer(report).data)
+
+    @extend_schema(responses=GemmologistCandidateSerializer(many=True))
+    @action(detail=False, methods=["get"], url_path="gemmologist-candidates")
+    def gemmologist_candidates(self, request):
+        """Active gemmologists the caller may name as second signatory.
+
+        Unpaginated: the bench is a handful of people, and a dropdown that
+        silently stopped at page one would hide colleagues rather than page.
+        """
+        candidates = gemmologist_candidates_queryset(exclude_user=request.user)
+        return Response(GemmologistCandidateSerializer(candidates, many=True).data)
 
     @extend_schema(responses=StoneSerializer)
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Paid stones whose findings are not finalized yet."""
-        queryset = findings_worklist()
+        # Searched explicitly rather than via `filter_queryset`: this action
+        # returns Stones, so the ViewSet's report `search_fields` do not apply.
+        queryset = search_queryset(
+            findings_worklist(), request.query_params.get("search"), STONE_SEARCH_FIELDS
+        )
         page = self.paginate_queryset(queryset)
         serializer = StoneSerializer(
             page, many=True, context=self.get_serializer_context()

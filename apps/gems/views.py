@@ -10,6 +10,7 @@ from .models import (
     Origin,
     ShapeCut,
     Species,
+    StoneCategory,
     StoneType,
     Variety,
 )
@@ -19,19 +20,35 @@ from .serializers import (
     OriginSerializer,
     ShapeCutSerializer,
     SpeciesSerializer,
+    StoneCategorySerializer,
     StoneTypeSerializer,
     VarietySerializer,
 )
 
 
+class StoneCategoryViewSet(BaseModelViewSet, viewsets.ModelViewSet):
+    """CRUD over pricing tiers."""
+
+    queryset = StoneCategory.objects.all()
+    serializer_class = StoneCategorySerializer
+    search_fields = ("name", "description")
+    filter_fields = ("is_active",)
+    ordering_fields = ("id", "name", "price", "is_active", "created_at")
+
+
 class StoneTypeViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over stone types."""
 
-    queryset = StoneType.objects.all()
+    # Every row serialises its category, and the nested serializer renders that
+    # category's own audit labels - so join the actor columns too, or each row
+    # costs three extra queries.
+    queryset = StoneType.objects.select_related(
+        "category", "category__created_by", "category__updated_by"
+    )
     serializer_class = StoneTypeSerializer
     search_fields = ("name", "description")
     filter_fields = ("is_active", "category")
-    ordering_fields = ("id", "name", "category", "price", "is_active", "created_at")
+    ordering_fields = ("id", "name", "is_active", "created_at")
 
 
 class SpeciesViewSet(BaseModelViewSet, viewsets.ModelViewSet):

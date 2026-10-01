@@ -6,7 +6,7 @@ the tooling and the prose honest about each other.
 
 ## 1. Layering
 
-Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L3`.
+Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L5`.
 Imports point downward only. Two apps in the same layer must not import each
 other's models; shared data moves down into `apps.core`.
 
@@ -87,6 +87,19 @@ code already says what. A docstring that restates the signature is noise.
 A comment earns its place by explaining a constraint, a trade-off or a
 surprising ordering. Comments that narrate readable code get deleted.
 
+- **State the reason as it stands today, not the history.** "Misses are not
+  cached, or a new file would not show until a restart" - not "the loader used
+  to cache misses". Git and the pull request record what changed; a comment that
+  tells a story goes stale the day the story is forgotten. The exception is a
+  constraint that still binds, such as matching numbers already printed.
+- **Keep module and function docs short enough to read in passing** - roughly
+  ten lines of prose before `Args:`. Design rationale longer than that belongs in
+  `docs/`, with the docstring pointing at it.
+- **No leftovers** from templates, scaffolds or other frameworks.
+- **Docs change with the code.** A pull request that changes behaviour updates
+  the doc describing it; `scripts/check_docs.py` catches dead links, not stale
+  prose.
+
 ## 14. Secrets never have defaults
 
 `SECRET_KEY` has no fallback: a missing value must crash on boot rather than
@@ -135,7 +148,7 @@ copy.
 
 ```python
 def findings_worklist():
-    """Stones waiting for findings: bill settled, report not finalized."""
+    """Stones waiting for findings: bill paid, report not finalized."""
     return Stone.objects.filter(order__bill__status=BillStatus.PAID).exclude(
         report__is_finalized=True
     )
@@ -159,7 +172,7 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 ```
 
 Without it the custom workflow permissions are decorative - anyone who can
-register a stone could also certify one. An action that is not listed falls back
+identify a stone could also certify one. An action that is not listed falls back
 to the method map.
 
 ## 23. A query-count test must stamp the actor

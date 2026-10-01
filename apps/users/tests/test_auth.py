@@ -5,40 +5,14 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 
-def test_register_creates_an_account(api_client):
-    """A valid registration returns 201 and the new user."""
+def test_there_is_no_self_registration(api_client):
+    """Accounts are created by staff only; the public sign-up route is gone."""
     response = api_client.post(
         "/api/v1/auth/register/",
-        {
-            "first_name": "Ada",
-            "last_name": "Lovelace",
-            "username": "ada",
-            "email": "ada@example.com",
-            "password": "Str0ng!Passphrase",
-            "password_confirm": "Str0ng!Passphrase",
-        },
+        {"email": "ada@example.com", "password": "Str0ng!Passphrase"},
     )
 
-    assert response.status_code == 201, response.data
-    assert response.data["email"] == "ada@example.com"
-
-
-def test_register_rejects_mismatched_confirmation(api_client):
-    """A mismatched confirmation is a validation error, not a created account."""
-    response = api_client.post(
-        "/api/v1/auth/register/",
-        {
-            "first_name": "Ada",
-            "last_name": "Lovelace",
-            "username": "ada",
-            "email": "ada@example.com",
-            "password": "Str0ng!Passphrase",
-            "password_confirm": "Different!2026",
-        },
-    )
-
-    assert response.status_code == 400
-    assert "password_confirm" in response.data
+    assert response.status_code == 404
 
 
 def test_login_returns_a_token_pair_and_the_user(api_client, user):

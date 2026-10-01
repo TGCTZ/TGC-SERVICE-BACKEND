@@ -3,22 +3,39 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+
+from django.db.models import F
 
 from apps.core.permissions import StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 
 from .models import Customer, Order, StatusHistory, Stone
-from .selectors import registration_worklist
+from .search import ORDER_SEARCH_FIELDS, STONE_SEARCH_FIELDS
+from .selectors import (
+    annotate_identified,
+    identification_worklist,
+    orders_at_stage,
+)
 from .serializers import (
     AddStoneSerializer,
     CustomerSerializer,
+    HoldOrderSerializer,
     OrderSerializer,
     StatusHistorySerializer,
     StoneSerializer,
     TransitionSerializer,
 )
-from .services import add_stone, create_order, transition_stone
+from .services import (
+    add_stone,
+    assert_stone_retypeable,
+    create_order,
+    hold_order,
+    release_order,
+    transition_stone,
+    update_stone,
+)
 
 
 class CustomerViewSet(BaseModelViewSet, viewsets.ModelViewSet):
@@ -40,28 +57,86 @@ class CustomerViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
 
 class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
-    """CRUD over orders, plus stone registration."""
+    """CRUD over orders, plus identification of their stones.
+
+    Accepts one query param beyond the shared list contract:
+    ``?identification=pending`` for orders with stones still to type, or
+    ``complete`` for those fully typed. Anything else is ignored.
+
+    Deliberately **not** a ``filter[...]`` key: that vocabulary is for field
+    lookups ``WhitelistFilterBackend`` validates against a whitelist, and this
+    is a comparison between two columns (``Count(stones)`` against
+    ``stone_count``) that no field lookup can express. Smuggling it through
+    ``filter[...]`` would make the whitelist a liar about what it checks.
+    """
 
     # Every row serialises its customer, and identified_count counts the stones.
-    queryset = Order.objects.select_related("customer").prefetch_related("stones")
+    queryset = Order.objects.select_related("customer", "bill").prefetch_related("stones")
     serializer_class = OrderSerializer
 
-    search_fields = (
-        "reference_number",
-        "customer__first_name",
-        "customer__last_name",
-        "customer__phone",
-    )
+    search_fields = ORDER_SEARCH_FIELDS
     filter_fields = ("customer", "received_date")
     ordering_fields = ("id", "reference_number", "received_date", "created_at")
     date_filter_fields = ("created_at", "updated_at", "received_date")
 
-    action_permissions = {"add_stone": ["orders.add_stone"]}
+    # Both entries name the same permission on purpose: the preliminary queue
+    # exists to be worked, not browsed, so whoever may identify a stone is
+    # exactly who should see the queue of stones waiting to be identified. This
+    # follows the billing and certification worklists, which gate on their
+    # workflow verb rather than on `view`.
+    def get_queryset(self):
+        """Narrow by identification progress and/or the order's derived stage.
+
+        Both live here rather than in ``filter_fields`` for the same reason: the
+        whitelist filter backend matches fields, and neither of these is one.
+        ``identification`` compares two columns; ``stage`` is computed from the
+        stones and the bill by :func:`order_stage`, and
+        :func:`orders_at_stage` re-expresses that derivation as SQL.
+
+        The two combine rather than one overriding the other. A hold or a
+        cancellation outranks identification in the derivation, so
+        ``stage=on_hold`` alone would still return orders with stones left to
+        type - wrong for a screen that lists only finished identification.
+        Re-annotating ``identified`` after ``orders_at_stage`` has already done
+        so replaces the alias on the same join, so the count is not inflated.
+        """
+        queryset = super().get_queryset()
+        params = getattr(self.request, "query_params", {})
+
+        stage = str(params.get("stage", "")).lower()
+        if stage:
+            queryset = orders_at_stage(queryset, stage)
+
+        wanted = str(params.get("identification", "")).lower()
+        if wanted == "pending":
+            return annotate_identified(queryset).filter(identified__lt=F("stone_count"))
+        if wanted == "complete":
+            return annotate_identified(queryset).filter(identified__gte=F("stone_count"))
+        return queryset
+
+    action_permissions = {
+        "add_stone": ["orders.add_stone"],
+        "worklist": ["orders.add_stone"],
+        "hold": ["orders.hold_order"],
+        "release": ["orders.hold_order"],
+    }
 
     def perform_create(self, serializer):
-        """Delegate to the service, which allocates the reference number."""
+        """Delegate to the service, which allocates the reference number.
+
+        A nested ``customer_data`` registers the customer in the same
+        transaction. The permission check below is load-bearing:
+        ``StrictModelPermissions`` only asks for ``orders.add_order`` on this
+        endpoint, so without it the nested write would be a way to create a
+        customer without holding ``orders.add_customer``.
+        """
+        customer_data = serializer.validated_data.get("customer_data")
+        if customer_data and not self.request.user.has_perm("orders.add_customer"):
+            raise PermissionDenied("You may not register new customers.")
+
         order = create_order(
-            customer=serializer.validated_data["customer"],
+            customer=serializer.validated_data.get("customer"),
+            customer_data=customer_data,
             stone_count=serializer.validated_data.get("stone_count", 0),
             received_date=serializer.validated_data.get("received_date"),
             user=self.request.user,
@@ -71,7 +146,7 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @extend_schema(request=AddStoneSerializer, responses=StoneSerializer)
     @action(detail=True, methods=["post"], url_path="stones")
     def add_stone(self, request, pk=None):
-        """Register the next stone against this order.
+        """Record the identification of the next stone.
 
         A dedicated action rather than ``POST /stones/``: the service owns the
         label sequence and the cap at ``order.stone_count``, and a bare create
@@ -88,10 +163,37 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
 
     @extend_schema(responses=OrderSerializer)
-    @action(detail=False, methods=["get"], url_path="worklist-registration")
-    def worklist_registration(self, request):
-        """Orders with stones still to register."""
-        queryset = self.filter_queryset(registration_worklist())
+    @extend_schema(request=HoldOrderSerializer, responses=OrderSerializer)
+    @action(detail=True, methods=["post"])
+    def hold(self, request, pk=None):
+        """Pause or withdraw the whole order.
+
+        The one piece of an order's state that is written rather than derived:
+        a customer asking the lab to stop is a fact about the visit, not about
+        any stone in it.
+        """
+        payload = HoldOrderSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        order = hold_order(
+            self.get_object(),
+            status=payload.validated_data["hold_status"],
+            reason=payload.validated_data["reason"],
+            user=request.user,
+        )
+        return Response(self.get_serializer(order).data)
+
+    @extend_schema(request=None, responses=OrderSerializer)
+    @action(detail=True, methods=["post"])
+    def release(self, request, pk=None):
+        """Return a held or cancelled order to active work."""
+        order = release_order(self.get_object(), user=request.user)
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=False, methods=["get"])
+    def worklist(self, request):
+        """Orders with stones still to identify - the bench's intake queue."""
+        queryset = self.filter_queryset(identification_worklist())
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
@@ -100,14 +202,41 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over stones, plus status transitions."""
 
-    queryset = Stone.objects.select_related("order", "order__customer", "stone_type")
+    # `report_detail` is serialised on every stone row - the queues read it to
+    # tell a stone waiting for findings from one whose draft is already open.
+    # Prefetched, not joined: the relation is a reverse FK so that a discarded
+    # report frees the stone rather than occupying it forever.
+    queryset = Stone.objects.select_related(
+        "order", "order__customer", "stone_type", "stone_type__category"
+    ).prefetch_related("reports")
     serializer_class = StoneSerializer
 
-    search_fields = ("label", "order__reference_number", "stone_type__name")
+    search_fields = STONE_SEARCH_FIELDS
     filter_fields = ("order", "stone_type", "status", "weight_unit")
     ordering_fields = ("id", "label", "status", "weight", "created_at")
 
     action_permissions = {"transition": ["orders.transition_stone"]}
+
+    def perform_update(self, serializer):
+        """Delegate to the service, so every stone write goes through one door.
+
+        ``StoneSerializer``'s writable fields are exactly the service's
+        keywords; adding a writable field there means adding it here too.
+        """
+        serializer.instance = update_stone(
+            serializer.instance, user=self.request.user, **serializer.validated_data
+        )
+
+    def perform_destroy(self, instance):
+        """Refuse to delete a stone a bill was priced from.
+
+        Deletion goes through ``SoftDeleteViewSetMixin`` rather than the
+        service, so the guard is repeated here - there is no single door for
+        this one. Reuses the retypeable check because it asks the same question:
+        has a bill been raised against this stone yet.
+        """
+        assert_stone_retypeable(instance)
+        super().perform_destroy(instance)
 
     @extend_schema(request=TransitionSerializer, responses=StoneSerializer)
     @action(detail=True, methods=["post"])

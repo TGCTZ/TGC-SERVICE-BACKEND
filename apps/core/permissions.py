@@ -1,8 +1,6 @@
-"""Permission classes and helpers."""
+"""Permission classes."""
 
 from rest_framework.permissions import DjangoModelPermissions
-
-from django.core.exceptions import PermissionDenied
 
 
 class StrictModelPermissions(DjangoModelPermissions):
@@ -62,21 +60,3 @@ class ActionPermissions(StrictModelPermissions):
         ):
             return False
         return request.user.has_perms(required)
-
-
-def require_permission(user, perm: str) -> None:
-    """Assert that ``user`` holds ``perm``, raising ``PermissionDenied`` if not.
-
-    Callable from any layer, including management commands and webhooks.
-
-    Args:
-        user: The acting user, or None for a trusted system call.
-        perm: A permission label such as ``"gems.change_stonetype"``.
-
-    Raises:
-        PermissionDenied: If the user is present and lacks the permission.
-    """
-    if user is None:
-        return
-    if not user.has_perm(perm):
-        raise PermissionDenied(f"Missing permission: {perm}")

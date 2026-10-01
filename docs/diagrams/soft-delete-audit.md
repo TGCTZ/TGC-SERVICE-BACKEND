@@ -92,8 +92,8 @@ flowchart TD
 ```
 
 Every natural key in the project uses the partial form — `name` on
-`ReferenceModel`, plus `reference_number`, `bill_number`, `trx_id` and the
-certificate's number and token. A plain
+`ReferenceModel`, plus `reference_number`, `bill_number`, `trx_id` and
+`certificate_number`. A plain
 `unique=True` on a soft-deletable model is a bug waiting to be filed as "cannot
 create, says it already exists, but I deleted it".
 

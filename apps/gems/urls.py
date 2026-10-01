@@ -10,11 +10,13 @@ from .views import (
     OriginViewSet,
     ShapeCutViewSet,
     SpeciesViewSet,
+    StoneCategoryViewSet,
     StoneTypeViewSet,
     VarietyViewSet,
 )
 
 router = DefaultRouter()
+router.register("stone-categories", StoneCategoryViewSet, basename="stonecategory")
 router.register("stone-types", StoneTypeViewSet, basename="stonetype")
 router.register("species", SpeciesViewSet, basename="species")
 router.register("varieties", VarietyViewSet, basename="variety")

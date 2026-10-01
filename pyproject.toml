@@ -15,10 +15,13 @@ dependencies = [
     "djangorestframework-simplejwt>=5.5.1",
     "drf-spectacular>=0.30.0",
     "openpyxl>=3.1.5",
+    "gunicorn>=26.2.0",
     "pillow>=12.3.0",
     "psycopg[binary]>=3.3.5",
     "reportlab>=5.0.1",
+    "qrcode>=8.0",
     "requests>=2.32",
+    "weasyprint>=66",
 ]
 
 [dependency-groups]
@@ -79,6 +82,7 @@ ignore = [
 # requirement (convention 6) does not apply to them.
 "apps/core/models/gates.py" = ["DJ008"]
 "apps/audit/models.py" = ["DJ008"]
+"apps/analytics/models.py" = ["DJ008"]
 "**/commands/seed.py" = ["S311", "S106"]
 
 [tool.ruff.lint.pydocstyle]

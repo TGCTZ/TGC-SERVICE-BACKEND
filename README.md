@@ -2,17 +2,21 @@
 
 The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
-A customer brings stones in; they are registered and typed, billed through the
-GePG government payment gateway, identified by a gemmologist once the bill is
-settled, and finally certified with a publicly verifiable certificate.
+A customer brings stones in; a gemmologist identifies each one's type, which
+prices it; the order is billed through the GePG government payment gateway;
+once settled the gemmologist records the findings; and the stone is
+finally certified with a printable PDF certificate.
 
 ```
-received -> billed -> paid -> findings -> finalized -> certified
+received -> under identification -> billed -> paid -> certified
+         -> ready for collection -> collected
 ```
 
-Each arrow is a service with its own guard, and each stage has a worklist that
-is the queue someone actually works from. The React client lives alongside this
-repository in `TGC-SERVICE-FRONTEND`.
+Identification comes *before* billing, because typing the stone is what
+determines the fee. Each arrow is a service with its own guard, and each stage
+has a worklist that is the queue someone actually works from.
+
+The React client lives alongside this one, in [`../frontend`](../frontend/README.md).
 
 ## Stack
 
@@ -29,6 +33,15 @@ repository in `TGC-SERVICE-FRONTEND`.
 | Quality | `ruff` (lint + format + import sort), `pre-commit` |
 
 ## Quick start
+
+Certificate PDFs are rendered by WeasyPrint, which needs system libraries
+present **before** `uv sync` — a missing one raises `OSError` at import time and
+takes the whole app down, not just the PDF endpoint. On Debian/Ubuntu:
+
+```bash
+sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+  libcairo2 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+```
 
 ```bash
 uv sync
@@ -52,8 +65,16 @@ Health probes sit outside the versioned API, so they survive a version bump:
 | `GET /api/health/` | Liveness. Touches nothing external; 200 while the process runs. |
 | `GET /api/health/ready/` | Readiness. Checks the database and pending migrations; 503 if either fails. |
 
-Demo accounts are `<role>@tgc.com` with the password printed by `seed`, for each
-of `superadmin`, `administrator`, `receptionist`, `gemmologist` and `accountant`.
+Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
+of `superadmin`, `admin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
+For the dashboard's management statistics to have trends to show, seed a fresh
+database with history instead:
+`uv run python manage.py seed --orders 150 --history-months 12`.
+
+Outside the demo data, accounts are created from the Users screen by an email and
+a role - there is no sign-up. New users get a temporary password by email and
+must set their own and complete their profile on first sign-in; see
+[Accounts and first login](docs/engineering/accounts.md).
 
 ## Everyday commands
 
@@ -75,13 +96,18 @@ how it is built.
 | Document | What it covers |
 |---|---|
 | [Business workflow](docs/domain/business-workflow.md) | The stone's journey: stages, roles, status lifecycle |
-| [Domain questions](docs/domain/domain-questions.md) | Business decisions — settled, and still open |
+| [Business decisions](docs/domain/decisions.md) | The rules behind the workflow - settled, provisional, still open |
 | [Project structure](docs/engineering/project-structure.md) | Every app and layer, and what belongs in each |
 | [Diagrams](docs/diagrams/README.md) | Request flows, drawn — start here if you prefer pictures |
 | [API lifecycle](docs/engineering/api-lifecycle.md) | A request traced from URL to response |
 | [Testing the API](docs/engineering/testing-the-api.md) | Swagger, `api.http`, the query contract, the test suite |
-| [Permissions](docs/engineering/permissions.md) | Roles, permissions, module gates, workflow verbs |
+| [Permissions](docs/engineering/permissions.md) | Roles, the hierarchy, permissions, module gates, workflow verbs |
+| [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, the credentials email, first login, password resets |
 | [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
+| [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
+| [Management statistics](docs/engineering/analytics.md) | The dashboard's figures: what each counts, periods, currencies |
+| [Reference data](docs/domain/reference-data.md) | The lookup lists, and Tanzania's regions |
+| [Operations](docs/engineering/operations.md) | Configuration, email, and what to run after a deploy |
 | [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
 | [Adding an app](docs/engineering/adding-an-app.md) | The shape every domain app follows |
 | [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |
@@ -94,11 +120,13 @@ apps/
   core/            L1 - base models, managers, shared DRF machinery
   users/           L2 - custom user, authentication, RBAC
   audit/           L2 - activity-log and system-log read APIs
+  notifications/   L2 - per-user in-app notifications
   gems/            L2 - domain enums and the stone reference tables
   orders/          L3 - customers, orders, stones, status trail
   billing/         L4 - bills, payments, the GePG gateway
-  identification/  L4 - gemmological findings
-  certificates/    L5 - certificates and public verification
+  identification/  L4 - full gemmological identification
+  certificates/    L5 - certificates and their PDF documents
+  analytics/       L6 - management statistics over all of the above
 docs/              engineering, domain and GePG documentation
 api.http           a runnable request collection for the whole pipeline
 ```

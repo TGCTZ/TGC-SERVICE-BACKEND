@@ -4,7 +4,8 @@ from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
 
-from .models import Certificate, CertificateAccessLog
+from .models import Certificate
+from .selectors import instrument_checklist
 
 
 class CertificateSerializer(AuditFieldsMixin):
@@ -17,8 +18,14 @@ class CertificateSerializer(AuditFieldsMixin):
     customer_name = serializers.CharField(
         source="stone.order.customer.full_name", read_only=True
     )
+    customer_phone = serializers.CharField(
+        source="stone.order.customer.phone", read_only=True
+    )
     report_number = serializers.CharField(source="report.report_number", read_only=True)
     issued_by_label = serializers.SerializerMethodField()
+    # The lab's full instrument list with this certificate's ticks - the same
+    # list the PDF prints, so the view dialog and the document agree.
+    instrument_checklist = serializers.SerializerMethodField()
 
     class Meta:
         model = Certificate
@@ -28,17 +35,31 @@ class CertificateSerializer(AuditFieldsMixin):
             "stone_label",
             "order_reference",
             "customer_name",
+            "customer_phone",
             "report",
             "report_number",
             "certificate_number",
-            "verification_token",
             "stone_type_snapshot",
             "weight_snapshot",
+            "weight_unit_snapshot",
             "color_snapshot",
             "origin_snapshot",
+            "species_snapshot",
+            "variety_snapshot",
+            "shape_cut_snapshot",
+            "transparency_snapshot",
+            "optic_character_snapshot",
+            "treatment_snapshot",
+            "nature_type_snapshot",
+            "refractive_index_snapshot",
+            "specific_gravity_snapshot",
+            "comments_snapshot",
+            "instruments_snapshot",
+            "instrument_checklist",
+            "report_number_snapshot",
+            "photo_snapshot",
             "gemmologist",
-            "qr_code",
-            "pdf_file",
+            "gemmologist_two",
             "status",
             "issued_by",
             "issued_by_label",
@@ -46,54 +67,17 @@ class CertificateSerializer(AuditFieldsMixin):
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         # Everything but the stone is written by the issuing service: the number,
-        # the token, the snapshots and the status all have to be minted together
-        # or the document does not mean anything.
+        # the snapshots and the status all have to be minted together or the
+        # document does not mean anything.
         read_only_fields = tuple(f for f in fields if f != "stone")
+
+    def get_instrument_checklist(self, obj) -> list[dict]:
+        """Every active instrument, ticked where this certificate used it."""
+        return instrument_checklist(obj)
 
     def get_issued_by_label(self, obj) -> str | None:
         """Who issued it, or None if unattributed."""
         return str(obj.issued_by) if obj.issued_by_id else None
-
-
-class PublicCertificateSerializer(serializers.ModelSerializer):
-    """What an anonymous verifier is allowed to see.
-
-    Deliberately narrow. The point of the public endpoint is to answer "is this
-    document genuine, and does it still stand" - not to expose the customer, the
-    order, or the audit trail to anyone holding a token.
-    """
-
-    is_valid = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Certificate
-        fields = (
-            "certificate_number",
-            "status",
-            "is_valid",
-            "issued_at",
-            "stone_type_snapshot",
-            "weight_snapshot",
-            "color_snapshot",
-            "origin_snapshot",
-            "gemmologist",
-        )
-        read_only_fields = fields
-
-    def get_is_valid(self, obj) -> bool:
-        """A revoked certificate resolves, but does not stand."""
-        from apps.gems.enums import CertificateStatus
-
-        return obj.status != CertificateStatus.REVOKED
-
-
-class CertificateAccessLogSerializer(serializers.ModelSerializer):
-    """One public verification hit."""
-
-    class Meta:
-        model = CertificateAccessLog
-        fields = ("id", "certificate", "accessed_at", "ip_address", "user_agent")
-        read_only_fields = fields
 
 
 class IssueCertificateSerializer(serializers.Serializer):

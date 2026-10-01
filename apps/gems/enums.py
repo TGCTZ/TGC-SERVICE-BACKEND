@@ -1,11 +1,11 @@
 """Every enum the TGC domain uses.
 
 They live together at L2, below the apps that own the corresponding tables,
-because several of them are read across app boundaries: the findings worklist in
-``identification`` filters on ``BillStatus.PAID``, and the certification worklist
-does the same. Keeping the enums here lets those apps sit at the same layer
-without importing one another - the join itself (``order__bill__status``) is a
-plain ORM traversal that needs no import.
+because several of them are read across app boundaries: the findings
+worklist in ``identification`` filters on ``BillStatus.PAID``, and the
+certification worklist does the same. Keeping the enums here lets those apps sit
+at the same layer without importing one another - the join itself
+(``order__bill__status``) is a plain ORM traversal that needs no import.
 """
 
 from django.db import models
@@ -29,14 +29,6 @@ class StoneStatus(models.TextChoices):
     COLLECTED = ("collected", "Collected")
     ON_HOLD = ("on_hold", "On hold")
     CANCELLED = ("cancelled", "Cancelled")
-
-
-class StoneCategory(models.TextChoices):
-    """Stone classification; drives pricing tiers."""
-
-    PRECIOUS = ("precious", "Precious")
-    SEMI_PRECIOUS = ("semi_precious", "Semi-precious")
-    DIAMOND = ("diamond", "Diamond")
 
 
 class ColorGroup(models.TextChoices):
@@ -121,6 +113,46 @@ class BillStatus(models.TextChoices):
     EXPIRED = ("expired", "Expired")
 
 
+class OrderHold(models.TextChoices):
+    """A decision made about a whole order, rather than about its stones.
+
+    The one piece of an order's state that cannot be derived from its stones and
+    its bill: "the customer asked us to pause" and "the customer withdrew" are
+    facts about the visit, not about any stone. Everything else an order's stage
+    can say is a function of what its stones have done, and stays derived.
+    """
+
+    ACTIVE = ("active", "Active")
+    ON_HOLD = ("on_hold", "On hold")
+    CANCELLED = ("cancelled", "Cancelled")
+
+
+class OrderStage(models.TextChoices):
+    """Where a whole order has got to, derived rather than stored.
+
+    An order carries no status column, deliberately: progress is per-stone, and
+    two stones from one visit can sit at different stages. But a list of orders
+    still has to answer "where is this one?", and the honest summary is the
+    stage its *least advanced* stone has reached - an order is not ready to
+    collect while one of its stones is still on the bench.
+
+    Derived by :func:`apps.orders.selectors.order_stage`, so nothing can drift
+    out of step with the stone statuses and bill it is computed from.
+    """
+
+    IDENTIFYING = ("identifying", "Awaiting identification")
+    READY_TO_BILL = ("ready_to_bill", "Ready to bill")
+    AWAITING_PAYMENT = ("awaiting_payment", "Awaiting payment")
+    PART_PAID = ("part_paid", "Partly paid")
+    IN_FINDINGS = ("in_findings", "Findings in progress")
+    CERTIFIED = ("certified", "Certified")
+    READY_FOR_COLLECTION = ("ready_for_collection", "Ready for collection")
+    COLLECTED = ("collected", "Collected")
+    ON_HOLD = ("on_hold", "On hold")
+    CANCELLED = ("cancelled", "Cancelled")
+    EMPTY = ("empty", "No stones yet")
+
+
 class CertificateStatus(models.TextChoices):
     """Validity state of a certificate.
 
@@ -130,3 +162,49 @@ class CertificateStatus(models.TextChoices):
     ISSUED = ("issued", "Issued")
     REVOKED = ("revoked", "Revoked")
     REISSUED = ("reissued", "Reissued")
+
+
+class Region(models.TextChoices):
+    """Tanzania's administrative regions (mikoa) - where a customer is from.
+
+    All 31: the 26 on the mainland, then the 5 in Zanzibar, each alphabetical.
+    Checked against the official list in September 2026; the newest is Songwe,
+    split from Mbeya in 2016. Labels are the official Swahili names - Pwani, not
+    Coast; Kaskazini Pemba, not Pemba North - and the English names that people
+    also type are matched by :func:`apps.gems.regions.normalize_region`.
+
+    Mirrored for the dropdowns in the frontend's ``src/lib/regions.ts``.
+    """
+
+    ARUSHA = ("arusha", "Arusha")
+    DAR_ES_SALAAM = ("dar_es_salaam", "Dar es Salaam")
+    DODOMA = ("dodoma", "Dodoma")
+    GEITA = ("geita", "Geita")
+    IRINGA = ("iringa", "Iringa")
+    KAGERA = ("kagera", "Kagera")
+    KATAVI = ("katavi", "Katavi")
+    KIGOMA = ("kigoma", "Kigoma")
+    KILIMANJARO = ("kilimanjaro", "Kilimanjaro")
+    LINDI = ("lindi", "Lindi")
+    MANYARA = ("manyara", "Manyara")
+    MARA = ("mara", "Mara")
+    MBEYA = ("mbeya", "Mbeya")
+    MOROGORO = ("morogoro", "Morogoro")
+    MTWARA = ("mtwara", "Mtwara")
+    MWANZA = ("mwanza", "Mwanza")
+    NJOMBE = ("njombe", "Njombe")
+    PWANI = ("pwani", "Pwani")
+    RUKWA = ("rukwa", "Rukwa")
+    RUVUMA = ("ruvuma", "Ruvuma")
+    SHINYANGA = ("shinyanga", "Shinyanga")
+    SIMIYU = ("simiyu", "Simiyu")
+    SINGIDA = ("singida", "Singida")
+    SONGWE = ("songwe", "Songwe")
+    TABORA = ("tabora", "Tabora")
+    TANGA = ("tanga", "Tanga")
+    # Zanzibar
+    KASKAZINI_PEMBA = ("kaskazini_pemba", "Kaskazini Pemba")
+    KASKAZINI_UNGUJA = ("kaskazini_unguja", "Kaskazini Unguja")
+    KUSINI_PEMBA = ("kusini_pemba", "Kusini Pemba")
+    KUSINI_UNGUJA = ("kusini_unguja", "Kusini Unguja")
+    MJINI_MAGHARIBI = ("mjini_magharibi", "Mjini Magharibi")

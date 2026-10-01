@@ -107,6 +107,38 @@ unfiltered data — worth knowing when debugging "why is this returning everythi
 Values are coerced: `true`/`false`/`1`/`0`/`yes`/`no` become booleans, and
 `null`/`none` become an `IS NULL` lookup.
 
+### Params that deliberately sit outside `filter[...]`
+
+A viewset may read a **bare** query param in its own `get_queryset`, and the
+orders endpoint reads two:
+
+```
+GET /orders/?identification=pending|complete
+GET /orders/?stage=awaiting_payment
+```
+
+Neither is an oversight. `filter[field]` is a *field lookup* the whitelist
+validates against `filter_fields`, and this predicate compares two columns —
+`Count(stones)` against `stone_count` — which no field lookup can express.
+Routing it through `filter[...]` would make the whitelist a liar about what it
+checks. The predicate itself lives in `apps/orders/selectors.py` alongside the
+worklist that shares it, so the screen and the queue cannot drift.
+
+`?stage=` is the same situation, one step further. An order's stage is
+**derived** from its stones and its bill rather than stored (see
+[business-workflow.md](../domain/business-workflow.md)), so there is no column
+to filter on at all. `orders_at_stage()` re-expresses the derivation as SQL with
+`Exists`/`OuterRef`, and a test asserts it agrees with the Python version across
+every stage — which is what makes keeping the value derived affordable.
+
+The two **combine** — `?stage=on_hold&identification=complete` means both. A
+hold or a cancellation outranks identification in the derivation, so a stage
+filter on its own can still return orders with stones left to type; the
+Identification screen, which lists only finished identification, relies on
+sending both.
+
+Like every other unknown parameter, an unrecognised value is ignored.
+
 ## Ordering
 
 ```mermaid

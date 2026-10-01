@@ -1,5 +1,5 @@
 """Certificate domain models."""
 
-from .certificate import Certificate, CertificateAccessLog
+from .certificate import Certificate
 
-__all__ = ["Certificate", "CertificateAccessLog"]
+__all__ = ["Certificate"]

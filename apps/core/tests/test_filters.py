@@ -2,10 +2,10 @@
 
 import pytest
 
-from apps.gems.enums import StoneCategory
 from apps.gems.models import StoneType
 from apps.gems.tests.factories import (
     SpeciesFactory,
+    StoneCategoryFactory,
     StoneTypeFactory,
     VarietyFactory,
 )
@@ -14,27 +14,21 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def stone_types(db):
-    """Three stone types with predictable names, prices and categories."""
+def tiers(db):
+    """Two pricing tiers, so a category filter has something to group by."""
+    return {
+        "precious": StoneCategoryFactory(name="Precious", price=100),
+        "semi": StoneCategoryFactory(name="Semi-precious", price=300),
+    }
+
+
+@pytest.fixture
+def stone_types(tiers):
+    """Three stone types with predictable names, across two tiers."""
     return [
-        StoneTypeFactory(
-            name="Alpha Ruby",
-            price=100,
-            category=StoneCategory.PRECIOUS,
-            is_active=True,
-        ),
-        StoneTypeFactory(
-            name="Beta Ruby",
-            price=300,
-            category=StoneCategory.SEMI_PRECIOUS,
-            is_active=False,
-        ),
-        StoneTypeFactory(
-            name="Gamma Garnet",
-            price=200,
-            category=StoneCategory.SEMI_PRECIOUS,
-            is_active=False,
-        ),
+        StoneTypeFactory(name="Alpha Ruby", category=tiers["precious"], is_active=True),
+        StoneTypeFactory(name="Beta Ruby", category=tiers["semi"], is_active=False),
+        StoneTypeFactory(name="Gamma Garnet", category=tiers["semi"], is_active=False),
     ]
 
 
@@ -57,11 +51,11 @@ def test_ordering_respects_the_whitelist(stone_types, admin_user, auth_client):
     """A whitelisted ordering is applied; an unknown one is ignored."""
     client = auth_client(admin_user)
 
-    ascending = [row["name"] for row in _get(client, params="?ordering=price")]
-    assert ascending == ["Alpha Ruby", "Gamma Garnet", "Beta Ruby"]
+    ascending = [row["name"] for row in _get(client, params="?ordering=name")]
+    assert ascending == ["Alpha Ruby", "Beta Ruby", "Gamma Garnet"]
 
-    descending = [row["name"] for row in _get(client, params="?ordering=-price")]
-    assert descending == ["Beta Ruby", "Gamma Garnet", "Alpha Ruby"]
+    descending = [row["name"] for row in _get(client, params="?ordering=-name")]
+    assert descending == ["Gamma Garnet", "Beta Ruby", "Alpha Ruby"]
 
 
 def test_ordering_by_a_non_whitelisted_field_is_ignored(
@@ -74,18 +68,16 @@ def test_ordering_by_a_non_whitelisted_field_is_ignored(
     assert len(results) == 3
 
 
-def test_filter_exact_and_in(stone_types, admin_user, auth_client):
+def test_filter_exact_and_in(tiers, stone_types, admin_user, auth_client):
     """filter[field] does exact match; a comma-separated value does IN."""
     client = auth_client(admin_user)
 
-    single = _get(client, params=f"?filter[category]={StoneCategory.SEMI_PRECIOUS}")
+    single = _get(client, params=f"?filter[category]={tiers['semi'].pk}")
     assert len(single) == 2
 
     both = _get(
         client,
-        params=(
-            f"?filter[category]={StoneCategory.PRECIOUS},{StoneCategory.SEMI_PRECIOUS}"
-        ),
+        params=f"?filter[category]={tiers['precious'].pk},{tiers['semi'].pk}",
     )
     assert len(both) == 3
 

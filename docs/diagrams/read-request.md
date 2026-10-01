@@ -66,5 +66,5 @@ joins compose with whatever the filter added.
 
 Without them, serialising one page of 15 stones would issue dozens of queries
 instead of a handful. `test_listing_stones_does_not_n_plus_one` asserts a
-ceiling of 12 queries, so a regression fails the suite rather than quietly
+ceiling of 10 queries, so a regression fails the suite rather than quietly
 slowing production.

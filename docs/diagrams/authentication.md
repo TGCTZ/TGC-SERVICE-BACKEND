@@ -57,6 +57,51 @@ The response embeds the serialised user **and their permission list**, which
 saves the client an immediate follow-up call to `/auth/me/` just to render a
 name and decide which nav items to show.
 
+There is no self-registration: every account is created by a superadmin, admin
+or manager - see [Accounts and first login](../engineering/accounts.md).
+
+## First login
+
+An account created from the Users screen carries `must_change_password` and
+`must_complete_profile`. It can sign in with the emailed temporary password, but
+until both flags are cleared `OnboardingJWTAuthentication` refuses every endpoint
+outside a short allowlist:
+
+```mermaid
+flowchart TD
+    REQ(["authenticated request"]) --> FLAGS{"must_change_password<br/>or must_complete_profile?"}
+    FLAGS -->|no| NORMAL["normal permission checks"]
+    FLAGS -->|yes| ALLOWED{"URL name in<br/>FIRST_LOGIN_ALLOWED<br/>for this method?"}
+    ALLOWED -->|yes| NORMAL
+    ALLOWED -->|no| E403(["403<br/>code: first_login_required"])
+
+    style REQ stroke:#4d90d9,stroke-width:2px
+    style FLAGS stroke:#d99a2b,stroke-width:2px
+    style NORMAL stroke:#3fa860,stroke-width:2px
+    style E403 stroke:#d9534f,stroke-width:2px
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant P as FirstLoginPasswordView
+    participant R as FirstLoginProfileView
+    participant S as accounts service
+
+    C->>P: POST /auth/first-login/password/ {password, password_confirm}
+    P->>S: complete_first_login_password()
+    Note over S: refuses the temporary password,<br/>clears must_change_password,<br/>revokes every older token
+    S-->>C: 200 new access + refresh, user
+    C->>R: POST /auth/first-login/profile/ {first_name, last_name, phone_number, gender}
+    R->>S: complete_first_login_profile()
+    Note over S: refuses while the password step is due,<br/>clears must_complete_profile
+    S-->>C: 200 user - the rest of the API opens
+```
+
+The password step returns a fresh token pair because revoking every older token
+also revokes the one the request came in on.
+
 ## Refresh with rotation
 
 ```mermaid

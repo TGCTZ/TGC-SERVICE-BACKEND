@@ -20,8 +20,8 @@ decides what it may import, and that decision is hard to undo later.
 | L2 | `apps.gems` | Every domain enum, and the stone reference tables |
 | L3 | `apps.orders` | Customers, orders, stones, status trail |
 | L4 | `apps.billing` | Bills, payments, the GePG gateway |
-| L4 | `apps.identification` | Gemmological findings |
-| L5 | `apps.certificates` | Certificates and public verification |
+| L4 | `apps.identification` | Full gemmological identification |
+| L5 | `apps.certificates` | Certificates and their PDF documents |
 
 **If two apps at the same layer need each other, something is in the wrong
 place.** `identification` gates findings on the bill being paid without importing
@@ -53,7 +53,7 @@ Everything inherits `BaseModel` - soft delete, audit columns, auditlog
 registration, all free. `ReferenceModel` for a lookup table.
 
 Two exceptions are allowed, and both must justify themselves in the docstring:
-an **append-only ledger** (`StatusHistory`, `CertificateAccessLog`) is a plain
+an **append-only ledger** (`StatusHistory`) is a plain
 `models.Model`, because a soft-deletable audit trail is a contradiction and
 logging the log is circular.
 
@@ -70,10 +70,16 @@ models.UniqueConstraint(
 Reference numbers come from `apps/core/services.py`:
 
 ```python
-generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2026-0001
+generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2627-00001
 ```
 
 It scans `all_objects`, so a soft-deleted number is never reissued.
+
+Every reference takes this one shape, identification report numbers included
+(`TGC-2627-00765`). The year pair is the **financial** year — July to June, each
+year written as two digits and answered by `financial_year()`. The sequence
+restarts with it. See
+[certificates.md](certificates.md).
 
 ## 4. Services
 

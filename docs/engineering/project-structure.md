@@ -65,6 +65,8 @@ layer. The rule is one line long and worth enforcing in review:
 | L4 | `apps.identification` | Gemmological findings recorded against a stone. |
 | L5 | `apps.certificates` | Certificates and their public verification. |
 | L6 | `apps.reports` | Read-only financial and operational reports and exports. |
+| L4 | `apps.identification` | Full gemmological identification, per stone. |
+| L5 | `apps.certificates` | Certificates and their PDF documents. |
 
 `apps.billing` and `apps.identification` sit at the same layer and must not
 import one another. Where one needs the other's state - the findings queue is

@@ -1,25 +1,33 @@
 """API views for the billing domain."""
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.conf import settings
+from django.http import Http404
+
+from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 from apps.orders.models import Order
+from apps.orders.search import ORDER_SEARCH_FIELDS
 from apps.orders.serializers import OrderSerializer
 
+from .dev import simulate_payment
 from .models import Bill, BillItem, Payment, ServiceProvider
 from .selectors import billing_worklist
 from .serializers import (
     BillItemSerializer,
+    BillPreviewSerializer,
     BillSerializer,
     GenerateBillSerializer,
     PaymentSerializer,
     ServiceProviderSerializer,
+    SimulatePaymentSerializer,
 )
-from .services import generate_bill_for_order
+from .services import generate_bill_for_order, preview_bill_for_order
 
 
 class ServiceProviderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
@@ -62,6 +70,9 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
 
     action_permissions = {
         "generate": ["billing.generate_bill"],
+        "preview": ["billing.generate_bill"],
+        # Simulating a settlement is the same authority as raising the bill.
+        "simulate_payment": ["billing.generate_bill"],
         "worklist": ["billing.generate_bill"],
     }
 
@@ -85,11 +96,60 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(self.get_serializer(bill).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=SimulatePaymentSerializer, responses=BillSerializer)
+    @action(detail=True, methods=["post"], url_path="simulate-payment")
+    def simulate_payment(self, request, pk=None):
+        """Pay this bill with a fabricated GePG notification. Development only.
+
+        Answers **404** rather than 403 when simulation is off, so the route does
+        not advertise its own existence on a deployment that must never have it.
+        Both flags are required: ``DEBUG`` alone is not enough, because a staging
+        box pointed at the real gateway would then be able to forge settlements.
+
+        The payload goes through the same handler the live webhook calls, so this
+        exercises the real path - parse, record, settle, transition - rather than
+        writing a paid bill directly.
+        """
+        if not (settings.DEBUG and getattr(settings, "GEPG_SIMULATE", False)):
+            raise Http404
+
+        payload = SimulatePaymentSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        bill = simulate_payment(self.get_object(), payload.validated_data.get("amount"))
+        return Response(self.get_serializer(bill).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("order", int, description="Order to price.", required=True)
+        ],
+        responses=BillPreviewSerializer,
+    )
+    @action(detail=False, methods=["get"])
+    def preview(self, request):
+        """What billing this order would charge, without creating anything.
+
+        Its own endpoint rather than letting the client price the stones: the
+        fee is per stone *category*, so a UI reading ``stone_type.price`` would
+        show a total the bill then disagrees with.
+        """
+        order = Order.objects.filter(pk=request.query_params.get("order")).first()
+        if order is None:
+            return Response(
+                {"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(BillPreviewSerializer(preview_bill_for_order(order)).data)
+
     @extend_schema(responses=OrderSerializer)
     @action(detail=False, methods=["get"])
     def worklist(self, request):
-        """Orders with every stone registered and no bill yet."""
-        queryset = billing_worklist()
+        """Orders with every stone identified and no bill yet."""
+        # Searched explicitly rather than via `filter_queryset`: this action
+        # returns Orders, so the ViewSet's Bill `search_fields` do not apply.
+        queryset = search_queryset(
+            billing_worklist(), request.query_params.get("search"), ORDER_SEARCH_FIELDS
+        )
         page = self.paginate_queryset(queryset)
         serializer = OrderSerializer(
             page, many=True, context=self.get_serializer_context()

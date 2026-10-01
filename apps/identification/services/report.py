@@ -5,7 +5,10 @@ from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
 from apps.core.services import generate_reference_number
-from apps.gems.enums import BillStatus
+from apps.gems.enums import BillStatus, StoneStatus
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify_subscribers
+from apps.orders.services import update_stone
 
 from ..models import IdentificationReport
 
@@ -23,27 +26,67 @@ def _assert_payment_settled(stone) -> None:
     """
     bill = getattr(stone.order, "bill", None)
     if bill is None or bill.status != BillStatus.PAID:
-        raise ServiceError("The bill must be paid before recording findings.")
+        raise ServiceError("The bill must be paid before recording the findings.")
+
+
+# Weight is a finding, but it lives on the Stone: the certificate snapshots the
+# stone, and two places to record one number is one place to disagree. The
+# findings form carries it and hands it straight on, inside this transaction.
+#
+# No permission check accompanies it, unlike the nested customer write on orders.
+# That one creates a row of another model, which is a real route around
+# ``orders.add_customer``; this writes one column of the stone the report is
+# already about, and that column is a finding this endpoint exists to record.
+_STONE_FIELDS = ("weight", "weight_unit")
+
+
+def _pop_stone_fields(fields: dict) -> dict:
+    """Split off the submitted fields that belong to the stone, not the report."""
+    return {name: fields.pop(name) for name in _STONE_FIELDS if name in fields}
+
+
+def _assert_not_already_reported(stone) -> None:
+    """Refuse a second live report for a stone.
+
+    The constraint behind this is conditional - one report per stone *among
+    those not discarded* - so the database would answer with an IntegrityError
+    and a generic 400. Checked here so the caller is told which stone and what
+    to do instead, which is to open the report the stone already has.
+    """
+    if IdentificationReport.objects.filter(stone=stone).exists():
+        raise ServiceError(
+            f"Stone {stone.label} already has a report. Edit that one instead."
+        )
 
 
 @transaction.atomic
 def create_report(*, stone, user=None, **fields) -> IdentificationReport:
     """Create an identification report for a stone.
 
-    Findings are recorded after payment, so the stone's status is deliberately
-    left alone - the pipeline moves it, not the report.
+    The findings are recorded after payment, so the stone's status is
+    deliberately left alone - the pipeline moves it, not the report.
 
     Args:
-        stone: The stone the findings belong to.
+        stone: The stone being identified.
         user: The gemmologist, recorded as the identifier.
-        **fields: Any report field - species, colour, refractive index and so on.
+        **fields: Any report field - species, colour, refractive index and so
+            on - plus ``weight``/``weight_unit``, which are applied to the stone.
+
+    Raises:
+        ServiceError: If the stone's bill is unsettled, or it already has a
+            report that has not been discarded.
     """
     _assert_payment_settled(stone)
+    _assert_not_already_reported(stone)
+    stone_fields = _pop_stone_fields(fields)
 
     report = IdentificationReport(
         stone=stone,
+        # TGC-<fy>-<seq> - printed on the certificate as
+        # REPORT NO, and the same shape as every other reference the system
+        # issues, so it survives a filename and a URL path segment intact.
         report_number=generate_reference_number(
-            IdentificationReport, "report_number", "RPT"
+            IdentificationReport, "report_number", "TGC"
         ),
         **fields,
     )
@@ -51,6 +94,9 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
         report.created_by = user
         report.identified_by = user
     report.save()
+
+    if stone_fields:
+        update_stone(stone, user=user, **stone_fields)
     return report
 
 
@@ -59,6 +105,12 @@ def update_report(
     report: IdentificationReport, *, user=None, **fields
 ) -> IdentificationReport:
     """Update a report's findings.
+
+    Args:
+        report: The report to update.
+        user: The acting gemmologist.
+        **fields: Any report field, plus ``weight``/``weight_unit``, which are
+            applied to the stone.
 
     Raises:
         ServiceError: If the report is finalized. This is the strongest guard in
@@ -69,27 +121,95 @@ def update_report(
     if report.is_finalized:
         raise ServiceError("A finalized report cannot be edited.")
     _assert_payment_settled(report.stone)
+    stone_fields = _pop_stone_fields(fields)
+
     for name, value in fields.items():
         setattr(report, name, value)
     if user is not None:
         report.updated_by = user
     report.save()
+
+    if stone_fields:
+        update_stone(report.stone, user=user, **stone_fields)
     return report
 
 
-def finalize_report(report: IdentificationReport, *, user=None) -> IdentificationReport:
-    """Lock a report against further edits.
+#: What a report must answer before it can be locked, as ``(accessor, label)``.
+#:
+#: Deliberately short. The form stays permissive so a sitting at the bench can be
+#: saved half-done, which means this is the only place completeness is ever
+#: checked - and a certificate quotes these four: what the stone is, what it
+#: looks like, how big it is, and the verdict. Everything else is situational; a
+#: stone may legitimately defeat a test and still deserve a certificate.
+#:
+#: ``weight`` is read through the stone, not the report: the form collects it
+#: alongside the findings but ``_pop_stone_fields`` writes it to the stone, which
+#: is also where :func:`apps.certificates.services.issue_certificate` looks.
+FINALIZE_REQUIRED_FIELDS = (
+    ("species", "species"),
+    ("color", "colour"),
+    ("stone.weight", "weight"),
+    ("conclusion", "conclusion"),
+)
+
+
+def _missing_for_finalize(report: IdentificationReport) -> list[str]:
+    """Labels of the required findings this report has not answered yet."""
+    missing = []
+    for accessor, label in FINALIZE_REQUIRED_FIELDS:
+        value = report
+        for part in accessor.split("."):
+            value = getattr(value, part, None)
+        # A blank CharField is "" and an unset FK or decimal is None; both mean
+        # unanswered, so falsiness is the right test for all four.
+        if not value:
+            missing.append(label)
+    return missing
+
+
+def finalize_report(
+    report: IdentificationReport, *, user=None, verified_by=None
+) -> IdentificationReport:
+    """Lock a report against further edits, naming both gemmologists.
 
     One-way: there is no un-finalize service. A mistake after this point is
     corrected by revoking the certificate, not by quietly rewriting the findings.
 
+    ``verified_by`` is the second signatory. Asked for here rather than while the
+    report is being written because it is a sign-off, not a finding - and this is
+    the moment the document stops being a draft. Optional at the service level so
+    a report can still be closed when only one gemmologist saw the stone; the
+    certificate then prints one name.
+
+    Args:
+        report: The report to lock.
+        user: The gemmologist finalizing it, recorded as the identifier.
+        verified_by: The second gemmologist, who checked the findings.
+
     Raises:
-        ServiceError: If the report is already finalized.
+        ServiceError: If the report is already finalized, if required findings
+            are still blank, or if the same person is named as both
+            gemmologists.
     """
     if report.is_finalized:
         raise ServiceError("Report is already finalized.")
+
+    # Every missing field at once, not the first one: a gemmologist away from the
+    # bench should learn everything still outstanding in a single round trip.
+    missing = _missing_for_finalize(report)
+    if missing:
+        raise ServiceError("Record the {} before finalizing.".format(", ".join(missing)))
+
+    # A second opinion from the same head is not a second opinion. Caught here
+    # rather than in the serializer because it is the rule the document's own
+    # "examined by at least two qualified Gemmologists" claim rests on.
+    if verified_by is not None and user is not None and verified_by.pk == user.pk:
+        raise ServiceError("The second gemmologist must be a different person.")
+
     report.is_finalized = True
     report.identified_at = timezone.now()
+    if verified_by is not None:
+        report.verified_by = verified_by
     if user is not None:
         report.identified_by = user
         report.updated_by = user
@@ -98,8 +218,34 @@ def finalize_report(report: IdentificationReport, *, user=None) -> Identificatio
             "is_finalized",
             "identified_at",
             "identified_by",
+            "verified_by",
             "updated_at",
             "updated_by",
         ]
     )
+    _notify_if_order_ready_for_certification(report.stone.order, user)
     return report
+
+
+def _notify_if_order_ready_for_certification(order, user) -> None:
+    """Tell the certifiers once every stone in the order has final findings.
+
+    Once per order rather than per report: a ten-stone order would otherwise
+    raise ten notifications for what the certifier treats as one batch.
+    Cancelled stones will never be certified, so they do not hold the order up.
+    """
+    finalized = IdentificationReport.objects.filter(is_finalized=True).values("stone_id")
+    outstanding = (
+        order.stones.exclude(status=StoneStatus.CANCELLED)
+        .exclude(pk__in=finalized)
+        .exists()
+    )
+    if outstanding:
+        return
+    notify_subscribers(
+        NotificationKind.READY_TO_CERTIFY,
+        title=f"Order {order.reference_number} is ready for certification",
+        body="Findings are finalized for every stone.",
+        link="/worklists/certification",
+        exclude=user,
+    )

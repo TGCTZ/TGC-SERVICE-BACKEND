@@ -1,25 +1,31 @@
-# GEPG Integration - Bill Submission
+# GePG Integration - Bill Submission
 
 ## Overview
 
-Bill submission is the process of creating and submitting bills to the GEPG (Government Electronic Payment Gateway) system. The TGC Mifumo system supports bill creation for two main services:
+Bill submission is how a bill gets a **control number**: the system builds a
+`billSubReq` XML document, optionally signs it, and posts it to GePG. The
+customer then pays that number at any bank or mobile wallet.
 
-1. **Identification Services** - Bills for gemstone identification
-2. **Production Shop Orders** - Bills for production shop services
+One bill covers one **order** — the customer's whole visit — with a line item
+per stone.
+
+> The XML contract below is accurate and is the reason this document exists.
+> The surrounding narrative was written against the system this one replaces, so
+> function names, model shapes and file paths in the code listings are
+> provenance rather than a map. Where behaviour differs, a note says so.
 
 ---
 
 ## Architecture
 
-### Flow Diagram
+```
+Bill request → generate_bill_for_order() → build_bill_xml() → sign (optional) → GePG
+                                                                                  ↓
+   Bill record ← control number ← _parse_bill_response() ← billSubRes ← GePG response
+```
 
-```
-User Request → Django View → Service Function → XML Generation → Digital Signature → GEPG API
-                                                                                        ↓
-Database ← Bill Record ← Response Parser ← XML Response ← GEPG API Response ← GEPG API
-    ↓
-SMS Service → Customer Notification
-```
+If GePG acknowledges without a number, it arrives later on the
+`/gepg/bill/response/` callback instead.
 
 ---
 
@@ -29,18 +35,18 @@ SMS Service → Customer Notification
 
 ```bash
 # Bill Submission Endpoint
-GEPG_BILL_CREATE_URL=http://154.118.230.202:80/api/bill/20/submission
+GEPG_BILL_CREATE_URL=https://<gepg-host>/api/bill/20/submission
 
 # Service Provider Configuration
-GEPG_SP_GRP_CODE=SP99631
-GEPG_SYS_CODE=LTGC002
-GEPG_SP_CODE=SP99631
+GEPG_SP_GRP_CODE=<SP_CODE>
+GEPG_SYS_CODE=<SYS_CODE>
+GEPG_SP_CODE=<SP_CODE>
 GEPG_SUB_SP_CODE=1001
-GEPG_COLL_CENT_CODE=CC1014000199631
-GEPG_GFS_CODE=142201660128
+GEPG_COLL_CENT_CODE=<COLL_CENT_CODE>
+GEPG_GFS_CODE=<GFS_CODE>
 
 # Security
-GEPG_USE_DIGITAL_SIGNATURE=True
+GEPG_USE_DIGITAL_SIGNATURE=False   # default; signing is opt-in
 GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 ```
 
@@ -48,86 +54,50 @@ GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 
 ## Implementation
 
-### Service Functions
+### The entry point
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py`
-
-#### 1. Identification Services Bill Creation
-
-**Function**: `create_external_bill_for_identification(item, request=None)`
-
-**Purpose**: Creates a bill for gemstone identification services
-
-**Parameters**:
-- `item`: ItemTB object containing identification details
-- `request`: Optional Django request object for user context
-
-**Returns**: Dictionary with:
-- `bill_id`: Unique bill identifier
-- `control_number`: GEPG control number for payment
-- `status_code`: GEPG response status code
-- `status_desc`: Status description
-- `raw_response`: Raw XML response from GEPG
-
-**Code Example**:
+There is **one** way a bill is created:
 
 ```python
-from billing_system_app.services import create_external_bill_for_identification
-from gemmology_app.models import ItemTB
+from apps.billing.services.bill import generate_bill_for_order
 
-# Get the identification item
-item = ItemTB.objects.get(id=96)
-
-# Create bill
-result = create_external_bill_for_identification(item, request)
-
-# Check result
-if result["status_code"] in ["7101", "7241"]:
-    print(f"Bill created: {result['bill_id']}")
-    print(f"Control Number: {result['control_number']}")
-else:
-    print(f"Error: {result['status_desc']}")
+bill = generate_bill_for_order(order, service_provider=None, user=request.user)
 ```
 
-**Key Features**:
-- Automatic bill ID generation: `BILL-S-NO-{order_no}-{item_id}`
-- Customer ID derived from item ID (zero-padded to 8 digits)
-- Phone number normalization to Tanzania format (255...)
-- XML special character escaping
-- Digital signature application
-- Automatic SMS notification on success
+Reached over HTTP as `POST /api/v1/bills/generate/` with `{"order": <id>}`,
+guarded by `billing.generate_bill`.
 
-#### 2. Production Shop Bill Creation
+To see what a bill *would* say before raising it:
+`GET /api/v1/bills/preview/?order=<id>`. This exists because the fee lives on
+the stone's **category**, so a caller holding only the stone types cannot work
+out the total itself.
 
-**Function**: `create_external_bill_for_production_shop(order, description, total_amount, request=None)`
+### What it does
 
-**Purpose**: Creates a bill for production shop orders
+1. Prices each stone from `stone.stone_type.category.price`, and **freezes** the
+   charge onto the line item — a later price change never alters a raised bill.
+2. Allocates `bill_number` as `BILL-YYYY-NNNN`, scanning soft-deleted rows so a
+   number is never reissued.
+3. Builds `billSubReq` and posts it.
+4. Stores the control number if one came back.
 
-**Parameters**:
-- `order`: Order object containing order details
-- `description`: Bill description
-- `total_amount`: Total bill amount
-- `request`: Optional Django request object
+Refusals are `ServiceError`: an order with no stones, an order already billed.
+Network failure is **not** an exception — the gateway call logs and returns a
+result dict with a `CONNECTION_ERROR` status, and the bill is left without a
+control number.
 
-**Returns**: Same dictionary structure as identification bills
-
-**Code Example**:
-
-```python
-from billing_system_app.services import create_external_bill_for_production_shop
-from production_shop_app.models import Order
-
-# Get the order
-order = Order.objects.get(order_no="ORD-2025-001")
-
-# Create bill
-result = create_external_bill_for_production_shop(
-    order=order,
-    description="Production Shop Services",
-    total_amount=150000.00,
-    request=request,
-)
-```
+> **Differences from the listings further down this document**
+>
+> | The listings say | Actually |
+> | --- | --- |
+> | Two entry points, one per service | One: `generate_bill_for_order()` |
+> | A "production shop" service exists | It does not; this system only identifies stones |
+> | Bill id is `BILL-S-NO-{order}-{item}` | `BILL-YYYY-NNNN`, one per order |
+> | Customer id derived from the item id | Derived from the customer's id |
+> | SMS is sent on success | No SMS exists anywhere |
+> | Store `control_number='PENDING'` | Never stored; the column stays empty |
+> | A duplicate returns the existing bill | It raises `ServiceError` |
+> | Network errors raise `ValueError` | They are returned, not raised |
 
 ---
 
@@ -140,19 +110,19 @@ result = create_external_bill_for_production_shop(
 <Gepg>
   <billSubReq>
     <BillHdr>
-      <ReqId>SP9963120250113061430</ReqId>
-      <SpGrpCode>SP99631</SpGrpCode>
-      <SysCode>LTGC002</SysCode>
+      <ReqId><SP_CODE>20250113061430</ReqId>
+      <SpGrpCode><SP_CODE></SpGrpCode>
+      <SysCode><SYS_CODE></SysCode>
       <BillTyp>1</BillTyp>
-      <PayTyp>2</PayTyp>
+      <PayTyp>1</PayTyp>
       <GrpBillId>BILL-S-NO-001-47</GrpBillId>
     </BillHdr>
     
     <BillDtls>
       <BillDtl>
         <BillId>BILL-S-NO-001-47</BillId>
-        <SpCode>SP99631</SpCode>
-        <CollCentCode>CC1014000199631</CollCentCode>
+        <SpCode><SP_CODE></SpCode>
+        <CollCentCode><COLL_CENT_CODE></CollCentCode>
         <BillDesc>Identification - Ruby</BillDesc>
         <CustTin>000000000</CustTin>
         <CustId>00000096</CustId>
@@ -180,12 +150,12 @@ result = create_external_bill_for_production_shop(
           <BillItem>
             <RefBillId>BILL-S-NO-001-47</RefBillId>
             <SubSpCode>1001</SubSpCode>
-            <GfsCode>142201660128</GfsCode>
+            <GfsCode><GFS_CODE></GfsCode>
             <BillItemRef>B1IT-96</BillItemRef>
             <UseItemRefOnPay>N</UseItemRefOnPay>
             <BillItemAmt>50000.00</BillItemAmt>
             <BillItemEqvAmt>50000.00</BillItemEqvAmt>
-            <CollSp>SP99631</CollSp>
+            <CollSp><SP_CODE></CollSp>
           </BillItem>
         </BillItems>
       </BillDtl>
@@ -204,7 +174,7 @@ result = create_external_bill_for_production_shop(
 <Gepg>
   <billSubReqAck>
     <AckId>ACK20250113061431</AckId>
-    <ReqId>SP9963120250113061430</ReqId>
+    <ReqId><SP_CODE>20250113061430</ReqId>
     <AckStsCode>7101</AckStsCode>
     <AckStsDesc>Successfully</AckStsDesc>
   </billSubReqAck>
@@ -212,7 +182,7 @@ result = create_external_bill_for_production_shop(
   <billSubRes>
     <BillHdr>
       <ResId>RES20250113061431</ResId>
-      <ReqId>SP9963120250113061430</ReqId>
+      <ReqId><SP_CODE>20250113061430</ReqId>
     </BillHdr>
     <BillDtls>
       <BillDtl>
@@ -234,7 +204,7 @@ result = create_external_bill_for_production_shop(
 <Gepg>
   <billSubReqAck>
     <AckId>ACK20250113061431</AckId>
-    <ReqId>SP9963120250113061430</ReqId>
+    <ReqId><SP_CODE>20250113061430</ReqId>
     <AckStsCode>7101</AckStsCode>
     <AckStsDesc>Successfully</AckStsDesc>
   </billSubReqAck>
@@ -253,7 +223,7 @@ result = create_external_bill_for_production_shop(
 1. Send bill submission request
 2. Receive immediate response with control number
 3. Create Bill record in database
-4. Send SMS notification to customer
+4. Notify the customer *(not implemented — see document 05)*
 5. Return success response
 
 ### Asynchronous Flow
@@ -263,7 +233,7 @@ result = create_external_bill_for_production_shop(
 3. Create Bill record with `control_number="PENDING"`
 4. Wait for callback with `billSubRes`
 5. Update Bill record with actual control number
-6. Send SMS notification to customer
+6. Notify the customer *(not implemented — see document 05)*
 
 **Code Implementation**:
 
@@ -313,45 +283,41 @@ if bill_hdr is None or bill_dtls is None:
 
 ## Database Models
 
-### Bill Model
+The real shapes are in
+[`apps/billing/models/bill.py`](../../apps/billing/models/bill.py). The columns
+that matter to submission:
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/models.py:17-44`
+### `Bill`
 
-```python
-class Bill(models.Model):
-    bill_id = models.CharField(max_length=50, unique=True)
-    service_provider = models.ForeignKey(ServiceProvider, on_delete=models.CASCADE)
-    control_number = models.CharField(max_length=20, blank=True, null=True)
-    bill_type = models.IntegerField(choices=BILL_TYPE_CHOICES, default=1)
-    pay_type = models.IntegerField(choices=PAY_TYPE_CHOICES, default=1)
-    customer_name = models.CharField(max_length=255)
-    customer_id = models.CharField(max_length=50)
-    customer_phone = models.CharField(max_length=20, blank=True, null=True)
-    customer_email = models.EmailField(blank=True, null=True)
-    bill_description = models.TextField()
-    bill_generated_date = models.DateTimeField()
-    bill_expiry_date = models.DateTimeField()
-    bill_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    currency = models.CharField(max_length=5, default="TZS")
-    status_code = models.CharField(max_length=10, blank=True, null=True)
-    status_desc = models.CharField(max_length=255, blank=True, null=True)
-```
+| Column | Notes |
+| --- | --- |
+| `bill_number` | `BILL-YYYY-NNNN`, allocated locally |
+| `control_number` | Issued by GePG; blank until it arrives |
+| `order` | One-to-one. One bill per order |
+| `service_provider` | Foreign key |
+| `total_amount` | Sum of the line items |
+| `status` | `pending` / `partially_paid` / `paid` / `cancelled` / `expired` |
+| `bill_type`, `pay_type` | `PositiveSmallIntegerField`, both default `1` |
+| `status_code`, `status_desc` | The raw gateway strings from submission |
+| `gepg_submitted_at` | When it went out |
 
-### BillItem Model
+### `BillItem`
 
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/models.py:47-58`
+| Column | Notes |
+| --- | --- |
+| `bill` | Foreign key |
+| `stone` | Which stone this line is for |
+| `description`, `unit_price`, `amount` | The frozen charge |
+| `weight` | Nullable — recorded, not priced on |
+| `gfs_code`, `item_ref` | Carried into the XML |
 
-```python
-class BillItem(models.Model):
-    bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name="items")
-    sub_sp_code = models.CharField(max_length=20)
-    gfs_code = models.CharField(max_length=20)
-    item_ref = models.CharField(max_length=50)
-    use_item_ref_on_pay = models.BooleanField(default=False)
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-    eqv_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    coll_sp = models.CharField(max_length=20)
-```
+The fields the legacy model stored per row — `sub_sp_code`, `coll_sp`,
+`use_item_ref_on_pay`, `eqv_amount` — are **not columns here**. They are emitted
+into the XML from settings, because they are the same for every bill this system
+raises and storing a constant per row invites the copies to disagree.
+
+Customer details are likewise not duplicated onto the bill: they are reached
+through `bill.order.customer`.
 
 ---
 
@@ -408,9 +374,18 @@ def _escape_xml(text: str | None) -> str:
 
 ### Digital Signatures
 
-All bill submission requests are digitally signed using PKCS#12 certificates with SHA256withRSA algorithm.
+Bill submissions **can** be signed with a PKCS#12 key using SHA256withRSA. Two
+things to know before relying on it:
 
-**Implementation**: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/crypto_utils.py`
+- It is **opt-in and off by default** (`GEPG_USE_DIGITAL_SIGNATURE=False`).
+- When enabled, it **fails open**: a missing or unreadable key logs an error and
+  sends the payload with the `SignatureGoesHere` placeholder still in place,
+  rather than refusing to send.
+
+Assume outbound messages are currently unsigned unless you have checked the
+setting and the key.
+
+**Implementation**: `apps/billing/gateways/signing.py`
 
 ```python
 def sign_xml_payload(xml_payload: str) -> str:
@@ -424,9 +399,13 @@ def sign_xml_payload(xml_payload: str) -> str:
 
 ### Certificate Configuration
 
-- **Private Key**: `tgc_mifumo/certificates/tgpmis_privatekey.pfx`
-- **Public Certificate**: `tgc_mifumo/certificates/gepgpubliccertificate_DEC2024_DEC2026.pfx`
-- **Password**: Stored in `GEPG_CERTIFICATE_PASSWORD` environment variable
+- **Private key**: `GEPG_PRIVATE_KEY_PATH`, defaulting to
+  `certificates/private.pfx`
+- **Public certificate**: `GEPG_PUBLIC_CERT_PATH`, defaulting to
+  `certificates/public.pfx` — **read by nothing**. Inbound messages are not
+  verified; see the gaps list in [the overview](00_GEPG_INTEGRATION_OVERVIEW.md)
+- **Password**: `GEPG_CERTIFICATE_PASSWORD`, with no default, because a blank
+  passphrase would let an unsigned payload reach the gateway unnoticed
 
 ---
 
@@ -475,8 +454,8 @@ if existing_bill:
 1. Create a test identification item
 2. Call bill creation function
 3. Verify bill record in database
-4. Check GEPG response in debug file: `/tmp/gepg_request_debug.xml`
-5. Verify SMS notification sent
+4. Check the logged request and response — the gateway module logs both through Django's logging framework; nothing is written to a debug file
+5. ~~Verify SMS notification sent~~ *(no SMS is sent)*
 
 ### Test Data
 
@@ -502,7 +481,7 @@ print(f"Status: {result['status_code']} - {result['status_desc']}")
 **Cause**: Asynchronous response flow - waiting for callback
 
 **Solution**: 
-1. Check callback URL is accessible: `https://api.tgpmis.tgc.ac.tz/billing/api/bill/response/`
+1. Check the callback URL is reachable: `https://<your-host>/gepg/bill/response/`
 2. Verify GEPG can reach your server
 3. Check firewall settings
 4. Monitor callback endpoint logs
@@ -530,7 +509,7 @@ print(f"Status: {result['status_code']} - {result['status_desc']}")
 1. **Always validate input data** before creating bills
 2. **Use try-except blocks** for API calls
 3. **Log all requests and responses** for debugging
-4. **Send SMS notifications** after successful bill creation
+4. **Notify the customer** after successful bill creation *(not built)*
 5. **Handle both synchronous and asynchronous** response flows
 6. **Check for duplicate bills** before creating new ones
 7. **Set appropriate bill expiry dates** (typically 365 days)

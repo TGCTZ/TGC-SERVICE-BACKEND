@@ -1,12 +1,32 @@
 # GEPG Integration - Bill Cancellation
 
+> ## ⚠️ Specification, not shipped behaviour
+>
+> **Nothing in this document is implemented.** No code in `apps/billing/`
+> cancels a bill. `GEPG_BILL_CANCEL_URL` is defined in settings and read by
+> nothing; `BillStatus.CANCELLED` exists as an enum member with no code path
+> that writes it; `BillViewSet` is read-only apart from its explicit actions,
+> and has no `cancel` among them.
+>
+> It is kept because the `billCanclReq` / `billCanclRes` contract and its
+> status codes are what an implementation would have to match, and that
+> information is not obtainable anywhere else. Read it as a design brief.
+>
+> Code listings below describe the system this was ported from, not this one.
+
 ## Overview
 
-Bill cancellation allows the system to cancel previously submitted bills in GEPG. This is useful when:
+Bill cancellation would let the system withdraw a bill already submitted to
+GePG, for cases such as:
 - Customer requests cancellation
 - Order is cancelled
 - Bill was created in error
 - Service cannot be provided
+
+Note that the order-level equivalent **does** exist: an order can be put on hold
+or cancelled through `POST /api/v1/orders/{id}/hold/`. That is a decision about
+the visit, recorded locally; it does not reach GePG, and a paid order cannot be
+cancelled at all.
 
 ---
 
@@ -30,15 +50,15 @@ Order Status Reset (if applicable)
 
 ```bash
 # Bill Cancellation Endpoint
-GEPG_BILL_CANCEL_URL=http://154.118.230.202:80/api/bill/20/cancellation
+GEPG_BILL_CANCEL_URL=https://<gepg-host>/api/bill/20/cancellation
 
 # Service Provider Configuration
-GEPG_SP_GRP_CODE=SP99631
-GEPG_SYS_CODE=LTGC002
-GEPG_SP_CODE=SP99631
+GEPG_SP_GRP_CODE=<SP_CODE>
+GEPG_SYS_CODE=<SYS_CODE>
+GEPG_SP_CODE=<SP_CODE>
 
 # Security
-GEPG_USE_DIGITAL_SIGNATURE=True
+GEPG_USE_DIGITAL_SIGNATURE=False   # default; signing is opt-in
 GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 ```
 
@@ -47,8 +67,6 @@ GEPG_CERTIFICATE_PASSWORD=<set-in-.env>
 ## Implementation
 
 ### Service Function
-
-Location: `@/home/tgc_mifumo/tgc_mifumo/billing_system_app/services.py:351-491`
 
 **Function**: `cancel_bill(bill, reason, request=None)`
 
@@ -94,9 +112,9 @@ else:
 <?xml version="1.0" encoding="UTF-8"?>
 <Gepg>
  <billCanclReq>
- <ReqId>SP9963120250113061430</ReqId>
-            <SpGrpCode>SP99631</SpGrpCode>
-            <SysCode>LTGC002</SysCode>
+ <ReqId><SP_CODE>20250113061430</ReqId>
+            <SpGrpCode><SP_CODE></SpGrpCode>
+            <SysCode><SYS_CODE></SysCode>
             <BillTyp>1</BillTyp>
             <GrpBillId>BILL-S-NO-001-47</GrpBillId>
  <CanclGenBy>admin</CanclGenBy>
@@ -114,13 +132,13 @@ else:
 <Gepg>
   <billCanclReqAck>
     <AckId>ACK20250113061431</AckId>
-    <ReqId>SP9963120250113061430</ReqId>
+    <ReqId><SP_CODE>20250113061430</ReqId>
     <AckStsCode>7101</AckStsCode>
     <AckStsDesc>Successfully</AckStsDesc>
   </billCanclReqAck>
   
   <billCanclRes>
-    <ReqId>SP9963120250113061430</ReqId>
+    <ReqId><SP_CODE>20250113061430</ReqId>
     <GrpBillId>BILL-S-NO-001-47</GrpBillId>
     <CanclStsCode>7283</CanclStsCode>
     <CanclStsDesc>Bill Cancelled Successfully</CanclStsDesc>
@@ -354,7 +372,7 @@ if status_code == "7283":  # Success code
 headers = {
     "Content-Type": "application/xml",
     "Gepg-Com": "changebill.sp.in",
-    "Gepg-Code": sp_code,  # e.g., "SP99631"
+    "Gepg-Code": sp_code,  # e.g., "<SP_CODE>"
 }
 ```
 

@@ -4,6 +4,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.core.models import BaseModel
+from apps.gems.enums import Region
 
 
 class Customer(BaseModel):
@@ -15,7 +16,11 @@ class Customer(BaseModel):
     phone = models.CharField(max_length=20)
     email = models.EmailField(blank=True, default="")
     company_name = models.CharField(max_length=255, blank=True, default="")
-    region = models.CharField(max_length=100, blank=True, default="")
+    # One of the 31 regions. Rows from before the list may still hold free text
+    # the migration could not read as a region; they are kept, not blanked.
+    region = models.CharField(
+        max_length=100, blank=True, default="", choices=Region.choices
+    )
     id_number = models.CharField(max_length=50, blank=True, default="")
     address = models.CharField(max_length=255, blank=True, default="")
 

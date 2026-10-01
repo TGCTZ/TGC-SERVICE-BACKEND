@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from apps.billing.dev import simulate_payment
-from apps.billing.models import BillItem, Payment
+from apps.billing.models import Bill, BillItem, Payment
 from apps.billing.selectors import billing_worklist
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def billable_order(settings):
-    """An order whose three stones are all registered and priced."""
+    """An order whose three stones are all identified and priced."""
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=3)
     stone_type = StoneTypeFactory(price=Decimal("50000.00"))
@@ -30,7 +30,7 @@ def billable_order(settings):
 
 
 def test_generating_a_bill_prices_every_stone(billable_order):
-    """The total is the sum of each stone type's flat fee."""
+    """The total is the sum of each stone's tier fee."""
     bill = generate_bill_for_order(billable_order)
 
     assert bill.bill_number.startswith("BILL-")
@@ -48,12 +48,12 @@ def test_generating_a_bill_transitions_every_stone(billable_order):
 
 
 def test_bill_items_snapshot_the_price(billable_order):
-    """Repricing a stone type later must not rewrite an issued bill."""
+    """Repricing a tier later must not rewrite an issued bill."""
     bill = generate_bill_for_order(billable_order)
-    stone_type = billable_order.stones.first().stone_type
+    category = billable_order.stones.first().stone_type.category
 
-    stone_type.price = Decimal("999999.00")
-    stone_type.save(update_fields=["price"])
+    category.price = Decimal("999999.00")
+    category.save(update_fields=["price"])
 
     bill.refresh_from_db()
     assert bill.total_amount == Decimal("150000.00")
@@ -204,7 +204,7 @@ def test_a_notification_for_an_unknown_bill_returns_a_failure_ack(billable_order
     assert not Payment.objects.filter(trx_id="TRX-GHOST-1").exists()
 
 
-def test_billing_worklist_holds_only_fully_registered_unbilled_orders(settings):
+def test_billing_worklist_holds_only_fully_identified_unbilled_orders(settings):
     """An order enters the queue when its last stone is typed, and leaves when billed."""
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=2)
@@ -294,3 +294,145 @@ def test_listing_bills_does_not_n_plus_one(
 
     assert response.status_code == 200
     assert response.data["count"] == 5
+
+
+def test_preview_prices_an_order_without_creating_anything():
+    """The figures shown before anyone commits to them.
+
+    Shares the pricing rule with generation rather than reimplementing it: the
+    fee is per stone *category*, so a preview built from ``stone_type.price``
+    would disagree with the bill it previews.
+    """
+    from apps.billing.services import preview_bill_for_order
+
+    order = OrderFactory(stone_count=2)
+    stone_type = StoneTypeFactory(category__price=Decimal("30000.00"))
+    add_stone(order, stone_type=stone_type)
+    add_stone(order, stone_type=stone_type)
+
+    preview = preview_bill_for_order(order)
+
+    assert len(preview["items"]) == 2
+    assert preview["total"] == Decimal("60000.00")
+    assert preview["blockers"] == []
+    assert not Bill.objects.filter(order=order).exists(), "preview must not write"
+
+    # And it agrees with what generation actually charges.
+    bill = generate_bill_for_order(order)
+    assert bill.total_amount == preview["total"]
+
+
+def test_preview_names_the_reason_an_order_cannot_be_billed():
+    """An unpriced tier is reported per line, not raised.
+
+    Generation refuses outright, but the screen needs to say *which* stone is
+    the problem rather than just failing.
+    """
+    from apps.billing.services import preview_bill_for_order
+
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=None))
+
+    preview = preview_bill_for_order(order)
+
+    assert preview["items"][0]["amount"] is None
+    assert any("No price set" in reason for reason in preview["blockers"])
+
+
+def test_preview_endpoint_requires_the_generate_permission(viewer_user, auth_client):
+    """Seeing what a customer will be charged is the billing clerk's job."""
+    order = OrderFactory(stone_count=1)
+    response = auth_client(viewer_user).get(f"/api/v1/bills/preview/?order={order.pk}")
+
+    assert response.status_code == 403
+
+
+def test_simulate_payment_endpoint_settles_a_bill(settings, admin_user, auth_client):
+    """The dev-only button, going through the real notification handler."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(f"/api/v1/bills/{bill.pk}/simulate-payment/")
+
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "paid"
+    assert Decimal(response.data["amount_paid"]) == Decimal("5000.00")
+
+
+def test_simulate_payment_endpoint_accepts_a_part_payment(
+    settings, admin_user, auth_client
+):
+    """The only route to PARTIALLY_PAID, which nothing else can produce offline."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/", {"amount": "2000.00"}
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "partially_paid"
+
+    # A second call tops it up rather than being swallowed as a redelivery.
+    again = auth_client(admin_user).post(
+        f"/api/v1/bills/{bill.pk}/simulate-payment/", {"amount": "3000.00"}
+    )
+    assert again.data["status"] == "paid"
+
+
+def test_simulate_payment_is_invisible_outside_simulation(
+    settings, admin_user, auth_client
+):
+    """404, not 403: the route must not advertise itself where it must not exist.
+
+    Both flags are required. DEBUG alone would let a staging box pointed at the
+    real gateway forge settlements.
+    """
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = False
+    order = OrderFactory(stone_count=1)
+    add_stone(order, stone_type=StoneTypeFactory(category__price=Decimal("5000.00")))
+    bill = generate_bill_for_order(order)
+
+    response = auth_client(admin_user).post(f"/api/v1/bills/{bill.pk}/simulate-payment/")
+
+    assert response.status_code == 404
+    bill.refresh_from_db()
+    assert bill.status == "pending"
+
+
+def test_config_reports_whether_simulation_is_available(
+    settings, admin_user, auth_client
+):
+    """What the UI reads to decide whether to offer the button at all."""
+    settings.DEBUG = True
+    settings.GEPG_SIMULATE = True
+    assert auth_client(admin_user).get("/api/v1/config/").data["simulate_payments"]
+
+    settings.GEPG_SIMULATE = False
+    assert not auth_client(admin_user).get("/api/v1/config/").data["simulate_payments"]
+
+
+def test_billing_worklist_is_searchable(billable_order, admin_user, auth_client):
+    """Searched by the customer as readily as by the reference.
+
+    The action returns Orders while the ViewSet is a Bill one, so this covers the
+    explicit whitelist it passes rather than the ViewSet's own `search_fields` -
+    which would raise `FieldError` against an Order queryset.
+    """
+    client = auth_client(admin_user)
+    customer = billable_order.customer
+
+    for term in (billable_order.reference_number, customer.last_name, customer.phone):
+        hit = client.get("/api/v1/bills/worklist/", {"search": term})
+        assert hit.status_code == 200, hit.data
+        assert [row["id"] for row in hit.data["results"]] == [billable_order.pk], term
+
+    miss = client.get("/api/v1/bills/worklist/", {"search": "no-such-order"})
+    assert miss.data["results"] == []

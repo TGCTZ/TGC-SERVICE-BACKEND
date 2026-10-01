@@ -54,6 +54,7 @@ LOCAL_APPS = [
     "apps.core",  # L1 - base models, managers, shared DRF machinery
     "apps.users",  # L2 - custom user, authentication, RBAC
     "apps.audit",  # L2 - activity-log and system-log read APIs
+    "apps.notifications",  # L2 - per-user in-app notifications
     "apps.gems",  # L2 - domain enums and stone reference tables
     "apps.orders",  # L3 - customers, orders and stones
     "apps.billing",  # L4 - bills, payments and the GePG gateway
@@ -128,6 +129,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("TIME_ZONE", default="UTC")
+# The lab's own calendar. Storage stays in UTC; statistics bucket by this zone,
+# or a payment at 22:00 in Dar es Salaam would count towards the wrong day.
+LAB_TIME_ZONE = env("LAB_TIME_ZONE", default="Africa/Dar_es_Salaam")
 USE_I18N = True
 USE_TZ = True
 
@@ -143,7 +147,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Simple JWT, plus holding new accounts to their first login.
+        "apps.users.authentication.OnboardingJWTAuthentication",
     ],
     # Deny by default. Every view declares its own permissions explicitly, so
     # forgetting to do so fails closed rather than open.
@@ -184,6 +189,34 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
 }
+
+# Printed on every certificate PDF. Environment-driven so a second lab, or a
+# rename, needs no code change.
+CERTIFICATE_LAB_NAME = env("CERTIFICATE_LAB_NAME", default="Tanzania Gemmological Centre")
+CERTIFICATE_LAB_ADDRESS = env("CERTIFICATE_LAB_ADDRESS", default="")
+CERTIFICATE_MINISTRY_NAME = env(
+    "CERTIFICATE_MINISTRY_NAME", default="Ministry of Minerals"
+)
+
+# Where the QR code printed on a certificate points.
+#
+# An absolute URL, because a certificate can be rendered with no request in
+# hand - a background job, a management command, a test - and a QR that resolves
+# only from inside the office is a QR that does not work.
+CERTIFICATE_VERIFY_BASE_URL = env(
+    "CERTIFICATE_VERIFY_BASE_URL", default="http://localhost:8000"
+)
+
+# Where staff sign in; the link in the new-account email points here.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# Outgoing mail, as one URL: smtp+tls://user:password@host:587 in production.
+# The console default prints mail to the server log instead of sending it.
+EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="Tanzania Gemmological Centre <no-reply@tgc.go.tz>"
+)
 
 # Models are registered explicitly in apps.core.audit by walking BaseModel
 # subclasses, so auditlog must not blanket-register everything itself.

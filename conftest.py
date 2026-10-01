@@ -32,13 +32,13 @@ def user(db):
 
 @pytest.fixture
 def admin_user(db, roles):
-    """A user holding the administrator role."""
+    """A user holding the manager role."""
     from django.contrib.auth.models import Group
 
     from apps.users.tests.factories import UserFactory
 
     account = UserFactory()
-    account.groups.add(Group.objects.get(name="administrator"))
+    account.groups.add(Group.objects.get(name="manager"))
     return account
 
 
@@ -55,6 +55,22 @@ def viewer_user(db, roles):
 
     account = UserFactory()
     account.groups.add(Group.objects.get(name="receptionist"))
+    return account
+
+
+@pytest.fixture
+def gemmologist_user(db, roles):
+    """A user holding the gemmologist role - the bench.
+
+    Preliminary and full identification are both this role's work, so it is the
+    positive case wherever ``viewer_user`` (reception) is the negative one.
+    """
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    account = UserFactory()
+    account.groups.add(Group.objects.get(name="gemmologist"))
     return account
 
 

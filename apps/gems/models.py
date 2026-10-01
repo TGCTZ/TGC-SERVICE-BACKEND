@@ -10,20 +10,39 @@ from django.db.models import Q
 
 from apps.core.models import ReferenceModel
 
-from .enums import ColorGroup, StoneCategory
+from .enums import ColorGroup
+
+
+class StoneCategory(ReferenceModel):
+    """A pricing tier - precious, semi-precious, diamond.
+
+    A table rather than an enum because it carries the fee, and fees change. The
+    lab charges per tier, not per stone type: identifying a ruby and a sapphire
+    costs the same because both are precious.
+
+    ``price`` is the flat fee for identifying one stone of this tier,
+    independent of weight. Nullable rather than defaulted to zero: an unpriced
+    tier is a configuration gap that billing must refuse, and a zero default
+    would silently issue a bill for nothing.
+    """
+
+    price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    class Meta(ReferenceModel.Meta):
+        verbose_name_plural = "stone categories"
 
 
 class StoneType(ReferenceModel):
-    """A type of stone (e.g. ruby, sapphire), and what the lab charges for one.
+    """A type of stone (e.g. ruby, sapphire) and the tier that prices it.
 
-    ``price`` is the flat fee for identifying a stone of this type, independent
-    of weight. It is nullable rather than defaulted to zero: an unpriced type is
-    a configuration gap that billing must refuse, and a zero default would
-    silently issue a bill for nothing.
+    The type names what the stone is; its category says what identifying one
+    costs. ``PROTECT`` because deleting a tier that stones are priced from would
+    leave bills unexplainable.
     """
 
-    category = models.CharField(max_length=20, choices=StoneCategory.choices)
-    price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    category = models.ForeignKey(
+        StoneCategory, on_delete=models.PROTECT, related_name="stone_types"
+    )
 
 
 class Species(ReferenceModel):
