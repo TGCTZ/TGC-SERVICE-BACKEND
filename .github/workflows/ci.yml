@@ -49,6 +49,30 @@ jobs:
       - name: Prepare log directory
         run: mkdir -p logs
 
+      - name: Verify auth schema registration
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.production
+          ALLOWED_HOSTS: example.com
+        run: |
+          uv run python - <<'PY'
+          import sys
+
+          import django
+
+          django.setup()
+
+          from django.apps import apps
+          from drf_spectacular.extensions import OpenApiAuthenticationExtension
+          from apps.users.authentication import OnboardingJWTAuthentication
+
+          print("Django version:", django.get_version())
+          print("App config:", type(apps.get_app_config("users")).__name__)
+          print("Schema module loaded:", "apps.users.schema" in sys.modules)
+          extension = OpenApiAuthenticationExtension.get_match(OnboardingJWTAuthentication())
+          print("Matching extension:", type(extension).__name__ if extension else None)
+          assert extension is not None, "Onboarding JWT schema extension was not registered."
+          PY
+
       - name: Security check against production settings
         # Django's own deployment audit: HSTS, secure cookies, DEBUG, and a
         # weak SECRET_KEY. --fail-level WARNING makes a regression fail CI
