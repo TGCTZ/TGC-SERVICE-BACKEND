@@ -135,65 +135,85 @@
     }
 
     /* ---------- Header ---------- */
-    /* One pre-composed image: the coat of arms, the ministry and lab titles
-       and the TGC logo over the ministry's flag banner. It is built at the
-       band's own 277:26 proportions (2300 x 216px, ~211dpi), so it fills the
-       band edge to edge; object-fit only matters if a replacement of another
-       shape is dropped in, and then it crops rather than squashes. */
     .header {
       top: 8mm;
       height: 26mm;
     }
 
-    .header img {
+    .header-banner img {
       display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
 
-    /* Printed only when header-banner.jpg is missing: the lab's name now lives
-       in the image's pixels, and a certificate must never go out without the
-       name of the body that issued it. Tighter leading than the body's 1.3,
-       as display type wants. */
-    .header .titles {
+    .header-clean {
+      background: #fff;
+    }
+
+    .header-clean .titles {
+      position: absolute;
+      inset: 0 35mm;
       font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
-      line-height: 1.1;
-      padding-top: 4mm;
+      line-height: 1.02;
+      padding-top: 1mm;
       text-align: center;
       white-space: nowrap;
       color: var(--tgc-blue);
     }
 
-    /* As on the paper form: a small ministry line, the lab's name as the
-       largest type, and the document title smaller
-       beneath it - all bold, in navy. The lab's name is the widest line, wider
-       than the middle column it is centred over. */
+    .header-clean .coat-of-arms,
+    .header-clean .tgc-logo {
+      position: absolute;
+      top: 1.5mm;
+      height: 22mm;
+      object-fit: contain;
+    }
+
+    .header-clean .coat-of-arms {
+      left: 5mm;
+      width: 19mm;
+    }
+
+    .header-clean .tgc-logo {
+      right: 5mm;
+      width: 22mm;
+    }
+
+    /* Match all four lines in the original banner while keeping each mark
+       crisp as its own image. */
+    .titles .country,
     .titles .ministry {
-      font-size: 12pt;
       font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
+      letter-spacing: 0.35px;
       color: var(--navy);
     }
 
+    .titles .country {
+      font-size: 9pt;
+    }
+
+    .titles .ministry {
+      font-size: 10.5pt;
+    }
+
     .titles .lab {
-      font-size: 18pt;
+      font-size: 16pt;
       font-weight: 700;
-      letter-spacing: 0.2mm;
+      letter-spacing: 0.15mm;
       /* Letter-spacing trails the last letter too; this keeps it centred. */
       padding-left: 0.2mm;
       text-transform: uppercase;
       color: var(--navy);
-      margin: 0.8mm 0;
+      margin: 0.5mm 0;
     }
 
     .titles .doc {
-      font-size: 13pt;
+      font-size: 10pt;
       font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
+      letter-spacing: 0.4px;
       color: var(--navy);
+      text-transform: uppercase;
     }
 
     /* ---------- Info bar ---------- */
@@ -486,11 +506,14 @@
     <div class="revoked-band">This certificate has been revoked and no longer stands</div>
   {% endif %}
 
-  <div class="band header">
-    {% if header_banner %}
+  <div class="band header {% if header_style == 'banner' and header_banner %}header-banner{% else %}header-clean{% endif %}">
+    {% if header_style == 'banner' and header_banner %}
       <img src="{{ header_banner }}" alt="The United Republic of Tanzania, Ministry of Minerals: Tanzania Gemmological Centre, Gemstone Identification Report">
     {% else %}
+      {% if coat_of_arms %}<img class="coat-of-arms" src="{{ coat_of_arms }}" alt="Coat of arms of Tanzania">{% endif %}
+      {% if tgc_logo %}<img class="tgc-logo" src="{{ tgc_logo }}" alt="Tanzania Gemmological Centre logo">{% endif %}
       <div class="titles">
+        <div class="country">The United Republic of Tanzania</div>
         <div class="ministry">{{ ministry_name }}</div>
         <div class="lab">{{ lab_name }}</div>
         <div class="doc">Gemstone Identification Report</div>

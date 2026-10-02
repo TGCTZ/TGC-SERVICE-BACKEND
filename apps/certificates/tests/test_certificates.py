@@ -510,28 +510,20 @@ def test_a_mark_supplied_later_appears_without_a_restart(request, monkeypatch, t
     assert assets.asset_data_uri("official_stamp").startswith("data:image/png;base64,")
 
 
-def test_the_header_names_the_lab_even_without_its_banner(
-    request, monkeypatch, tmp_path, settings, certifiable_stone
-):
-    """The lab's name is in the banner's pixels, so losing the file must not lose it.
-
-    Every other mark degrades to an empty box when its file is missing. The
-    banner cannot: it is the only place the document names the body that
-    issued it, so without it the header prints the titles as text instead.
-    """
+def test_default_header_shows_both_marks_and_all_titles(settings, certifiable_stone):
+    """The clean default keeps the original masthead details as separate elements."""
     certificate = issue_certificate(certifiable_stone)
 
-    # The shipped banner is found, and the text titles stay out of the way.
-    html = render_to_string(TEMPLATE, certificate_context(certificate))
-    assert '<div class="titles">' not in html
+    context = certificate_context(certificate)
+    html = render_to_string(TEMPLATE, context)
 
-    request.addfinalizer(assets.forget_assets)
-    monkeypatch.setattr(assets, "ASSET_DIR", tmp_path)
-    assets.forget_assets()
-
-    html = render_to_string(TEMPLATE, certificate_context(certificate))
-    assert '<div class="titles">' in html
+    assert context["header_style"] == "clean"
+    assert context["coat_of_arms"].startswith("data:image/png;base64,")
+    assert context["tgc_logo"].startswith("data:image/png;base64,")
+    assert "The United Republic of Tanzania" in html
+    assert settings.CERTIFICATE_MINISTRY_NAME in html
     assert settings.CERTIFICATE_LAB_NAME in html
+    assert "Gemstone Identification Report" in html
 
 
 def test_the_document_carries_its_own_typefaces(certifiable_stone):

@@ -29,6 +29,10 @@ from .assets import (
 
 TEMPLATE = "certificates/certificate.html"
 
+# The clean masthead is the issued-document default. Set this to ``"banner"``
+# in code to use the original pre-composed banner as the alternate style.
+HEADER_STYLE = "clean"
+
 
 def certificate_context(certificate: Certificate) -> dict:
     """Build the template context for one certificate.
@@ -56,6 +60,7 @@ def certificate_context(certificate: Certificate) -> dict:
         "certificate": certificate,
         "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
         "is_revoked": certificate.status == CertificateStatus.REVOKED,
+        "header_style": HEADER_STYLE,
         "ministry_name": settings.CERTIFICATE_MINISTRY_NAME,
         "lab_name": settings.CERTIFICATE_LAB_NAME,
         "lab_address": settings.CERTIFICATE_LAB_ADDRESS,

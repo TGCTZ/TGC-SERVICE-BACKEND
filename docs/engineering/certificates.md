@@ -136,22 +136,24 @@ file - so a misnamed file is reported as missing instead of being guessed at.
 
 | Name | File | Where it prints |
 | --- | --- | --- |
-| `header_banner` | `header-banner.jpg` | The whole header band, 277 × 26mm |
+| `header_banner` | `header-banner.jpg` | Alternate full-width header, 277 × 26mm |
+| `coat_of_arms` | `coat-of-arms.png` | Clean header, left side |
+| `tgc_logo` | `tgc-logo.png` | Clean header, right side |
 | `official_stamp` | `official-stamp.png` | The stamp box in column 1 |
 
-The header is one pre-composed image: the ministry's flag banner with the coat of
-arms, the titles and the TGC logo drawn in. It is a JPEG because it is a
-photographic texture (PNG was four times the size), built at the band's own
-277:26 proportions so it fills the band without cropping. `coat-of-arms.png` and
-`tgc-logo.png` are kept in the folder as the banner's sources; the template no
-longer embeds them on their own.
+The default clean header embeds the coat of arms and TGC logo separately around
+the four title lines: country, ministry, lab and report name. The original
+pre-composed banner remains available as an alternate. `HEADER_STYLE` in
+`services/pdf.py` is hard-coded to `"clean"`; changing it to `"banner"` switches
+the PDF to the original image.
 
 A missing file returns `None` with a one-time warning rather than raising, so a
 certificate still renders:
 
 - no stamp - the box is left empty, since it is where the lab stamps by hand;
-- no banner - the header prints the ministry, lab and document titles as text,
-  because the lab's name exists nowhere else on the page.
+- no logo - its position is left clear while all four title lines remain
+  visible;
+- no alternate banner - the clean header remains in use.
 
 Found files are cached for the life of the process, so replacing one needs a
 restart (or `forget_assets()`); a missing file is re-checked on every render.
