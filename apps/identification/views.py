@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from apps.core.exceptions import ServiceError
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
@@ -154,6 +155,55 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             page, many=True, context=self.get_serializer_context()
         )
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Reports plus paid stones without a report, with drafts represented once."""
+        reports = (
+            self.get_queryset()
+            .filter(is_finalized=False)
+            .order_by("-created_at", "-pk")
+        )
+        report_data = IdentificationReportSerializer(
+            reports, many=True, context=self.get_serializer_context()
+        ).data
+        waiting_stones = list(findings_worklist())
+        waiting_ids = {stone.pk for stone in waiting_stones}
+        reports_by_stone = {row["stone"]: row for row in report_data}
+        rows = []
+        for row in report_data:
+            draft = not row["is_finalized"]
+            rows.append(
+                feed_row(
+                    kind="report",
+                    record_id=row["id"],
+                    reference=row.get("report_number") or row.get("order_reference"),
+                    customer=row.get("customer_name"),
+                    type_name="Findings",
+                    status="Draft" if draft else "Finalized",
+                    date=row.get("identified_at") or row.get("created_at"),
+                    waiting=draft and row["stone"] in waiting_ids,
+                    detail=row,
+                )
+            )
+        for stone in waiting_stones:
+            if stone.pk in reports_by_stone:
+                continue
+            detail = StoneSerializer(stone, context=self.get_serializer_context()).data
+            rows.append(
+                feed_row(
+                    kind="stone",
+                    record_id=stone.pk,
+                    reference=detail.get("order_reference"),
+                    customer=detail.get("customer_name"),
+                    type_name="Stone findings",
+                    status="Awaiting findings",
+                    date=stone.order.received_date,
+                    waiting=True,
+                    detail=detail,
+                )
+            )
+        return paginated_workflow_feed(self, rows, request)
 
 
 class InstrumentUsedViewSet(BaseModelViewSet, viewsets.ModelViewSet):

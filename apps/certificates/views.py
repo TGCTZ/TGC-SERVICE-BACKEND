@@ -10,6 +10,7 @@ from django.http import HttpResponse
 
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 from apps.gems.enums import CertificateStatus
 from apps.orders.models import Stone
 from apps.orders.search import STONE_SEARCH_FIELDS
@@ -102,6 +103,48 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             page, many=True, context=self.get_serializer_context()
         )
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Issued certificates and stones ready for certification."""
+        certificates = CertificateSerializer(
+            self.get_queryset().order_by("-issued_at", "-pk"),
+            many=True,
+            context=self.get_serializer_context(),
+        ).data
+        stones = list(certification_worklist())
+        rows = [
+            feed_row(
+                kind="certificate",
+                record_id=row["id"],
+                reference=row.get("certificate_number"),
+                customer=row.get("customer_name"),
+                type_name="Certificate",
+                status=row.get("status"),
+                date=row.get("issued_at") or row.get("created_at"),
+                waiting=False,
+                detail=row,
+            )
+            for row in certificates
+        ]
+        stone_data = StoneSerializer(
+            stones, many=True, context=self.get_serializer_context()
+        ).data
+        rows.extend(
+            feed_row(
+                kind="stone",
+                record_id=row["id"],
+                reference=row.get("order_reference"),
+                customer=row.get("customer_name"),
+                type_name="Stone certification",
+                status="Ready to certify",
+                date=stone.order.received_date,
+                waiting=True,
+                detail=row,
+            )
+            for stone, row in zip(stones, stone_data, strict=True)
+        )
+        return paginated_workflow_feed(self, rows, request)
 
     @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
     @action(detail=True, methods=["get"], url_path="pdf")

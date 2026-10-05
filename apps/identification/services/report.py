@@ -246,6 +246,6 @@ def _notify_if_order_ready_for_certification(order, user) -> None:
         NotificationKind.READY_TO_CERTIFY,
         title=f"Order {order.reference_number} is ready for certification",
         body="Findings are finalized for every stone.",
-        link="/worklists/certification",
+        link="/certificates?source=waiting",
         exclude=user,
     )

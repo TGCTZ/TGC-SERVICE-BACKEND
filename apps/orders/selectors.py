@@ -39,6 +39,22 @@ def identification_worklist():
     return queryset.filter(identified__lt=F("stone_count"))
 
 
+def identification_action_queryset():
+    """Active, unbilled orders that still have identification work to do.
+
+    Partially identified orders need another stone recorded; fully identified
+    orders remain here so staff can correct their typing before billing. Once a
+    bill exists, the identification is priced and the order leaves this page.
+    Empty orders have no stone action to perform.
+    """
+    return (
+        annotate_identified(
+            Order.objects.select_related("customer", "bill").prefetch_related("stones")
+        )
+        .filter(bill__isnull=True, stone_count__gt=0)
+    )
+
+
 def order_stage(order) -> str:
     """Where an order has got to, as an :class:`OrderStage` value.
 

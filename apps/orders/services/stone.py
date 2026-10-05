@@ -118,7 +118,7 @@ def add_stone(order: Order, *, stone_type, user=None) -> Stone:
             NotificationKind.READY_TO_BILL,
             title=f"Order {order.reference_number} is ready to bill",
             body=f"All {order.stone_count} stone(s) have been identified.",
-            link="/worklists/billing",
+            link="/bills?source=waiting",
             exclude=user,
         )
     return stone

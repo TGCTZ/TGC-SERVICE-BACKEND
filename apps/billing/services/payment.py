@@ -80,7 +80,7 @@ def _apply_payment(header: dict, txn: dict, raw: str) -> None:
             NotificationKind.BILL_PAID,
             title=f"Order {bill.order.reference_number} has been paid",
             body=f"Bill {bill.bill_number} is settled; findings can now be recorded.",
-            link="/worklists/findings",
+            link="/identification-reports?source=waiting",
         )
     else:
         bill.status = BillStatus.PARTIALLY_PAID

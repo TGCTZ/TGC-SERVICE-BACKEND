@@ -9,13 +9,15 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.db.models import F
 
-from apps.core.permissions import StrictModelPermissions
+from apps.core.permissions import OrdersOrStonesViewPermission, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 
 from .models import Customer, Order, StatusHistory, Stone
 from .search import ORDER_SEARCH_FIELDS, STONE_SEARCH_FIELDS
 from .selectors import (
     annotate_identified,
+    identification_action_queryset,
     identification_worklist,
     orders_at_stage,
 )
@@ -176,6 +178,45 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Orders with identification actions still available."""
+        queryset = identification_action_queryset().order_by("-received_date", "-pk")
+        payload = OrderSerializer(
+            queryset, many=True, context=self.get_serializer_context()
+        ).data
+        waiting_ids = set(
+            queryset.filter(identified__lt=F("stone_count")).values_list("pk", flat=True)
+        )
+        rows = [
+            feed_row(
+                kind="order",
+                record_id=row["id"],
+                reference=row["reference_number"],
+                customer=(row.get("customer_detail") or {}).get("full_name"),
+                type_name="Order",
+                status=row.get("stage_label") or row.get("stage"),
+                date=row.get("received_date"),
+                waiting=row["id"] in waiting_ids,
+                detail=row,
+            )
+            for row in payload
+        ]
+        return paginated_workflow_feed(self, rows, request)
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="identification-count",
+        permission_classes=[OrdersOrStonesViewPermission],
+    )
+    def identification_count(self, request):
+        """Pending identification count for every viewer of the main entry."""
+        count = identification_action_queryset().filter(
+            identified__lt=F("stone_count")
+        ).count()
+        return Response({"count": count})
 
 
 class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):

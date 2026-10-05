@@ -66,7 +66,7 @@ def create_order(
         NotificationKind.ORDER_RECEIVED,
         title=f"New order {order.reference_number}",
         body=f"{stone_count} stone(s) from {customer} awaiting identification.",
-        link="/worklists/identification",
+        link="/identification?source=waiting",
         exclude=user,
     )
     return order

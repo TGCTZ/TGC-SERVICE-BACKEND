@@ -15,6 +15,7 @@ from django.shortcuts import get_object_or_404
 from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 from apps.orders.models import Order
 from apps.orders.search import ORDER_SEARCH_FIELDS
 from apps.orders.serializers import AddStoneSerializer, OrderSerializer
@@ -195,6 +196,53 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
             page, many=True, context=self.get_serializer_context()
         )
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Existing bills and billable orders in one viewer-readable feed."""
+        bills = BillSerializer(
+            self.get_queryset().order_by("-created_at", "-pk"),
+            many=True,
+            context=self.get_serializer_context(),
+        ).data
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            pending_orders = billing_attention_worklist()
+        else:
+            pending_orders = billing_worklist()
+        pending_ids = set(pending_orders.values_list("pk", flat=True))
+        rows = [
+            feed_row(
+                kind="bill",
+                record_id=row["id"],
+                reference=row.get("bill_number"),
+                customer=row.get("customer_name"),
+                type_name="Bill",
+                status=row.get("status"),
+                date=row.get("issued_at") or row.get("created_at"),
+                waiting=False,
+                detail=row,
+            )
+            for row in bills
+        ]
+        order_data = OrderSerializer(
+            pending_orders, many=True, context=self.get_serializer_context()
+        ).data
+        rows.extend(
+            feed_row(
+                kind="order",
+                record_id=row["id"],
+                reference=row.get("reference_number"),
+                customer=(row.get("customer_detail") or {}).get("full_name"),
+                type_name="Order",
+                status="Ready to bill",
+                date=row.get("received_date"),
+                waiting=True,
+                detail=row,
+            )
+            for row in order_data
+            if row["id"] in pending_ids
+        )
+        return paginated_workflow_feed(self, rows, request)
 
     @extend_schema(responses=OrderSerializer)
     @action(detail=False, methods=["get"])
