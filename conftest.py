@@ -77,10 +77,10 @@ def gemmologist_user(db, roles):
 @pytest.fixture
 def auth_client(api_client):
     """Factory fixture returning a client authenticated as a given user."""
-    from rest_framework_simplejwt.tokens import RefreshToken
+    from apps.users.services.sessions import issue_session_refresh
 
     def _authenticate(account):
-        token = RefreshToken.for_user(account)
+        token = issue_session_refresh(account)
         api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
         return api_client
 

@@ -66,9 +66,9 @@ anything else means giving up most of that.
 
 **`djangorestframework-simplejwt`** — stateless access tokens with a refresh
 flow. `ROTATE_REFRESH_TOKENS` and `BLACKLIST_AFTER_ROTATION` are both on, and
-the `token_blacklist` app is installed, which is what makes logout and
-"revoke every other session" possible. Without the blacklist app a JWT cannot be
-revoked at all before it expires.
+the `token_blacklist` app prevents revoked refresh tokens from rotating. Every
+access token also carries a login-session ID; checking its `AuthSession` allows
+logout and inactivity to reject an already-issued access token immediately.
 
 **`django-filter`** — installed for its infrastructure, though the project's
 list endpoints go through the custom `WhitelistFilterBackend` in

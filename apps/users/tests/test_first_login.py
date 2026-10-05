@@ -1,11 +1,11 @@
 """First login: set your password, then your profile, then the system."""
 
 import pytest
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from django.contrib.auth.models import Group
 
 from apps.users.services.accounts import create_user_account
+from apps.users.services.sessions import issue_session_refresh
 from apps.users.tests.factories import GenderFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -25,7 +25,7 @@ def new_account(roles):
 
 
 def _signed_in(api_client, user):
-    refresh = RefreshToken.for_user(user)
+    refresh = issue_session_refresh(user)
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
     return api_client, refresh
 

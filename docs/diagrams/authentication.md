@@ -150,10 +150,10 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    REQ(["POST /auth/logout/"]) --> VALID{"refresh token<br/>parses?"}
-    VALID -->|"expired or already blacklisted"| SUPPRESS["contextlib.suppress(TokenError)<br/><i>the session is already over,<br/>which is what was asked for</i>"]
-    VALID -->|yes| BL[("blacklist it")]
-    SUPPRESS --> OK(["205 Reset Content"])
+    REQ(["POST /auth/logout/"]) --> VALID{"signed refresh token<br/>still unexpired?"}
+    VALID -->|yes| REVOKE[("revoke its AuthSession")]
+    VALID -->|no| OK(["205 Reset Content"])
+    REVOKE --> BL[("blacklist refresh if not already blacklisted")]
     BL --> OK
 
     style REQ stroke:#4d90d9,stroke-width:2px
@@ -161,20 +161,21 @@ flowchart TD
     style OK stroke:#3fa860,stroke-width:2px
 ```
 
-## The revocation gap
+## Password-change revocation gap
 
-Blacklisting acts on **refresh** tokens. An already-issued **access** token
-stays valid until it expires:
+Logout revokes the login session, so its access token stops working immediately.
+Password changes currently blacklist refresh tokens without revoking login
+sessions; an access token issued before the password change stays valid until
+it expires or reaches its idle deadline:
 
 ```mermaid
 flowchart LR
     PW["Password changed at T"] --> RT["refresh tokens<br/>revoked immediately"]
-    PW --> AT["access token still valid<br/>until T + 60 minutes"]
+    PW --> AT["access token valid until expiry<br/>or idle deadline"]
 
     style RT stroke:#3fa860,stroke-width:2px
     style AT stroke:#d9534f,stroke-width:2px
 ```
 
-`JWT_ACCESS_MINUTES` **is** that exposure window — a security parameter, not a
-performance knob. Shorten it where an immediate lockout matters; the cost is
-more refresh round-trips.
+`JWT_ACCESS_MINUTES` bounds the remaining access lifetime after a password
+change. The idle deadline can end it sooner.
