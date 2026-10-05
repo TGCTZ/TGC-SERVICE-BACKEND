@@ -9,6 +9,7 @@ service that acts on it.
 ``billing_worklist`` joins to the bill and therefore lands with ``apps.billing``.
 """
 
+from django.conf import settings
 from django.db.models import Count, Exists, F, OuterRef, Q
 
 from apps.gems.enums import BillStatus, OrderHold, OrderStage, StoneStatus
@@ -91,7 +92,18 @@ def order_stage(order) -> str:
 
     bill = getattr(order, "bill", None)
     if bill is None:
-        return OrderStage.READY_TO_BILL
+        return (
+            OrderStage.BILLING_ATTENTION
+            if settings.AUTO_BILL_AFTER_IDENTIFICATION
+            else OrderStage.READY_TO_BILL
+        )
+    if (
+        settings.AUTO_BILL_AFTER_IDENTIFICATION
+        and bill.status == BillStatus.PENDING
+        and not bill.control_number
+        and bill.status_code not in settings.GEPG_ACK_SUCCESS_CODES
+    ):
+        return OrderStage.BILLING_ATTENTION
     if bill.status == BillStatus.PARTIALLY_PAID:
         return OrderStage.PART_PAID
     if bill.status != BillStatus.PAID:
@@ -213,9 +225,30 @@ def orders_at_stage(queryset, stage: str):
     full = has_stones.filter(identified__gte=F("stone_count"))
 
     if stage == OrderStage.READY_TO_BILL:
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            return full.none()
         return full.filter(bill__isnull=True)
 
+    if stage == OrderStage.BILLING_ATTENTION:
+        if not settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            return full.none()
+        return full.filter(
+            Q(bill__isnull=True)
+            | (
+                Q(bill__control_number="")
+                & Q(bill__status=BillStatus.PENDING)
+                & ~Q(bill__status_code__in=settings.GEPG_ACK_SUCCESS_CODES)
+            )
+        )
+
     billed = full.filter(bill__isnull=False)
+
+    if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+        billed = billed.exclude(
+            Q(bill__control_number="")
+            & Q(bill__status=BillStatus.PENDING)
+            & ~Q(bill__status_code__in=settings.GEPG_ACK_SUCCESS_CODES)
+        )
 
     if stage == OrderStage.PART_PAID:
         return billed.filter(bill__status=BillStatus.PARTIALLY_PAID)

@@ -16,6 +16,13 @@ Identification comes *before* billing, because typing the stone is what
 determines the fee. Each arrow is a service with its own guard, and each stage
 has a worklist that is the queue someone actually works from.
 
+Set `AUTO_BILL_AFTER_IDENTIFICATION=True` in `.env` to submit the bill to GePG
+as soon as the last preliminary stone type is saved. The default `False` keeps
+the edit and manual Generate bill steps. In automatic mode, missing prices or
+failed submissions appear in **Billing needs attention**; retrying resubmits the
+same bill when one already exists. An accepted asynchronous GePG response may
+deliver its control number later through the callback.
+
 The React client lives in the
 [TGC-SERVICE-FRONTEND](https://github.com/TGCTZ/TGC-SERVICE-FRONTEND) repository.
 

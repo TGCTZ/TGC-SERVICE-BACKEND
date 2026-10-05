@@ -5,6 +5,8 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
+from apps.orders.models import Order
+from apps.orders.serializers import StoneSerializer
 
 from .models import Bill, BillItem, Payment, ServiceProvider
 
@@ -147,6 +149,42 @@ class GenerateBillSerializer(serializers.Serializer):
     service_provider = serializers.PrimaryKeyRelatedField(
         queryset=ServiceProvider.objects.all(), required=False, allow_null=True
     )
+
+
+class RetryBillSerializer(serializers.Serializer):
+    """Identify the order whose failed automatic billing should be retried."""
+
+    order = serializers.PrimaryKeyRelatedField(queryset=Order.objects.all())
+
+
+class IdentifiedStoneSerializer(StoneSerializer):
+    """Stone response with the automatic billing result for the final pick."""
+
+    billing_attention = serializers.SerializerMethodField()
+    bill_number = serializers.SerializerMethodField()
+    control_number = serializers.SerializerMethodField()
+
+    class Meta(StoneSerializer.Meta):
+        fields = (
+            *StoneSerializer.Meta.fields,
+            "billing_attention",
+            "bill_number",
+            "control_number",
+        )
+
+    def get_billing_attention(self, obj):
+        """Explain why a saved identification needs a billing retry."""
+        return self.context.get("billing_attention")
+
+    def get_bill_number(self, obj):
+        """Return the bill created by this identification, if any."""
+        bill = self.context.get("bill")
+        return bill.bill_number if bill else None
+
+    def get_control_number(self, obj):
+        """Return a synchronous GePG number; an accepted callback may follow."""
+        bill = self.context.get("bill")
+        return bill.control_number or None if bill else None
 
 
 class BillPreviewItemSerializer(serializers.Serializer):

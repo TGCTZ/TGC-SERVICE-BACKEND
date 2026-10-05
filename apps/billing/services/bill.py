@@ -16,7 +16,12 @@ from apps.core.services import generate_reference_number
 from apps.gems.enums import BillStatus, StoneStatus
 from apps.orders.services import transition_stone
 
-from ..gateways.gepg import build_bill_response_ack, parse_bill_response, submit_bill
+from ..gateways.gepg import (
+    ACK_SUCCESS,
+    build_bill_response_ack,
+    parse_bill_response,
+    submit_bill,
+)
 from ..models import Bill, BillItem
 
 logger = logging.getLogger(__name__)
@@ -142,15 +147,9 @@ def _create_local_bill(order, service_provider, user) -> Bill:
     return bill
 
 
-def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
-    """Create a bill for an order and submit it to GePG for a control number.
-
-    The local bill is committed first and the gateway call happens outside that
-    transaction: a network failure must not roll back a bill the lab has already
-    issued, and the control number can still arrive later on the async callback.
-    """
-    bill = _create_local_bill(order, service_provider, user)
-
+def _submit_existing_bill(bill: Bill, *, user=None) -> Bill:
+    """Submit a saved bill; retries keep its number, lines, and stone statuses."""
+    order = bill.order
     username = user.get_username() if user is not None else "System"
     result = submit_bill(bill, order.customer, username)
 
@@ -172,6 +171,35 @@ def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
         ]
     )
     return bill
+
+
+def bill_needs_attention(bill: Bill) -> bool:
+    """An accepted async submission is pending, while a rejected one needs retry."""
+    return (
+        bill.status == BillStatus.PENDING
+        and not bill.control_number
+        and bill.status_code not in ACK_SUCCESS
+    )
+
+
+def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
+    """Create a bill, commit it, then submit it to GePG for a control number."""
+    bill = _create_local_bill(order, service_provider, user)
+    return _submit_existing_bill(bill, user=user)
+
+
+def retry_bill_for_order(order, *, user=None) -> Bill:
+    """Recover automatic billing without ever issuing a second bill."""
+    if order.is_held:
+        raise ServiceError("Release the order before retrying billing.")
+    bill = Bill.objects.filter(order=order).first()
+    if bill is None:
+        if order.stone_count == 0 or order.stones.count() != order.stone_count:
+            raise ServiceError("Identify every stone before retrying billing.")
+        return generate_bill_for_order(order, user=user)
+    if not bill_needs_attention(bill):
+        raise ServiceError(f"Bill {bill.bill_number} is already submitted to GePG.")
+    return _submit_existing_bill(bill, user=user)
 
 
 @transaction.atomic

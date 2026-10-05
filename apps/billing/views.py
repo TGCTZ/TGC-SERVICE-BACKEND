@@ -3,31 +3,65 @@
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from django.conf import settings
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 
 from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 from apps.orders.models import Order
 from apps.orders.search import ORDER_SEARCH_FIELDS
-from apps.orders.serializers import OrderSerializer
+from apps.orders.serializers import AddStoneSerializer, OrderSerializer
 
 from .dev import simulate_payment
 from .models import Bill, BillItem, Payment, ServiceProvider
-from .selectors import billing_worklist
+from .selectors import billing_attention_worklist, billing_worklist
 from .serializers import (
     BillItemSerializer,
     BillPreviewSerializer,
     BillSerializer,
     GenerateBillSerializer,
+    IdentifiedStoneSerializer,
     PaymentSerializer,
+    RetryBillSerializer,
     ServiceProviderSerializer,
     SimulatePaymentSerializer,
 )
-from .services import generate_bill_for_order, preview_bill_for_order
+from .services import (
+    generate_bill_for_order,
+    identify_stone,
+    preview_bill_for_order,
+    retry_bill_for_order,
+)
+
+
+class IdentifyStoneView(APIView):
+    """Preserve the order URL while billing owns the cross-app handoff."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=AddStoneSerializer, responses={201: IdentifiedStoneSerializer})
+    def post(self, request, pk):
+        """Identify one stone and bill automatically if this completes the order."""
+        if not request.user.has_perm("orders.add_stone"):
+            raise PermissionDenied("You may not identify stones.")
+        order = get_object_or_404(Order, pk=pk)
+        payload = AddStoneSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        stone, bill, attention = identify_stone(
+            order, user=request.user, **payload.validated_data
+        )
+        response = IdentifiedStoneSerializer(
+            stone,
+            context={"request": request, "bill": bill, "billing_attention": attention},
+        )
+        return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class ServiceProviderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
@@ -74,12 +108,16 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
         # Simulating a settlement is the same authority as raising the bill.
         "simulate_payment": ["billing.generate_bill"],
         "worklist": ["billing.generate_bill"],
+        "attention": ["billing.generate_bill"],
+        "retry": ["billing.generate_bill"],
     }
 
     @extend_schema(request=GenerateBillSerializer, responses=BillSerializer)
     @action(detail=False, methods=["post"])
     def generate(self, request):
         """Bill an order: price every stone, then submit to GePG."""
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise Http404
         payload = GenerateBillSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
@@ -145,6 +183,8 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"])
     def worklist(self, request):
         """Orders with every stone identified and no bill yet."""
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise Http404
         # Searched explicitly rather than via `filter_queryset`: this action
         # returns Orders, so the ViewSet's Bill `search_fields` do not apply.
         queryset = search_queryset(
@@ -155,6 +195,34 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
             page, many=True, context=self.get_serializer_context()
         )
         return self.get_paginated_response(serializer.data)
+
+    @extend_schema(responses=OrderSerializer)
+    @action(detail=False, methods=["get"])
+    def attention(self, request):
+        """Failed automatic bills and identified orders missing a bill."""
+        if not settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise Http404
+        queryset = search_queryset(
+            billing_attention_worklist(),
+            request.query_params.get("search"),
+            ORDER_SEARCH_FIELDS,
+        )
+        page = self.paginate_queryset(queryset)
+        serializer = OrderSerializer(
+            page, many=True, context=self.get_serializer_context()
+        )
+        return self.get_paginated_response(serializer.data)
+
+    @extend_schema(request=RetryBillSerializer, responses=BillSerializer)
+    @action(detail=False, methods=["post"])
+    def retry(self, request):
+        """Retry pricing or resubmit the existing failed bill."""
+        if not settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise Http404
+        payload = RetryBillSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        bill = retry_bill_for_order(payload.validated_data["order"], user=request.user)
+        return Response(self.get_serializer(bill).data)
 
 
 class BillItemViewSet(viewsets.ReadOnlyModelViewSet):

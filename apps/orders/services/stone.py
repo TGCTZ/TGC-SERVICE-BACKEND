@@ -1,5 +1,6 @@
 """Identification of stones, and status transitions."""
 
+from django.conf import settings
 from django.db import transaction
 
 from apps.core.exceptions import ServiceError
@@ -109,7 +110,10 @@ def add_stone(order: Order, *, stone_type, user=None) -> Stone:
 
     # Only the stone that completes the order: the bill prices every stone at
     # once, so accounts has nothing to act on until the last one is typed.
-    if identified + 1 == order.stone_count:
+    if (
+        identified + 1 == order.stone_count
+        and not settings.AUTO_BILL_AFTER_IDENTIFICATION
+    ):
         notify_subscribers(
             NotificationKind.READY_TO_BILL,
             title=f"Order {order.reference_number} is ready to bill",
@@ -178,6 +182,11 @@ def update_stone(
             status - the bench records both after payment.
     """
     if stone_type is not None:
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise ServiceError(
+                "Preliminary identification cannot be edited while automatic "
+                "billing is enabled."
+            )
         assert_stone_retypeable(stone)
         stone.stone_type = stone_type
     if weight is not _UNSET:

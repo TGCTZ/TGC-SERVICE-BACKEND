@@ -7,6 +7,7 @@ from django.urls import include, path
 from .views import (
     BillItemViewSet,
     BillViewSet,
+    IdentifyStoneView,
     PaymentViewSet,
     ServiceProviderViewSet,
 )
@@ -17,4 +18,7 @@ router.register("bill-items", BillItemViewSet, basename="billitem")
 router.register("payments", PaymentViewSet, basename="payment")
 router.register("service-providers", ServiceProviderViewSet, basename="serviceprovider")
 
-urlpatterns = [path("", include(router.urls))]
+urlpatterns = [
+    path("orders/<int:pk>/stones/", IdentifyStoneView.as_view(), name="identify-stone"),
+    path("", include(router.urls)),
+]

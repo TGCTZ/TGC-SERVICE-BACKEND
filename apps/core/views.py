@@ -107,7 +107,12 @@ class ConfigView(APIView):
     @extend_schema(
         responses=inline_serializer(
             name="DeploymentConfig",
-            fields={"simulate_payments": serializers.BooleanField(read_only=True)},
+            fields={
+                "simulate_payments": serializers.BooleanField(read_only=True),
+                "auto_bill_after_identification": serializers.BooleanField(
+                    read_only=True
+                ),
+            },
         ),
     )
     def get(self, request, *args, **kwargs) -> Response:
@@ -122,5 +127,6 @@ class ConfigView(APIView):
                 "simulate_payments": bool(
                     settings.DEBUG and getattr(settings, "GEPG_SIMULATE", False)
                 ),
+                "auto_bill_after_identification": settings.AUTO_BILL_AFTER_IDENTIFICATION,
             }
         )

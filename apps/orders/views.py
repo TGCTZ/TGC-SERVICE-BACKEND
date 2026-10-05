@@ -1,11 +1,12 @@
 """API views for the order domain."""
 
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from django.conf import settings
 from django.db.models import F
 
 from apps.core.permissions import StrictModelPermissions
@@ -19,7 +20,6 @@ from .selectors import (
     orders_at_stage,
 )
 from .serializers import (
-    AddStoneSerializer,
     CustomerSerializer,
     HoldOrderSerializer,
     OrderSerializer,
@@ -28,7 +28,6 @@ from .serializers import (
     TransitionSerializer,
 )
 from .services import (
-    add_stone,
     assert_stone_retypeable,
     create_order,
     hold_order,
@@ -115,7 +114,6 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         return queryset
 
     action_permissions = {
-        "add_stone": ["orders.add_stone"],
         "worklist": ["orders.add_stone"],
         "hold": ["orders.hold_order"],
         "release": ["orders.hold_order"],
@@ -142,25 +140,6 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             user=self.request.user,
         )
         serializer.instance = order
-
-    @extend_schema(request=AddStoneSerializer, responses=StoneSerializer)
-    @action(detail=True, methods=["post"], url_path="stones")
-    def add_stone(self, request, pk=None):
-        """Record the identification of the next stone.
-
-        A dedicated action rather than ``POST /stones/``: the service owns the
-        label sequence and the cap at ``order.stone_count``, and a bare create
-        would bypass both.
-        """
-        order = self.get_object()
-        payload = AddStoneSerializer(data=request.data)
-        payload.is_valid(raise_exception=True)
-
-        stone = add_stone(order, user=request.user, **payload.validated_data)
-        return Response(
-            StoneSerializer(stone, context=self.get_serializer_context()).data,
-            status=status.HTTP_201_CREATED,
-        )
 
     @extend_schema(responses=OrderSerializer)
     @extend_schema(request=HoldOrderSerializer, responses=OrderSerializer)
@@ -235,6 +214,11 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         this one. Reuses the retypeable check because it asks the same question:
         has a bill been raised against this stone yet.
         """
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise PermissionDenied(
+                "Preliminary identification cannot be removed while automatic "
+                "billing is enabled."
+            )
         assert_stone_retypeable(instance)
         super().perform_destroy(instance)
 
