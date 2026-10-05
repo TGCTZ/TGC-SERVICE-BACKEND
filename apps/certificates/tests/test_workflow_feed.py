@@ -1,4 +1,4 @@
-"""Certificates feed combines issued certificates and ready stones."""
+"""Certificates feed contains issued certificates, without a separate queue."""
 
 from decimal import Decimal
 
@@ -26,10 +26,10 @@ def _ready_stone(settings, user):
     return stone
 
 
-def test_certificates_feed_contains_issued_and_ready_stones(
+def test_certificates_feed_contains_only_issued_certificates(
     settings, admin_user, auth_client
 ):
-    """Issued certificates and certifiable stones share one feed."""
+    """A finalized but unissued legacy record does not create an issue stage."""
     issued_stone = _ready_stone(settings, admin_user)
     certificate = issue_certificate(issued_stone, user=admin_user)
     waiting_stone = _ready_stone(settings, admin_user)
@@ -37,9 +37,8 @@ def test_certificates_feed_contains_issued_and_ready_stones(
     response = auth_client(admin_user).get("/api/v1/certificates/workflow-feed/")
 
     assert response.status_code == 200
-    assert response.data["count"] == 2
-    rows = {row["kind"]: row for row in response.data["results"]}
-    assert rows["certificate"]["record_id"] == certificate.pk
-    assert rows["certificate"]["waiting"] is False
-    assert rows["stone"]["record_id"] == waiting_stone.pk
-    assert rows["stone"]["waiting"] is True
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["kind"] == "certificate"
+    assert response.data["results"][0]["record_id"] == certificate.pk
+    assert response.data["results"][0]["waiting"] is False
+    assert all(row["record_id"] != waiting_stone.pk for row in response.data["results"])

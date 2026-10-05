@@ -5,6 +5,9 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.db import transaction
+
+from apps.certificates.services import issue_certificate
 from apps.core.exceptions import ServiceError
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
@@ -119,8 +122,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         request=FinalizeReportSerializer, responses=IdentificationReportSerializer
     )
     @action(detail=True, methods=["post"])
+    @transaction.atomic
     def finalize(self, request, pk=None):
-        """Lock this report against further edits, naming the second gemmologist."""
+        """Finalize the report and issue its certificate as one transaction."""
         payload = FinalizeReportSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         report = finalize_report(
@@ -128,6 +132,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             user=request.user,
             verified_by=payload.validated_data.get("verified_by"),
         )
+        issue_certificate(report.stone, user=request.user)
         return Response(self.get_serializer(report).data)
 
     @extend_schema(responses=GemmologistCandidateSerializer(many=True))
@@ -160,9 +165,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     def workflow_feed(self, request):
         """Reports plus paid stones without a report, with drafts represented once."""
         reports = (
-            self.get_queryset()
-            .filter(is_finalized=False)
-            .order_by("-created_at", "-pk")
+            self.get_queryset().filter(is_finalized=False).order_by("-created_at", "-pk")
         )
         report_data = IdentificationReportSerializer(
             reports, many=True, context=self.get_serializer_context()

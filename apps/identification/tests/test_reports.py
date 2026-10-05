@@ -10,9 +10,10 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
+from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import WeightUnit
+from apps.gems.enums import BillStatus, WeightUnit
 from apps.gems.tests.factories import (
     ColorFactory,
     InstrumentFactory,
@@ -179,6 +180,43 @@ def test_finalize_endpoint_requires_the_finalize_permission(
     assert response.status_code == 403
     report.refresh_from_db()
     assert not report.is_finalized
+
+
+def test_finalize_endpoint_issues_a_certificate_automatically(
+    paid_stone, admin_user, auth_client
+):
+    """Finalizing paid findings issues the stone's certificate in the same action."""
+    report = create_finalizable_report(paid_stone, None)
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/identification-reports/{report.pk}/finalize/"
+    )
+
+    assert response.status_code == 200, response.data
+    report.refresh_from_db()
+    certificate = Certificate.objects.get(stone=paid_stone)
+    assert report.is_finalized
+    assert certificate.report == report
+    assert certificate.issued_by == admin_user
+
+
+def test_finalize_endpoint_keeps_the_paid_bill_requirement(
+    paid_stone, admin_user, auth_client
+):
+    """An unpaid bill rolls back both finalization and automatic issuance."""
+    report = create_finalizable_report(paid_stone, None)
+    bill = paid_stone.order.bill
+    bill.status = BillStatus.PARTIALLY_PAID
+    bill.save(update_fields=["status"])
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/identification-reports/{report.pk}/finalize/"
+    )
+
+    assert response.status_code == 400
+    report.refresh_from_db()
+    assert not report.is_finalized
+    assert not Certificate.objects.filter(stone=paid_stone).exists()
 
 
 def test_patching_a_finalized_report_is_refused(paid_stone, admin_user, auth_client):

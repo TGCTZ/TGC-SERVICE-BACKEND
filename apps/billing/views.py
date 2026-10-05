@@ -16,6 +16,7 @@ from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 from apps.core.workflow_feed import feed_row, paginated_workflow_feed
+from apps.gems.enums import BillStatus
 from apps.orders.models import Order
 from apps.orders.search import ORDER_SEARCH_FIELDS
 from apps.orders.serializers import AddStoneSerializer, OrderSerializer
@@ -201,7 +202,9 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
     def workflow_feed(self, request):
         """Existing bills and billable orders in one viewer-readable feed."""
         bills = BillSerializer(
-            self.get_queryset().order_by("-created_at", "-pk"),
+            self.get_queryset()
+            .exclude(status=BillStatus.PAID)
+            .order_by("-created_at", "-pk"),
             many=True,
             context=self.get_serializer_context(),
         ).data

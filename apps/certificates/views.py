@@ -106,13 +106,12 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="workflow-feed")
     def workflow_feed(self, request):
-        """Issued certificates and stones ready for certification."""
+        """List issued certificates; issuance happens when findings are finalized."""
         certificates = CertificateSerializer(
             self.get_queryset().order_by("-issued_at", "-pk"),
             many=True,
             context=self.get_serializer_context(),
         ).data
-        stones = list(certification_worklist())
         rows = [
             feed_row(
                 kind="certificate",
@@ -127,23 +126,6 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             )
             for row in certificates
         ]
-        stone_data = StoneSerializer(
-            stones, many=True, context=self.get_serializer_context()
-        ).data
-        rows.extend(
-            feed_row(
-                kind="stone",
-                record_id=row["id"],
-                reference=row.get("order_reference"),
-                customer=row.get("customer_name"),
-                type_name="Stone certification",
-                status="Ready to certify",
-                date=stone.order.received_date,
-                waiting=True,
-                detail=row,
-            )
-            for stone, row in zip(stones, stone_data, strict=True)
-        )
         return paginated_workflow_feed(self, rows, request)
 
     @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
