@@ -400,7 +400,7 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     @extend_schema(responses={200: dict})
     @action(detail=False, methods=["get"])
     def grouped(self, request):
-        """Permissions bucketed by app label, for rendering a role editor.
+        """Permissions bucketed for the role editor, with report gates together.
 
         Values are full ``app_label.codename`` labels rather than bare
         codenames, so they are the same strings a role's own ``permissions``
@@ -410,5 +410,12 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
         buckets: dict[str, list[str]] = {}
         for permission in self.filter_queryset(self.get_queryset()):
             app_label = permission.content_type.app_label
-            buckets.setdefault(app_label, []).append(f"{app_label}.{permission.codename}")
+            group = (
+                "reports"
+                if app_label == "core"
+                and permission.codename
+                in {"module_reports", "report_financial", "report_operational"}
+                else app_label
+            )
+            buckets.setdefault(group, []).append(f"{app_label}.{permission.codename}")
         return Response(buckets)

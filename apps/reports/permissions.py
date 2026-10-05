@@ -1,4 +1,4 @@
-"""Report access follows the existing model-view permissions."""
+"""Report gates and source model permissions are both enforced by the API."""
 
 from rest_framework.permissions import BasePermission
 

@@ -5,6 +5,10 @@ from zoneinfo import ZoneInfo
 REPORT_TIMEZONE = ZoneInfo("Africa/Dar_es_Salaam")
 EXPORT_ROW_LIMIT = 10_000
 REPORT_TITLES = {"financial": "Financial reports", "operational": "Operational reports"}
+REPORT_GATES = {
+    "financial": "core.report_financial",
+    "operational": "core.report_operational",
+}
 
 SECTIONS = {
     "billing": {
@@ -70,7 +74,9 @@ SECTIONS = {
 
 
 def allowed_sections(user, report: str) -> list[str]:
-    """Require every source permission for a section, not merely one of them."""
+    """Require report access and every source permission for each section."""
+    if not user.has_perms(("core.module_reports", REPORT_GATES[report])):
+        return []
     return [
         key
         for key, section in SECTIONS.items()

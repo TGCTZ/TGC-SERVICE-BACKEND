@@ -178,6 +178,11 @@ def test_grouped_permissions_are_writable_labels(admin_user, auth_client):
     assert response.status_code == 200, response.data
     assert "auditlog" in response.data
     assert all(value.startswith("auditlog.") for value in response.data["auditlog"])
+    assert set(response.data["reports"]) == {
+        "core.module_reports",
+        "core.report_financial",
+        "core.report_operational",
+    }
 
 
 def test_protected_role_cannot_be_deleted(admin_user, auth_client, roles):

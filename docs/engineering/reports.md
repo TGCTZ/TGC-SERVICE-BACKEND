@@ -1,7 +1,7 @@
 # Financial and operational reports
 
 Reports is a read-only L6 app. It imports the domain apps below it, with no report
-tables, workflow writes, new roles, or migrations. Dashboard has been replaced by
+tables, workflow writes, or new roles. Dashboard has been replaced by
 two permission-filtered sidebar entries: Financial reports and Operational reports.
 
 ## API
@@ -50,6 +50,10 @@ strings and totals are grouped by currency.
   both bill and payment view permissions. Unauthorized sections and their totals
   are omitted; direct requests for them are refused. Filter choices come only
   from authorized source data, rather than requiring customer-catalog access.
+- A page also requires `core.module_reports` and its own gate:
+  `core.report_financial` or `core.report_operational`. The Roles dialog groups
+  these three permissions under Reports. The migration grants existing report
+  readers the corresponding gates without resetting customized roles.
 - Export permissions are identical to screen permissions. XLSX cells containing
   user text remain strings, preventing formula interpretation.
 
