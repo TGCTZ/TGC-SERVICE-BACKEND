@@ -124,9 +124,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         *_notified("ready_for_collection"),
         MODULE_GATES["orders"],
         MODULE_GATES["reference"],
-        MODULE_GATES["reports"],
-        "core.report_financial",
-        "core.report_operational",
     ],
     # The bench: identifies each stone's type (preliminary, which fixes the
     # price), then after payment records the findings against the

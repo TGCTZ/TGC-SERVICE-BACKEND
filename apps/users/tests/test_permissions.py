@@ -16,6 +16,20 @@ def test_setup_roles_creates_every_role(roles):
     assert set(Group.objects.values_list("name", flat=True)) == set(ROLE_PERMISSIONS)
 
 
+def test_receptionist_cannot_access_reports(roles):
+    """Reception staff work from Orders and do not receive report permissions."""
+    from django.contrib.auth.models import Group
+
+    receptionist = Group.objects.get(name="receptionist")
+    permissions = set(
+        receptionist.permissions.values_list("content_type__app_label", "codename")
+    )
+
+    assert ("core", "module_reports") not in permissions
+    assert ("core", "report_financial") not in permissions
+    assert ("core", "report_operational") not in permissions
+
+
 def test_setup_roles_reports_a_retired_role_without_removing_it(roles):
     """A group the matrix no longer declares is reported, not silently dropped.
 
