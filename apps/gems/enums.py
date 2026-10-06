@@ -40,6 +40,7 @@ class ColorGroup(models.TextChoices):
     ORANGE_YELLOW = ("orange_yellow", "Orange/Yellow")
     GREEN = ("green", "Green")
     BLUE = ("blue", "Blue")
+    BROWN = ("brown", "Brown")
 
 
 class WeightUnit(models.TextChoices):

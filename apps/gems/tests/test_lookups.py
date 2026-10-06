@@ -6,7 +6,8 @@ import pytest
 
 from django.db import IntegrityError
 
-from apps.gems.models import StoneType, Variety
+from apps.gems.enums import ColorGroup
+from apps.gems.models import Color, StoneType, Variety
 from apps.gems.tests.factories import (
     SpeciesFactory,
     StoneCategoryFactory,
@@ -65,6 +66,16 @@ def test_stone_category_price_may_be_unset(admin_user, auth_client):
 
     assert response.status_code == 201, response.data
     assert response.data["price"] is None
+
+
+def test_brown_is_accepted_as_a_color_group(admin_user, auth_client):
+    """The Brown family is available through the color reference API."""
+    response = auth_client(admin_user).post(
+        "/api/v1/colors/", {"name": "Brown", "group": ColorGroup.BROWN}
+    )
+
+    assert response.status_code == 201, response.data
+    assert Color.objects.get(pk=response.data["id"]).group == ColorGroup.BROWN
 
 
 def test_a_stone_type_is_priced_through_its_category(admin_user, auth_client):

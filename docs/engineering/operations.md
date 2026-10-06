@@ -79,12 +79,24 @@ A Django superuser ranks at the top of the role hierarchy, so it can create
 admins and managers from the Users screen. Do not run `seed` in production - it
 creates demo accounts with a known password.
 
-`seed_reference_data` is safe to rerun for missing reference rows: it preserves
-existing lookup values, including prices, and does not prune stale records. It
-also runs `setup_roles`, which replaces permissions on declared roles with the
-matrix in `apps/users/roles.py`. Role edits made in the UI for those roles will
-therefore be overwritten; rerun after changing the role matrix or when restoring
-its code-defined permissions.
+`seed_reference_data` is safe to rerun for missing reference rows and preserves
+existing lookup values, including prices. Colors are the exception: the
+identification palette is authoritative, so other color rows are soft-deleted
+and canonical group assignments are restored. The command also runs
+`setup_roles`, which replaces permissions on declared roles with the matrix in
+`apps/users/roles.py`. Role edits made in the UI for those roles will therefore
+be overwritten; use `sync_colors` when only the palette needs an update.
+
+To synchronize the identification color palette in development or production,
+run this command against that environment's database after deploying the code
+and applying migrations:
+
+```bash
+uv run python manage.py sync_colors
+```
+
+This color-specific command restores the canonical palette, updates its groups,
+and soft-deletes colors outside the palette without synchronizing role permissions.
 
 ### Role synchronization resets declared roles
 

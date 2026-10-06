@@ -4,9 +4,8 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.gems.enums import ColorGroup
+from apps.gems.color_palette import sync_color_palette
 from apps.gems.models import (
-    Color,
     Instrument,
     Origin,
     ShapeCut,
@@ -41,16 +40,6 @@ SPECIES_VARIETIES = {
     "Zoisite": ("Tanzanite",),
     "Quartz": ("Amethyst", "Citrine"),
 }
-
-COLORS = (
-    ("Red", ColorGroup.RED_PINK),
-    ("Pink", ColorGroup.RED_PINK),
-    ("Blue", ColorGroup.BLUE),
-    ("Green", ColorGroup.GREEN),
-    ("Yellow", ColorGroup.ORANGE_YELLOW),
-    ("Colourless", ColorGroup.WHITE_GREY_BLACK),
-    ("Violet", ColorGroup.PURPLE_VIOLET),
-)
 
 ORIGINS = ("Tanzania", "Madagascar", "Sri Lanka", "Myanmar", "Mozambique")
 SHAPE_CUTS = ("Round brilliant", "Oval", "Cushion", "Emerald", "Cabochon")
@@ -88,8 +77,7 @@ class Command(BaseCommand):
                     name=variety_name, species=species
                 )
 
-        for name, group in COLORS:
-            Color.objects.get_or_create(name=name, defaults={"group": group})
+        sync_color_palette()
 
         for name in ORIGINS:
             Origin.objects.get_or_create(name=name)
