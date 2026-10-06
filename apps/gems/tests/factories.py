@@ -12,6 +12,7 @@ from apps.gems.models import (
     Species,
     StoneCategory,
     StoneType,
+    Treatment,
     Variety,
 )
 
@@ -124,3 +125,13 @@ class InstrumentFactory(DjangoModelFactory):
     name = factory.Iterator(
         ["Refractometer", "Polariscope", "Dichroscope", "Spectroscope", "UV lamp"]
     )
+
+
+class TreatmentFactory(DjangoModelFactory):
+    """A treatment or enhancement recorded during identification."""
+
+    class Meta:
+        model = Treatment
+        django_get_or_create = ("name",)
+
+    name = factory.Sequence(lambda n: f"Treatment {n}")

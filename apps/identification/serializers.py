@@ -10,6 +10,7 @@ from apps.gems.serializers import (
     OriginSerializer,
     ShapeCutSerializer,
     SpeciesSerializer,
+    TreatmentSerializer,
     VarietySerializer,
 )
 
@@ -42,6 +43,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     origin_detail = OriginSerializer(source="origin", read_only=True)
     shape_cut_detail = ShapeCutSerializer(source="shape_cut", read_only=True)
     color_detail = ColorSerializer(source="color", read_only=True)
+    treatment_detail = TreatmentSerializer(source="treatment", read_only=True)
     instruments_used = InstrumentUsedSerializer(many=True, read_only=True)
 
     stone_label = serializers.CharField(source="stone.label", read_only=True)
@@ -104,6 +106,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "nature_type",
             "transparency",
             "treatment",
+            "treatment_detail",
             "optic_character",
             "refractive_index",
             "specific_gravity",
@@ -140,6 +143,20 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     def get_verified_by_label(self, obj) -> str | None:
         """The second gemmologist's display name, or None if only one signed."""
         return str(obj.verified_by) if obj.verified_by_id else None
+
+    def validate(self, attrs):
+        """Keep a selected variety attached to the report's selected species."""
+        species = attrs.get("species", getattr(self.instance, "species", None))
+        variety = attrs.get("variety", getattr(self.instance, "variety", None))
+        if variety and species and variety.species_id != species.pk:
+            raise serializers.ValidationError(
+                {"variety": "Choose a variety belonging to the selected species."}
+            )
+        if variety and species is None:
+            raise serializers.ValidationError(
+                {"species": "Select a species before selecting a variety."}
+            )
+        return attrs
 
 
 class GemmologistCandidateSerializer(serializers.Serializer):

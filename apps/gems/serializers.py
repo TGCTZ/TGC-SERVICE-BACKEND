@@ -10,6 +10,7 @@ from .models import (
     Species,
     StoneCategory,
     StoneType,
+    Treatment,
     Variety,
 )
 
@@ -76,6 +77,13 @@ class OriginSerializer(ReferenceSerializer):
 
     class Meta(ReferenceSerializer.Meta):
         model = Origin
+
+
+class TreatmentSerializer(ReferenceSerializer):
+    """Treatments and enhancements recorded during identification."""
+
+    class Meta(ReferenceSerializer.Meta):
+        model = Treatment
 
 
 class ShapeCutSerializer(ReferenceSerializer):

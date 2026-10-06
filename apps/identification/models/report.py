@@ -5,7 +5,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.core.models import BaseModel
-from apps.gems.enums import NatureType, OpticCharacter, Transparency, Treatment
+from apps.gems.enums import NatureType, OpticCharacter, Transparency
 
 
 class IdentificationReport(BaseModel):
@@ -67,8 +67,12 @@ class IdentificationReport(BaseModel):
     transparency = models.CharField(
         max_length=20, choices=Transparency.choices, blank=True, default=""
     )
-    treatment = models.CharField(
-        max_length=20, choices=Treatment.choices, blank=True, default=""
+    treatment = models.ForeignKey(
+        "gems.Treatment",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
     )
     optic_character = models.CharField(
         max_length=20, choices=OpticCharacter.choices, blank=True, default=""

@@ -1,4 +1,4 @@
-"""The shared setup creates canonical rows and synchronizes the color palette."""
+"""Shared setup seeds operational references and leaves finding lookups empty."""
 
 import pytest
 
@@ -15,6 +15,7 @@ from apps.gems.models import (
     Species,
     StoneCategory,
     StoneType,
+    Treatment,
     Variety,
 )
 from apps.users.models import Gender, UserStatus
@@ -22,17 +23,30 @@ from apps.users.models import Gender, UserStatus
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize("history_months", [0, 1])
+def test_demo_seed_runs_without_finding_lookups(history_months):
+    """The development seeder does not depend on finding lookup rows."""
+    call_command("seed", users=0, orders=0, history_months=history_months, verbosity=0)
+
+    assert Species.objects.count() == 0
+    assert Variety.objects.count() == 0
+    assert Origin.objects.count() == 0
+    assert ShapeCut.objects.count() == 0
+    assert Treatment.objects.count() == 0
+
+
 def test_shared_setup_creates_the_reference_baseline_and_roles():
-    """The command materializes all agreed reference rows and roles."""
+    """The command seeds its baseline without pre-populating finding lookups."""
     call_command("seed_reference_data", verbosity=0)
 
     assert StoneCategory.objects.count() == 3
     assert StoneType.objects.count() == 8
-    assert Species.objects.count() == 4
-    assert Variety.objects.count() == 9
     assert Color.objects.count() == 36
-    assert Origin.objects.count() == 5
-    assert ShapeCut.objects.count() == 5
+    assert Species.objects.count() == 0
+    assert Variety.objects.count() == 0
+    assert Origin.objects.count() == 0
+    assert ShapeCut.objects.count() == 0
+    assert Treatment.objects.count() == 0
     assert Instrument.objects.count() == 5
     assert UserStatus.objects.count() == 4
     assert Gender.objects.count() == 4
@@ -42,7 +56,6 @@ def test_shared_setup_creates_the_reference_baseline_and_roles():
     assert StoneCategory.objects.get(name="Precious").price == 30_000
     assert StoneType.objects.get(name="Ruby").category.name == "Precious"
     assert Color.objects.get(name="Red").group == ColorGroup.RED_PINK
-    assert Variety.objects.filter(name="Ruby", species__name="Corundum").exists()
 
 
 def test_rerunning_shared_setup_preserves_other_edits_and_syncs_colors():
@@ -61,6 +74,13 @@ def test_rerunning_shared_setup_preserves_other_edits_and_syncs_colors():
     red.group = ColorGroup.BLUE
     red.save(update_fields=["group"])
     Group.objects.create(name="custom-role")
+    custom_species = Species.objects.create(name="User entered species")
+    custom_variety = Variety.objects.create(
+        name="User entered variety", species=custom_species
+    )
+    custom_origin = Origin.objects.create(name="User entered origin")
+    custom_shape = ShapeCut.objects.create(name="User entered shape")
+    custom_treatment = Treatment.objects.create(name="User entered treatment")
 
     call_command("seed_reference_data", verbosity=0)
 
@@ -71,6 +91,11 @@ def test_rerunning_shared_setup_preserves_other_edits_and_syncs_colors():
     assert Color.objects.get(name="Red").group == ColorGroup.RED_PINK
     assert Color.objects.count() == 36
     assert Group.objects.filter(name="custom-role").exists()
+    assert Species.objects.get(pk=custom_species.pk)
+    assert Variety.objects.get(pk=custom_variety.pk)
+    assert Origin.objects.get(pk=custom_origin.pk)
+    assert ShapeCut.objects.get(pk=custom_shape.pk)
+    assert Treatment.objects.get(pk=custom_treatment.pk)
 
 
 def test_color_sync_makes_the_active_palette_exact_and_is_idempotent():

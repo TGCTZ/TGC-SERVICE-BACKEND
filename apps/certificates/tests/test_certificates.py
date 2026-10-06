@@ -19,7 +19,6 @@ from apps.gems.enums import (
     OpticCharacter,
     StoneStatus,
     Transparency,
-    Treatment,
     WeightUnit,
 )
 from apps.gems.tests.factories import (
@@ -29,6 +28,7 @@ from apps.gems.tests.factories import (
     ShapeCutFactory,
     SpeciesFactory,
     StoneTypeFactory,
+    TreatmentFactory,
     VarietyFactory,
 )
 from apps.identification.models import InstrumentUsed
@@ -331,7 +331,7 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
         origin=OriginFactory(name="Mogok"),
         transparency=Transparency.TRANSPARENT,
         optic_character=OpticCharacter.DR,
-        treatment=Treatment.HEATED,
+        treatment=TreatmentFactory(name="Heated"),
         nature_type=NatureType.NATURAL,
         refractive_index="1.762-1.770",
         conclusion="Natural ruby, heated.",

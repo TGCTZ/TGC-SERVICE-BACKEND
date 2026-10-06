@@ -43,6 +43,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "origin",
         "shape_cut",
         "color",
+        "treatment",
         "identified_by",
         "verified_by",
     ).prefetch_related("instruments_used", "instruments_used__instrument")
@@ -62,9 +63,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "origin",
         "shape_cut",
         "color",
+        "treatment",
         "nature_type",
         "transparency",
-        "treatment",
         "optic_character",
         "is_polished",
     )

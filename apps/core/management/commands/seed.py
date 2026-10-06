@@ -24,16 +24,6 @@ NATURE_WEIGHTS = (
     ("synthetic", 6),
     ("artificial", 2),
 )
-TREATMENT_WEIGHTS = (
-    ("none", 55),
-    ("heated", 28),
-    ("oiled", 6),
-    ("fracture_filled", 4),
-    ("dyed", 3),
-    ("irradiated", 2),
-    ("impregnated", 1),
-    ("bleached", 1),
-)
 
 
 def _weighted(pairs):
@@ -71,9 +61,8 @@ class Command(BaseCommand):
         from apps.billing.dev import simulate_payment
         from apps.billing.services import generate_bill_for_order
         from apps.billing.tests.factories import ServiceProviderFactory
-        from apps.certificates.services import issue_certificate
-        from apps.gems.models import Color, Origin, Species, StoneType
-        from apps.identification.services import create_report, finalize_report
+        from apps.gems.models import Color, StoneType
+        from apps.identification.services import create_report
         from apps.orders.services import add_stone, create_order, update_stone
         from apps.orders.tests.factories import CustomerFactory
         from apps.users.models import Gender, UserStatus
@@ -87,17 +76,7 @@ class Command(BaseCommand):
 
         statuses = list(UserStatus.objects.all())
         genders = list(Gender.objects.all())
-        species_list = list(
-            Species.objects.filter(varieties__isnull=False)
-            .distinct()
-            .prefetch_related("varieties")
-        )
-        varieties_of = {
-            species.pk: list(species.varieties.all())
-            for species in species_list
-        }
         colors = list(Color.objects.all())
-        origins = list(Origin.objects.all())
 
         self.stdout.write("Creating one account per role...")
         for role in Group.objects.all():
@@ -134,10 +113,7 @@ class Command(BaseCommand):
                 months=options["history_months"],
                 provider=provider,
                 stone_types=stone_types,
-                species_list=species_list,
-                varieties_of=varieties_of,
                 colors=colors,
-                origins=origins,
             )
             self.stdout.write(
                 self.style.SUCCESS(
@@ -163,9 +139,8 @@ class Command(BaseCommand):
                 billed += 1
                 if billed <= 2:
                     simulate_payment(bill)
-                    # Carry the first order all the way to a certificate, so the
-                    # findings and certification queues both have
-                    # content and at least one certificate exists.
+                    # Leave a draft in the findings queue. Species is entered
+                    # by the bench, so the seeder cannot finalize this report.
                     for stone in order.stones.all():
                         stone.refresh_from_db()
                         # Weight is recorded at the bench, not at reception.
@@ -173,19 +148,11 @@ class Command(BaseCommand):
                             stone,
                             weight=Decimal(f"{random.uniform(0.5, 12):.3f}"),
                         )
-                        # Species, colour, weight and conclusion are what
-                        # `finalize_report` insists on, so a seeded report is
-                        # complete enough to sign off and certify.
-                        report = create_report(
+                        create_report(
                             stone=stone,
-                            species=random.choice(species_list),
                             color=random.choice(colors),
-                            origin=random.choice(origins),
                             conclusion="Seeded findings.",
                         )
-                        if billed == 1:
-                            finalize_report(report)
-                            issue_certificate(stone)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -200,28 +167,22 @@ class Command(BaseCommand):
         months,
         provider,
         stone_types,
-        species_list,
-        varieties_of,
         colors,
-        origins,
     ):
         """Orders spread over past months, each carried as far as its age allows.
 
-        Every order gets a timeline - its stones identified within days, then
-        billed, paid (or not: a few never are) and certified - and is taken
-        through the real services only up to the stages whose moment has
-        passed. The services stamp everything "now", so each row is then moved
-        back onto its timeline so reports show useful workflow and financial
-        history rather than one very busy afternoon.
+        Every order gets a timeline - its stones are received, then billed and
+        paid (or not: a few never are). Paid stones receive draft reports, since
+        bench staff must enter species before a report can be finalized. The
+        services stamp everything "now", so each row is then moved back onto
+        its timeline to show useful workflow and financial history.
         """
         from apps.billing.dev import simulate_payment
         from apps.billing.models import Bill, Payment
         from apps.billing.services import generate_bill_for_order
-        from apps.certificates.models import Certificate
-        from apps.certificates.services import issue_certificate
         from apps.gems.enums import OrderHold, StoneStatus
         from apps.identification.models import IdentificationReport
-        from apps.identification.services import create_report, finalize_report
+        from apps.identification.services import create_report
         from apps.orders.models import Order, StatusHistory, Stone
         from apps.orders.services import add_stone, create_order, hold_order, update_stone
         from apps.orders.tests.factories import CustomerFactory
@@ -301,30 +262,17 @@ class Command(BaseCommand):
             ).update(changed_at=paid_at)
 
             for stone in stones:
-                certified_at = paid_at + _days(0.5, 5)
-                if certified_at > now:
+                findings_at = paid_at + _days(0.5, 5)
+                if findings_at > now:
                     continue
                 stone.refresh_from_db()
                 update_stone(stone, weight=Decimal(f"{random.uniform(0.5, 12):.3f}"))
-                species = random.choice(species_list)
                 report = create_report(
                     stone=stone,
-                    species=species,
-                    variety=random.choice(varieties_of[species.pk]),
                     color=random.choice(colors),
-                    origin=random.choice(origins),
                     nature_type=_weighted(NATURE_WEIGHTS),
-                    treatment=_weighted(TREATMENT_WEIGHTS),
                     conclusion="Seeded findings.",
                 )
-                finalize_report(report)
-                issue_certificate(stone)
                 IdentificationReport.objects.filter(pk=report.pk).update(
-                    created_at=paid_at, identified_at=certified_at - timedelta(hours=2)
+                    created_at=paid_at,
                 )
-                Certificate.objects.filter(stone=stone).update(
-                    issued_at=certified_at, created_at=certified_at
-                )
-                StatusHistory.objects.filter(
-                    stone=stone, to_status=StoneStatus.CERTIFIED
-                ).update(changed_at=certified_at)

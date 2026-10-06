@@ -104,7 +104,7 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         # label is part of what the document says.
         transparency_snapshot=report.get_transparency_display() or "",
         optic_character_snapshot=report.get_optic_character_display() or "",
-        treatment_snapshot=report.get_treatment_display() or "",
+        treatment_snapshot=report.treatment.name if report.treatment_id else "",
         nature_type_snapshot=report.get_nature_type_display() or "",
         refractive_index_snapshot=report.refractive_index,
         specific_gravity_snapshot=(

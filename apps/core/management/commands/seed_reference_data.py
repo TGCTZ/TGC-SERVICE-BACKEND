@@ -7,12 +7,8 @@ from django.db import transaction
 from apps.gems.color_palette import sync_color_palette
 from apps.gems.models import (
     Instrument,
-    Origin,
-    ShapeCut,
-    Species,
     StoneCategory,
     StoneType,
-    Variety,
 )
 from apps.users.models import Gender, UserStatus
 
@@ -34,15 +30,6 @@ STONE_TYPES = (
     ("Spinel", "Semi-precious"),
 )
 
-SPECIES_VARIETIES = {
-    "Corundum": ("Ruby", "Blue sapphire", "Padparadscha"),
-    "Beryl": ("Emerald", "Aquamarine", "Morganite"),
-    "Zoisite": ("Tanzanite",),
-    "Quartz": ("Amethyst", "Citrine"),
-}
-
-ORIGINS = ("Tanzania", "Madagascar", "Sri Lanka", "Myanmar", "Mozambique")
-SHAPE_CUTS = ("Round brilliant", "Oval", "Cushion", "Emerald", "Cabochon")
 INSTRUMENTS = ("Refractometer", "Polariscope", "Dichroscope", "Spectroscope", "UV lamp")
 USER_STATUSES = ("Active", "Suspended", "Pending", "Archived")
 GENDERS = ("Female", "Male", "Non-binary", "Prefer not to say")
@@ -70,20 +57,7 @@ class Command(BaseCommand):
                 name=name, defaults={"category": categories[category_name]}
             )
 
-        for species_name, variety_names in SPECIES_VARIETIES.items():
-            species, _ = Species.objects.get_or_create(name=species_name)
-            for variety_name in variety_names:
-                Variety.objects.get_or_create(
-                    name=variety_name, species=species
-                )
-
         sync_color_palette()
-
-        for name in ORIGINS:
-            Origin.objects.get_or_create(name=name)
-
-        for name in SHAPE_CUTS:
-            ShapeCut.objects.get_or_create(name=name)
 
         for name in INSTRUMENTS:
             Instrument.objects.get_or_create(name=name)

@@ -12,6 +12,7 @@ from .views import (
     SpeciesViewSet,
     StoneCategoryViewSet,
     StoneTypeViewSet,
+    TreatmentViewSet,
     VarietyViewSet,
 )
 
@@ -22,6 +23,7 @@ router.register("species", SpeciesViewSet, basename="species")
 router.register("varieties", VarietyViewSet, basename="variety")
 router.register("colors", ColorViewSet, basename="color")
 router.register("origins", OriginViewSet, basename="origin")
+router.register("treatments", TreatmentViewSet, basename="treatment")
 router.register("shape-cuts", ShapeCutViewSet, basename="shapecut")
 router.register("instruments", InstrumentViewSet, basename="instrument")
 

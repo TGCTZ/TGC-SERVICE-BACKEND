@@ -53,7 +53,7 @@ class Certificate(BaseModel):
     # Enum labels, not codes: the document is read by a customer, not a program.
     transparency_snapshot = models.CharField(max_length=50, blank=True, default="")
     optic_character_snapshot = models.CharField(max_length=50, blank=True, default="")
-    treatment_snapshot = models.CharField(max_length=50, blank=True, default="")
+    treatment_snapshot = models.CharField(max_length=100, blank=True, default="")
     nature_type_snapshot = models.CharField(max_length=50, blank=True, default="")
     refractive_index_snapshot = models.CharField(max_length=50, blank=True, default="")
     # Held as text, not Decimal: it is printed verbatim and never arithmetic.

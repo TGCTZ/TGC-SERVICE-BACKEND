@@ -98,6 +98,13 @@ uv run python manage.py sync_colors
 This color-specific command restores the canonical palette, updates its groups,
 and soft-deletes colors outside the palette without synchronizing role permissions.
 
+Species, variety, origin, shape/cut, and treatment lookups start empty. The
+rollout migration permanently removes their current rows and clears those
+fields on reports; issued certificates retain their frozen snapshots. The
+development demo seeder also leaves these findings blank. Users can add values
+from the searchable findings dropdowns, and administrators can review them
+under Reference data → Treatments.
+
 ### Role synchronization resets declared roles
 
 Both `seed_reference_data` and `setup_roles` set each declared role's

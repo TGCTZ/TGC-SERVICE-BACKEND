@@ -73,19 +73,6 @@ class NatureType(models.TextChoices):
     ARTIFICIAL = ("artificial", "Artificial")
 
 
-class Treatment(models.TextChoices):
-    """Enhancement applied to the stone, if any."""
-
-    NONE = ("none", "None")
-    HEATED = ("heated", "Heated")
-    OILED = ("oiled", "Oiled")
-    DYED = ("dyed", "Dyed")
-    IRRADIATED = ("irradiated", "Irradiated")
-    FRACTURE_FILLED = ("fracture_filled", "Fracture filled")
-    BLEACHED = ("bleached", "Bleached")
-    IMPREGNATED = ("impregnated", "Impregnated")
-
-
 class OpticCharacter(models.TextChoices):
     """Optical behavior under polarized light.
 

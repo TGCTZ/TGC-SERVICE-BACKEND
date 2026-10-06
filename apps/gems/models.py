@@ -1,6 +1,6 @@
 """Gemmological reference tables.
 
-All seven inherit ``ReferenceModel``, so they share a name, description, active
+All inherit ``ReferenceModel``, so they share a name, description, active
 flag, soft delete and the partial unique constraint that lets a deleted name be
 reused.
 """
@@ -81,6 +81,10 @@ class Color(ReferenceModel):
 
 class Origin(ReferenceModel):
     """Geographic origin of a stone."""
+
+
+class Treatment(ReferenceModel):
+    """A treatment or enhancement recorded during identification."""
 
 
 class ShapeCut(ReferenceModel):

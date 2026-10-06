@@ -51,6 +51,7 @@ GEMS_MODELS = (
     "origin",
     "shapecut",
     "instrument",
+    "treatment",
 )
 
 
@@ -130,6 +131,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     # reference tables it reads.
     "gemmologist": [
         *_perms("gems", GEMS_MODELS, READ),
+        "gems.add_species",
+        "gems.add_variety",
+        "gems.add_origin",
+        "gems.add_shapecut",
+        "gems.add_treatment",
         *_perms("orders", ("order", "stone"), READ),
         "billing.view_bill",
         # Identification. Django names this permission after the row
