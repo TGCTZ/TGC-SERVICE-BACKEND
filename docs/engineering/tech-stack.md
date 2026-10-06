@@ -108,7 +108,7 @@ needed.
 | `pytest` | 9.1.1 | Test runner |
 | `pytest-django` | 4.14.0 | Database fixtures, settings integration |
 | `pytest-cov` | 7.1.0 | Coverage measurement |
-| `factory-boy` | 3.3.3 | Test data factories, reused by `seed` |
+| `factory-boy` | 3.3.3 | Test data factories, some reused by demo `seed` |
 | `ruff` | 0.16.6 | Linter, formatter, import sorter, docstring checker |
 | `pre-commit` | 4.6.2 | Git hook management |
 | `django-debug-toolbar` | 8.0.0 | Local SQL and request inspection |

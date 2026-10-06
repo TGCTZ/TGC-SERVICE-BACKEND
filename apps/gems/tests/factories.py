@@ -1,8 +1,4 @@
-"""Factories for the gemmological reference tables.
-
-Reused by ``manage.py seed``, so the shapes here are the shapes a developer
-sees on a freshly seeded database.
-"""
+"""Factories for gemmological tests."""
 
 import factory
 from factory.django import DjangoModelFactory

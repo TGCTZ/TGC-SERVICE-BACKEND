@@ -150,9 +150,11 @@ silently until someone opens the screen:
 
 ## 9. Tests
 
-Factories in `tests/factories.py`, shared with `manage.py seed` so demo data and
-test data cannot disagree. Module-level `pytestmark = pytest.mark.django_db`,
-plain functions named for the behaviour.
+Factories in `tests/factories.py` support tests; selected factories are also
+used for generated demo records. Add canonical lookup rows to
+`manage.py seed_reference_data` when an app needs environment-wide reference
+data. Module-level `pytestmark = pytest.mark.django_db`, plain functions named
+for the behaviour.
 
 Every list endpoint gets a query-count test - and it must create its rows inside
 `set_current_user(...)`, or the audit-label N+1 stays invisible (convention 23).

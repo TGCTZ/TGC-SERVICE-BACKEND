@@ -71,7 +71,7 @@ uv run python manage.py collectstatic --noinput   # the Django admin's assets
 The first deploy only, after `migrate`:
 
 ```bash
-uv run python manage.py setup_roles       # create the six roles
+uv run python manage.py seed_reference_data  # shared lookups, roles and permissions
 uv run python manage.py createsuperuser   # the first account; it can create the rest
 ```
 
@@ -79,14 +79,22 @@ A Django superuser ranks at the top of the role hierarchy, so it can create
 admins and managers from the Users screen. Do not run `seed` in production - it
 creates demo accounts with a known password.
 
-### `setup_roles` resets roles
+`seed_reference_data` is safe to rerun for missing reference rows: it preserves
+existing lookup values, including prices, and does not prune stale records. It
+also runs `setup_roles`, which replaces permissions on declared roles with the
+matrix in `apps/users/roles.py`. Role edits made in the UI for those roles will
+therefore be overwritten; rerun after changing the role matrix or when restoring
+its code-defined permissions.
 
-`setup_roles` sets each declared role's permissions to exactly what
-`apps/users/roles.py` says, including `admin`. Anything changed on the roles
-screen since is overwritten. Run it only when `roles.py` has changed - a new role
-or a new permission - and check first whether anyone has edited roles by hand.
-Roles created on the screen are left alone (and reported as stale); `--prune`
-deletes them.
+### Role synchronization resets declared roles
+
+Both `seed_reference_data` and `setup_roles` set each declared role's
+permissions to exactly what `apps/users/roles.py` says, including `admin`.
+Anything changed on the roles screen since is overwritten. Run either only when
+`roles.py` has changed or when restoring its code-defined permissions, and check
+first whether anyone has edited roles by hand. Roles created on the screen are
+left alone (and reported as stale); `--prune` is available only through
+`setup_roles` and deletes them.
 
 ## Health checks
 

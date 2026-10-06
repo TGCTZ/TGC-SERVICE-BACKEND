@@ -1,9 +1,4 @@
-"""Populate an empty database with realistic demo data.
-
-Reuses the ``factory_boy`` factories from each app's ``tests/factories.py``
-rather than defining a second set of fixtures. One definition, two consumers:
-the suite and this command can never disagree about what a valid row looks like.
-"""
+"""Populate a development database with realistic demo data."""
 
 import random
 from datetime import timedelta
@@ -19,44 +14,6 @@ from django.db.models import F
 from django.utils import timezone
 
 DEMO_PASSWORD = "1234567890"  # noqa: S105 - demo data, never a real credential
-
-# Enough of a stone catalogue to exercise pricing, findings and certification.
-# The lab's three pricing tiers and the flat fee each carries, in TZS.
-STONE_CATEGORIES = (
-    ("Precious", 30_000),
-    ("Semi-precious", 10_000),
-    ("Diamond", 40_000),
-)
-
-STONE_TYPES = (
-    ("Ruby", "Precious"),
-    ("Sapphire", "Precious"),
-    ("Emerald", "Precious"),
-    ("Diamond", "Diamond"),
-    ("Tanzanite", "Semi-precious"),
-    ("Garnet", "Semi-precious"),
-    ("Tourmaline", "Semi-precious"),
-    ("Spinel", "Semi-precious"),
-)
-
-SPECIES_VARIETIES = {
-    "Corundum": ("Ruby", "Blue sapphire", "Padparadscha"),
-    "Beryl": ("Emerald", "Aquamarine", "Morganite"),
-    "Zoisite": ("Tanzanite",),
-    "Quartz": ("Amethyst", "Citrine"),
-}
-
-COLORS = (
-    ("Red", "red_pink"),
-    ("Pink", "red_pink"),
-    ("Blue", "blue"),
-    ("Green", "green"),
-    ("Yellow", "orange_yellow"),
-    ("Colourless", "white_grey_black"),
-    ("Violet", "purple_violet"),
-)
-
-ORIGINS = ("Tanzania", "Madagascar", "Sri Lanka", "Myanmar", "Mozambique")
 
 # --history-months only: enough spread for reports to show useful history.
 CHANNELS = ("CRDB Bank", "NMB Bank", "M-Pesa", "Tigo Pesa", "Airtel Money")
@@ -91,7 +48,7 @@ def _days(low, high):
 
 
 class Command(BaseCommand):
-    """Seed roles, users and the stone reference tables. Idempotent."""
+    """Create demo users and workflow data for local development."""
 
     help = "Populate the database with demo data for local development."
 
@@ -115,56 +72,32 @@ class Command(BaseCommand):
         from apps.billing.services import generate_bill_for_order
         from apps.billing.tests.factories import ServiceProviderFactory
         from apps.certificates.services import issue_certificate
-        from apps.gems.models import StoneType
-        from apps.gems.tests.factories import (
-            ColorFactory,
-            InstrumentFactory,
-            OriginFactory,
-            ShapeCutFactory,
-            SpeciesFactory,
-            StoneCategoryFactory,
-            StoneTypeFactory,
-            VarietyFactory,
-        )
+        from apps.gems.models import Color, Origin, Species, StoneType
         from apps.identification.services import create_report, finalize_report
         from apps.orders.services import add_stone, create_order, update_stone
         from apps.orders.tests.factories import CustomerFactory
+        from apps.users.models import Gender, UserStatus
         from apps.users.tests.factories import (
-            GenderFactory,
             IdentityDetailFactory,
             UserFactory,
-            UserStatusFactory,
         )
 
-        self.stdout.write("Ensuring roles exist...")
-        call_command("setup_roles", verbosity=0)
+        self.stdout.write("Ensuring shared reference data and roles exist...")
+        call_command("seed_reference_data", verbosity=0)
 
-        self.stdout.write("Creating user lookups...")
-        statuses = [UserStatusFactory() for _ in range(4)]
-        genders = [GenderFactory() for _ in range(4)]
-
-        self.stdout.write("Creating the stone reference tables...")
-        # The fee lives on the tier, so a ruby and a sapphire cost the same.
-        categories = {
-            name: StoneCategoryFactory(name=name, price=price)
-            for name, price in STONE_CATEGORIES
+        statuses = list(UserStatus.objects.all())
+        genders = list(Gender.objects.all())
+        species_list = list(
+            Species.objects.filter(varieties__isnull=False)
+            .distinct()
+            .prefetch_related("varieties")
+        )
+        varieties_of = {
+            species.pk: list(species.varieties.all())
+            for species in species_list
         }
-        for name, category in STONE_TYPES:
-            StoneTypeFactory(name=name, category=categories[category])
-        species_list = []
-        varieties_of = {}
-        for species_name, varieties in SPECIES_VARIETIES.items():
-            species = SpeciesFactory(name=species_name)
-            species_list.append(species)
-            varieties_of[species.pk] = [
-                VarietyFactory(name=variety_name, species=species)
-                for variety_name in varieties
-            ]
-        colors = [ColorFactory(name=name, group=group) for name, group in COLORS]
-        origins = [OriginFactory(name=name) for name in ORIGINS]
-        for _ in range(5):
-            ShapeCutFactory()
-            InstrumentFactory()
+        colors = list(Color.objects.all())
+        origins = list(Origin.objects.all())
 
         self.stdout.write("Creating one account per role...")
         for role in Group.objects.all():
