@@ -9,6 +9,7 @@ from defusedxml.common import DefusedXmlException
 from django.db import transaction
 
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import BillStatus, StoneStatus
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_subscribers
@@ -78,8 +79,14 @@ def _apply_payment(header: dict, txn: dict, raw: str) -> None:
             transition_stone(stone, StoneStatus.PAID, note="Bill settled via GePG")
         notify_subscribers(
             NotificationKind.BILL_PAID,
-            title=f"Order {bill.order.reference_number} has been paid",
-            body=f"Bill {bill.bill_number} is settled; findings can now be recorded.",
+            title=(
+                f"Order {format_reference_number(bill.order.reference_number)} "
+                "has been paid"
+            ),
+            body=(
+                f"Bill {format_reference_number(bill.bill_number)} is settled; "
+                "findings can now be recorded."
+            ),
             link="/identification-reports?source=waiting",
         )
     else:

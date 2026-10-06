@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import reference_number_for_order
 from apps.gems.enums import BillStatus
 from apps.orders.services import update_stone
 
@@ -80,11 +80,10 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
 
     report = IdentificationReport(
         stone=stone,
-        # TGC-<fy>-<seq> - printed on the certificate as
-        # REPORT NO, and the same shape as every other reference the system
-        # issues, so it survives a filename and a URL path segment intact.
-        report_number=generate_reference_number(
-            IdentificationReport, "report_number", "TGC"
+        # Findings share the order's sequence, with the stone label preserving
+        # a distinct reference for every stone in that order.
+        report_number=reference_number_for_order(
+            stone.order, "TGC", stone_label=stone.label
         ),
         **fields,
     )

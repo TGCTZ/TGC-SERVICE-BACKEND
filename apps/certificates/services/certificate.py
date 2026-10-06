@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import BillStatus, CertificateStatus, StoneStatus
 from apps.gems.models import Instrument
 from apps.notifications.models import NotificationKind
@@ -90,8 +90,8 @@ def issue_certificate(stone, *, user=None) -> Certificate:
     certificate = Certificate(
         stone=stone,
         report=report,
-        certificate_number=generate_reference_number(
-            Certificate, "certificate_number", "CERT"
+        certificate_number=reference_number_for_order(
+            stone.order, "CERT", stone_label=stone.label
         ),
         stone_type_snapshot=stone.stone_type.name,
         weight_snapshot=stone.weight,
@@ -130,7 +130,7 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         stone,
         StoneStatus.CERTIFIED,
         user=user,
-        note=f"Certified {certificate.certificate_number}",
+        note=f"Certified {format_reference_number(certificate.certificate_number)}",
     )
     _notify_if_order_ready_for_collection(stone.order, user)
     return certificate
@@ -150,7 +150,10 @@ def _notify_if_order_ready_for_collection(order, user) -> None:
         return
     notify_subscribers(
         NotificationKind.READY_FOR_COLLECTION,
-        title=f"Order {order.reference_number} is ready for collection",
+        title=(
+            f"Order {format_reference_number(order.reference_number)} is ready "
+            "for collection"
+        ),
         body=f"All certificates are issued. Contact {order.customer} to collect.",
         link=f"/orders?search={order.reference_number}",
         exclude=user,

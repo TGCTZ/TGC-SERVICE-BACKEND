@@ -70,15 +70,21 @@ models.UniqueConstraint(
 Reference numbers come from `apps/core/services.py`:
 
 ```python
-generate_reference_number(Bill, "bill_number", "BILL")  # BILL-2627-00001
+generate_reference_number(Order, "reference_number", "ORD")  # ORD-2627-00001
+reference_number_for_order(order, "BILL")  # BILL-2627-00001
+reference_number_for_order(order, "TGC", stone_label="A")  # TGC-2627-00001-A
 ```
 
-It scans `all_objects`, so a soft-deleted number is never reissued.
+For orders, this allocates the shared five-digit sequence. Related bills,
+findings, and certificates derive their numbers from the order with
+`reference_number_for_order(order, prefix, stone_label=...)`; they do not have
+independent counters. `format_reference_number()` adds the financial-year slash
+to human-facing values while stored and gateway IDs stay slash-free.
 
-Every reference takes this one shape, identification report numbers included
-(`TGC-2627-00765`). The year pair is the **financial** year — July to June, each
-year written as two digits and answered by `financial_year()`. The sequence
-restarts with it. See
+References share an order sequence and use a prefix to identify the document;
+per-stone report and certificate numbers add the stone label. The year pair is
+the **financial** year — July to June, each year written as two digits and
+answered by `financial_year()`. The order sequence restarts with it. See
 [certificates.md](certificates.md).
 
 ## 4. Services

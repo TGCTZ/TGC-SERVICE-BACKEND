@@ -2,6 +2,16 @@
 
 from rest_framework import serializers
 
+from .services import format_reference_number
+
+
+class DisplayReferenceField(serializers.CharField):
+    """Render slash-free stored references with a readable financial year."""
+
+    def to_representation(self, value):
+        """Format this field after DRF has handled null and string conversion."""
+        return format_reference_number(super().to_representation(value))
+
 
 class AuditFieldsMixin(serializers.ModelSerializer):
     """Expose the read-only audit columns in a consistent shape.

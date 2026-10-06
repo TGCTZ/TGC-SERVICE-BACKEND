@@ -12,7 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import BillStatus, StoneStatus
 from apps.orders.services import transition_stone
 
@@ -68,7 +68,9 @@ def preview_bill_for_order(order) -> dict:
     items, total, blockers = [], Decimal("0"), []
 
     if Bill.objects.filter(order=order).exists():
-        blockers.append(f"Order {order.reference_number} already has a bill.")
+        blockers.append(
+            f"Order {format_reference_number(order.reference_number)} already has a bill."
+        )
     if not stones:
         blockers.append("Order has no stones to bill.")
 
@@ -85,9 +87,7 @@ def preview_bill_for_order(order) -> dict:
                 "stone": stone.id,
                 "label": stone.label,
                 "description": (
-                    stone.stone_type.name
-                    if stone.stone_type_id
-                    else category.name
+                    stone.stone_type.name if stone.stone_type_id else category.name
                 ),
                 "category": category.name,
                 "amount": amount,
@@ -106,7 +106,9 @@ def preview_bill_for_order(order) -> dict:
 def _create_local_bill(order, service_provider, user) -> Bill:
     """Create the bill and its snapshotted line items; mark stones billed."""
     if Bill.objects.filter(order=order).exists():
-        raise ServiceError(f"Order {order.reference_number} already has a bill.")
+        raise ServiceError(
+            f"Order {format_reference_number(order.reference_number)} already has a bill."
+        )
     stones = list(order.stones.select_related("stone_category", "stone_type"))
     if not stones:
         raise ServiceError("Order has no stones to bill.")
@@ -114,7 +116,7 @@ def _create_local_bill(order, service_provider, user) -> Bill:
     now = timezone.now()
     bill = Bill(
         order=order,
-        bill_number=generate_reference_number(Bill, "bill_number", "BILL"),
+        bill_number=reference_number_for_order(order, "BILL"),
         service_provider=service_provider,
         status=BillStatus.PENDING,
         issued_at=now,
@@ -147,7 +149,10 @@ def _create_local_bill(order, service_provider, user) -> Bill:
         item.save()
         total += amount
         transition_stone(
-            stone, StoneStatus.BILLED, user=user, note=f"Billed on {bill.bill_number}"
+            stone,
+            StoneStatus.BILLED,
+            user=user,
+            note=f"Billed on {format_reference_number(bill.bill_number)}",
         )
 
     bill.total_amount = total
@@ -206,7 +211,10 @@ def retry_bill_for_order(order, *, user=None) -> Bill:
             raise ServiceError("Identify every stone before retrying billing.")
         return generate_bill_for_order(order, user=user)
     if not bill_needs_attention(bill):
-        raise ServiceError(f"Bill {bill.bill_number} is already submitted to GePG.")
+        raise ServiceError(
+            f"Bill {format_reference_number(bill.bill_number)} is already submitted "
+            "to GePG."
+        )
     return _submit_existing_bill(bill, user=user)
 
 

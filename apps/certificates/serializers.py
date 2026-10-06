@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
 
 from .models import Certificate
 from .selectors import instrument_checklist
@@ -12,7 +12,10 @@ class CertificateSerializer(AuditFieldsMixin):
     """A certificate as the lab sees it."""
 
     stone_label = serializers.CharField(source="stone.label", read_only=True)
-    order_reference = serializers.CharField(
+    certificate_number = DisplayReferenceField(read_only=True)
+    report_number = DisplayReferenceField(source="report.report_number", read_only=True)
+    report_number_snapshot = DisplayReferenceField(read_only=True)
+    order_reference = DisplayReferenceField(
         source="stone.order.reference_number", read_only=True
     )
     customer_name = serializers.CharField(
@@ -21,7 +24,6 @@ class CertificateSerializer(AuditFieldsMixin):
     customer_phone = serializers.CharField(
         source="stone.order.customer.phone", read_only=True
     )
-    report_number = serializers.CharField(source="report.report_number", read_only=True)
     issued_by_label = serializers.SerializerMethodField()
     # The lab's full instrument list with this certificate's ticks - the same
     # list the PDF prints, so the view dialog and the document agree.

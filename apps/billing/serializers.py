@@ -4,7 +4,8 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
+from apps.core.services import format_reference_number
 from apps.orders.models import Order
 from apps.orders.serializers import StoneSerializer
 
@@ -94,7 +95,8 @@ class PaymentSerializer(AuditFieldsMixin):
 class BillSerializer(AuditFieldsMixin):
     """A bill, with its line items and the gateway's last word on it."""
 
-    order_reference = serializers.CharField(
+    bill_number = DisplayReferenceField(read_only=True)
+    order_reference = DisplayReferenceField(
         source="order.reference_number", read_only=True
     )
     customer_name = serializers.CharField(
@@ -179,7 +181,7 @@ class IdentifiedStoneSerializer(StoneSerializer):
     def get_bill_number(self, obj):
         """Return the bill created by this identification, if any."""
         bill = self.context.get("bill")
-        return bill.bill_number if bill else None
+        return format_reference_number(bill.bill_number) if bill else None
 
     def get_control_number(self, obj):
         """Return a synchronous GePG number; an accepted callback may follow."""

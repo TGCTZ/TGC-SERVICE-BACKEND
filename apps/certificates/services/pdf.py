@@ -15,6 +15,7 @@ exactly what it said on the day it was issued.
 from django.conf import settings
 from django.template.loader import render_to_string
 
+from apps.core.services import format_reference_number
 from apps.gems.enums import CertificateStatus, WeightUnit
 
 from ..models import Certificate
@@ -58,6 +59,7 @@ def certificate_context(certificate: Certificate) -> dict:
 
     return {
         "certificate": certificate,
+        "certificate_number": format_reference_number(certificate.certificate_number),
         "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
         "is_revoked": certificate.status == CertificateStatus.REVOKED,
         "header_style": HEADER_STYLE,
@@ -65,12 +67,14 @@ def certificate_context(certificate: Certificate) -> dict:
         "lab_name": settings.CERTIFICATE_LAB_NAME,
         "lab_address": settings.CERTIFICATE_LAB_ADDRESS,
         "stone_label": stone.label,
-        "order_reference": order.reference_number,
+        "order_reference": format_reference_number(order.reference_number),
         "customer_name": order.customer.full_name,
         # The number printed as REPORT NO. Snapshotted, falling back to the live
         # report only for certificates issued before snapshotting existed.
         "report_number": (
-            certificate.report_number_snapshot or certificate.report.report_number
+            format_reference_number(
+                certificate.report_number_snapshot or certificate.report.report_number
+            )
         ),
         "instruments": instrument_checklist(certificate),
         # The frozen copy, falling back to the stone's live photograph for

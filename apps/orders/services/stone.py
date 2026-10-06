@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import StoneStatus
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_subscribers
@@ -64,9 +65,7 @@ def next_stone_label(order) -> str:
 
 
 @transaction.atomic
-def add_stone(
-    order: Order, *, stone_category=None, stone_type=None, user=None
-) -> Stone:
+def add_stone(order: Order, *, stone_category=None, stone_type=None, user=None) -> Stone:
     """Record a stone's pricing category; its exact type is found later.
 
     ``stone_type`` remains accepted for older callers. When supplied without a
@@ -95,7 +94,8 @@ def add_stone(
     identified = order.stones.count()
     if identified >= order.stone_count:
         raise ServiceError(
-            f"All {order.stone_count} stone(s) for {order.reference_number} have "
+            f"All {order.stone_count} stone(s) for "
+            f"{format_reference_number(order.reference_number)} have "
             f"already been identified."
         )
 
@@ -127,7 +127,10 @@ def add_stone(
     ):
         notify_subscribers(
             NotificationKind.READY_TO_BILL,
-            title=f"Order {order.reference_number} is ready to bill",
+            title=(
+                f"Order {format_reference_number(order.reference_number)} "
+                "is ready to bill"
+            ),
             body=f"All {order.stone_count} stone(s) have been identified.",
             link="/bills?source=waiting",
             exclude=user,
@@ -191,10 +194,7 @@ def update_stone(
         ServiceError: If a billed stone's category changes, if its type belongs
             to another category, or if a finalized report's type changes.
     """
-    if (
-        stone_category is not _UNSET
-        and stone_category.pk != stone.stone_category_id
-    ):
+    if stone_category is not _UNSET and stone_category.pk != stone.stone_category_id:
         assert_stone_retypeable(stone)
         stone.stone_category = stone_category
         if (

@@ -13,6 +13,7 @@ from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import BillStatus, NatureType, WeightUnit
 from apps.gems.tests.factories import (
     ColorFactory,
@@ -66,7 +67,10 @@ def test_create_report_allocates_a_number(paid_stone, user):
     # The shape every reference in the system takes; the year pair is a
     # financial year, so it is asserted as a shape rather than against today's
     # calendar.
-    assert re.fullmatch(r"TGC-\d{4}-\d{5}", report.report_number)
+    assert re.fullmatch(r"TGC-\d{4}-\d{5}-A", report.report_number)
+    assert report.report_number.split("-")[2] == (
+        paid_stone.order.reference_number.split("-")[2].zfill(5)
+    )
     assert report.identified_by == user
     assert not report.is_finalized
 
@@ -160,7 +164,10 @@ def test_report_endpoint_creates_via_the_service(paid_stone, admin_user, auth_cl
     )
 
     assert response.status_code == 201, response.data
-    assert re.fullmatch(r"TGC-\d{4}-\d{5}", response.data["report_number"])
+    assert re.fullmatch(r"TGC-\d{2}/\d{2}-\d{5}-A", response.data["report_number"])
+    assert response.data["stone_reference"] == (
+        f"{format_reference_number(paid_stone.order.reference_number)}-A"
+    )
     assert response.data["identified_by_label"] is not None
 
 
@@ -510,7 +517,7 @@ def test_findings_worklist_row_carries_its_report(paid_stone, admin_user, auth_c
     after = client.get("/api/v1/identification-reports/worklist/")
     detail = after.data["results"][0]["report_detail"]
     assert detail["id"] == report.pk
-    assert detail["report_number"] == report.report_number
+    assert detail["report_number"] == format_reference_number(report.report_number)
     assert detail["is_finalized"] is False
 
 

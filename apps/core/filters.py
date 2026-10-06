@@ -217,7 +217,12 @@ def search_queryset(queryset, term: str, fields):
     term = (term or "").strip()
     if not term or not fields:
         return queryset
+    # References are stored as `2627` but displayed as `26/27`; accepting both
+    # keeps a copied, human-readable reference searchable without changing the
+    # canonical value sent to GePG or used by URL routes.
+    terms = {term, term.replace("/", "")}
     condition = Q()
     for field in fields:
-        condition |= Q(**{f"{field}__icontains": term})
+        for candidate in terms:
+            condition |= Q(**{f"{field}__icontains": candidate})
     return queryset.filter(condition)

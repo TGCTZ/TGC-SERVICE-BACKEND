@@ -34,6 +34,9 @@ def test_generating_a_bill_prices_every_stone(billable_order):
     bill = generate_bill_for_order(billable_order)
 
     assert bill.bill_number.startswith("BILL-")
+    assert (
+        bill.bill_number.split("-")[1:] == billable_order.reference_number.split("-")[1:]
+    )
     assert bill.total_amount == Decimal("150000.00")
     assert bill.items.count() == 3
     assert bill.status == BillStatus.PENDING
@@ -328,9 +331,7 @@ def test_category_only_stones_can_be_priced_and_billed(settings):
     from apps.billing.services import preview_bill_for_order
 
     order = OrderFactory(stone_count=1)
-    category = StoneCategoryFactory(
-        name="Precious", price=Decimal("30000.00")
-    )
+    category = StoneCategoryFactory(name="Precious", price=Decimal("30000.00"))
     add_stone(order, stone_category=category)
 
     preview = preview_bill_for_order(order)

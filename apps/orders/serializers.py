@@ -3,7 +3,8 @@
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import OrderHold, OrderStage, StoneStatus
 from apps.gems.models import StoneCategory, StoneType
 from apps.gems.serializers import StoneCategorySerializer, StoneTypeSerializer
@@ -70,7 +71,7 @@ class StoneReportSerializer(serializers.Serializer):
     """
 
     id = serializers.IntegerField(read_only=True)
-    report_number = serializers.CharField(read_only=True)
+    report_number = DisplayReferenceField(read_only=True)
     is_finalized = serializers.BooleanField(read_only=True)
 
 
@@ -92,9 +93,10 @@ class StoneSerializer(AuditFieldsMixin):
         source="stone_category", read_only=True
     )
     stone_type_detail = StoneTypeSerializer(source="stone_type", read_only=True)
-    order_reference = serializers.CharField(
+    order_reference = DisplayReferenceField(
         source="order.reference_number", read_only=True
     )
+    stone_reference = serializers.SerializerMethodField()
     # The customer, alongside the order the stone came in on. A reference number
     # identifies the paperwork; the name identifies the visit.
     customer_name = serializers.CharField(
@@ -109,6 +111,7 @@ class StoneSerializer(AuditFieldsMixin):
             "id",
             "order",
             "order_reference",
+            "stone_reference",
             "customer_name",
             "customer_phone",
             "label",
@@ -166,6 +169,12 @@ class StoneSerializer(AuditFieldsMixin):
         report = getattr(stone, "report", None)
         return StoneReportSerializer(report).data if report else None
 
+    def get_stone_reference(self, stone):
+        """Identify this stone under its order's shared sequence."""
+        return format_reference_number(
+            reference_number_for_order(stone.order, "ORD", stone_label=stone.label)
+        )
+
 
 class OrderSerializer(AuditFieldsMixin):
     """An order, with its customer and progress counters.
@@ -185,6 +194,7 @@ class OrderSerializer(AuditFieldsMixin):
     # Exposed so a screen can tell "ready to bill" from "already billed"
     # without a second request. `apps.orders` sits below `apps.billing`, so
     # this reads the reverse relation rather than importing it.
+    reference_number = DisplayReferenceField(read_only=True)
     bill_number = serializers.SerializerMethodField()
     control_number = serializers.SerializerMethodField()
     # The label the next stone identified here will carry, so the identification
@@ -263,7 +273,7 @@ class OrderSerializer(AuditFieldsMixin):
     def get_bill_number(self, obj) -> str | None:
         """This order's bill number, or None if it has not been billed."""
         bill = getattr(obj, "bill", None)
-        return bill.bill_number if bill is not None else None
+        return format_reference_number(bill.bill_number) if bill is not None else None
 
     def get_next_stone_label(self, obj) -> str | None:
         """What the next stone will be called, or None when the order is full."""

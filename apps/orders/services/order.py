@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import format_reference_number, generate_reference_number
 from apps.gems.enums import BillStatus, OrderHold
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_subscribers
@@ -64,7 +64,7 @@ def create_order(
 
     notify_subscribers(
         NotificationKind.ORDER_RECEIVED,
-        title=f"New order {order.reference_number}",
+        title=f"New order {format_reference_number(order.reference_number)}",
         body=f"{stone_count} stone(s) from {customer} awaiting identification.",
         link="/identification?source=waiting",
         exclude=user,
@@ -106,7 +106,8 @@ def hold_order(order: Order, *, status: str, reason: str = "", user=None) -> Ord
         bill = getattr(order, "bill", None)
         if bill is not None and bill.status == BillStatus.PAID:
             raise ServiceError(
-                f"{order.reference_number} has been paid and cannot be cancelled. "
+                f"{format_reference_number(order.reference_number)} has been paid "
+                "and cannot be cancelled. "
                 "Put it on hold instead."
             )
 
@@ -140,7 +141,9 @@ def release_order(order: Order, *, user=None) -> Order:
         ServiceError: If the order is not held.
     """
     if order.hold_status == OrderHold.ACTIVE:
-        raise ServiceError(f"{order.reference_number} is not on hold.")
+        raise ServiceError(
+            f"{format_reference_number(order.reference_number)} is not on hold."
+        )
 
     order.hold_status = OrderHold.ACTIVE
     order.hold_reason = ""

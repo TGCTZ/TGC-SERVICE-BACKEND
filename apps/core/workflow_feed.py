@@ -4,6 +4,8 @@ The feeds are deliberately read-only projections. Mutations still go through
 the owning resource endpoints, where the existing workflow permissions apply.
 """
 
+from .services import format_reference_number
+
 
 def paginated_workflow_feed(view, records, request):
     """Filter, globally order, and paginate normalized workflow records."""
@@ -23,7 +25,13 @@ def paginated_workflow_feed(view, records, request):
                 return " ".join(searchable_values(item) for item in value)
             return str(value or "")
 
-        rows = [row for row in rows if search in searchable_values(row).casefold()]
+        normalized_search = search.replace("/", "")
+        rows = [
+            row
+            for row in rows
+            if search in searchable_values(row).casefold()
+            or normalized_search in searchable_values(row).casefold().replace("/", "")
+        ]
     if status_filter:
         rows = [row for row in rows if row["status"] == status_filter]
     if type_filter:
@@ -55,7 +63,7 @@ def feed_row(
         "id": f"{kind}:{record_id}",
         "kind": kind,
         "record_id": record_id,
-        "reference": reference or "—",
+        "reference": format_reference_number(reference) or "—",
         "customer": customer or "—",
         "type": type_name,
         "status": str(status),

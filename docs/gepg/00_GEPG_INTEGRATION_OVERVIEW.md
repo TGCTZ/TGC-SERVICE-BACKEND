@@ -102,7 +102,9 @@ GEPG_SIMULATE=False            skip the network; see "Working offline"
 ### Raising a bill
 
 `generate_bill_for_order()` prices each stone from its category, freezes the
-charge onto the line item, allocates a `BILL-YYYY-NNNN` number, and submits.
+charge onto the line item, and builds a bill ID from the order's financial year
+and five-digit sequence (stored as `BILL-2627-00042`, displayed as
+`BILL-26/27-00042`) before submitting it to GePG.
 
 GePG can answer in three ways:
 
@@ -166,7 +168,7 @@ The columns that matter to this integration, on
 
 | Column | Notes |
 | --- | --- |
-| `bill_number` | `BILL-YYYY-NNNN`, allocated locally |
+| `bill_number` | Order-based `BILL-YYZZ-NNNNN`; slash appears only in human-facing displays |
 | `control_number` | Issued by GePG; empty until it arrives |
 | `order` | One-to-one — one bill per order |
 | `total_amount` | Sum of the line items |

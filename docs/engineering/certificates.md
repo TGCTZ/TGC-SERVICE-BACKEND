@@ -70,10 +70,10 @@ The report and the bill are reached by **traversal** (`stone.order.bill`) rather
 than by importing `apps.identification` or `apps.billing`, because certificates
 sit above both in the layer order.
 
-On success the stone transitions to `certified`, and the certificate takes a
-number from `generate_reference_number(Certificate, "certificate_number",
-"CERT")` — `CERT-2627-00001`, scanning `all_objects` so a soft-deleted row never
-reissues a number it once held.
+On success the stone transitions to `certified`, and the certificate number
+uses the order's year and five-digit sequence plus the stone label. For example,
+stored `CERT-2627-00042-A` is displayed as `CERT-26/27-00042-A`. Verification
+URLs keep the slash-free stored identifier.
 
 ## Revoking
 

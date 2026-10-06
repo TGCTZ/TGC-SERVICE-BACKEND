@@ -6,7 +6,12 @@ from datetime import datetime
 import pytest
 
 from apps.core import services
-from apps.core.services import financial_year, generate_reference_number
+from apps.core.services import (
+    financial_year,
+    format_reference_number,
+    generate_reference_number,
+    reference_number_for_order,
+)
 from apps.orders.models import Order
 from apps.orders.tests.factories import OrderFactory
 
@@ -103,6 +108,24 @@ def test_prefixes_do_not_borrow_each_other_s_sequence():
     assert generate_reference_number(Order, "reference_number", "CERT") == (
         f"CERT-{stem}-00001"
     )
+
+
+def test_related_references_reuse_the_order_sequence_and_stone_label():
+    """Bills share order sequence; per-stone records add their label."""
+    order = OrderFactory(reference_number="ORD-2627-00042")
+
+    assert reference_number_for_order(order, "BILL") == "BILL-2627-00042"
+    assert reference_number_for_order(order, "TGC", stone_label="A") == "TGC-2627-00042-A"
+    assert (
+        reference_number_for_order(order, "CERT", stone_label="A") == "CERT-2627-00042-A"
+    )
+
+
+def test_display_format_adds_slash_only_to_the_financial_year():
+    """The slash belongs to the human-readable form, not stored IDs."""
+    assert format_reference_number("ORD-2627-00042") == "ORD-26/27-00042"
+    assert format_reference_number("TGC-2627-00042-A") == "TGC-26/27-00042-A"
+    assert format_reference_number("CERT-legacy") == "CERT-legacy"
 
 
 def test_the_year_pair_is_written_as_four_digits(monkeypatch):

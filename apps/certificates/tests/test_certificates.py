@@ -13,6 +13,7 @@ from apps.certificates.selectors import certification_worklist
 from apps.certificates.services import assets, issue_certificate, revoke_certificate
 from apps.certificates.services.pdf import TEMPLATE, certificate_context
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import (
     CertificateStatus,
     NatureType,
@@ -76,6 +77,9 @@ def test_issuing_freezes_the_findings(certifiable_stone, user):
     certificate = issue_certificate(certifiable_stone, user=user)
 
     assert certificate.certificate_number.startswith("CERT-")
+    assert certificate.certificate_number == certificate.report.report_number.replace(
+        "TGC-", "CERT-", 1
+    )
     assert certificate.stone_type_snapshot == certifiable_stone.stone_type.name
     assert certificate.weight_snapshot == Decimal("2.500")
     assert certificate.weight_unit_snapshot == WeightUnit.CARAT
@@ -105,7 +109,7 @@ def test_issuing_certifies_the_stone(certifiable_stone, user):
     entry = StatusHistory.objects.filter(
         stone=certifiable_stone, to_status=StoneStatus.CERTIFIED
     ).latest("changed_at")
-    assert certificate.certificate_number in entry.note
+    assert format_reference_number(certificate.certificate_number) in entry.note
 
 
 def test_a_stone_cannot_be_certified_twice(certifiable_stone, user):
@@ -303,7 +307,9 @@ def test_the_document_says_what_it_said_when_issued(certifiable_stone, user):
     context = certificate_context(certificate)
 
     assert context["certificate"].color_snapshot == "Red"
-    assert context["order_reference"] == certifiable_stone.order.reference_number
+    assert context["order_reference"] == format_reference_number(
+        certifiable_stone.order.reference_number
+    )
     assert context["customer_name"] == certifiable_stone.order.customer.full_name
     assert context["is_revoked"] is False
 
@@ -459,7 +465,7 @@ def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, c
     assert response.status_code == 200
     body = response.content.decode()
     assert "Valid certificate" in body
-    assert certificate.certificate_number in body
+    assert format_reference_number(certificate.certificate_number) in body
     # The public page identifies the stone, never its owner.
     assert stone.order.customer.full_name not in body
 

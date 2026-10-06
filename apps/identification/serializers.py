@@ -2,7 +2,8 @@
 
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import WeightUnit
 from apps.gems.models import StoneType
 from apps.gems.serializers import (
@@ -60,9 +61,11 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     instruments_used = InstrumentUsedSerializer(many=True, read_only=True)
 
     stone_label = serializers.CharField(source="stone.label", read_only=True)
-    order_reference = serializers.CharField(
+    report_number = DisplayReferenceField(read_only=True)
+    order_reference = DisplayReferenceField(
         source="stone.order.reference_number", read_only=True
     )
+    stone_reference = serializers.SerializerMethodField()
     # The customer, alongside the order they came in on. A reference number
     # alone identifies the paperwork; the name is what identifies the visit to
     # anyone reading a list of them.
@@ -103,6 +106,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "stone",
             "stone_label",
             "order_reference",
+            "stone_reference",
             "customer_name",
             "customer_phone",
             "stone_category_detail",
@@ -159,6 +163,14 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     def get_verified_by_label(self, obj) -> str | None:
         """The second gemmologist's display name, or None if only one signed."""
         return str(obj.verified_by) if obj.verified_by_id else None
+
+    def get_stone_reference(self, report):
+        """Identify the report's stone with the order sequence and label."""
+        return format_reference_number(
+            reference_number_for_order(
+                report.stone.order, "ORD", stone_label=report.stone.label
+            )
+        )
 
     def validate(self, attrs):
         """Keep selected type/category and variety/species relationships valid."""
