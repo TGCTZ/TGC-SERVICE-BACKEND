@@ -36,6 +36,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     queryset = IdentificationReport.objects.select_related(
         "stone",
+        "stone__stone_category",
+        "stone__stone_type",
+        "stone__stone_type__category",
         "stone__order",
         "stone__order__customer",
         "species",

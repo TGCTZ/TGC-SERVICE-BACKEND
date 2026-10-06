@@ -87,7 +87,7 @@ def _source(key):
         )
     if key == "stones":
         source = Stone.objects.select_related(
-            "order__customer", "order__bill", "stone_type"
+            "order__customer", "order__bill", "stone_category", "stone_type"
         )
         date_field = "created_at"
         customer_path = "order__customer"
@@ -95,7 +95,10 @@ def _source(key):
     else:
         model = IdentificationReport if key == "findings" else Certificate
         source = model.objects.select_related(
-            "stone__order__customer", "stone__order__bill", "stone__stone_type"
+            "stone__order__customer",
+            "stone__order__bill",
+            "stone__stone_category",
+            "stone__stone_type",
         )
         date_field = "identified_at" if key == "findings" else "issued_at"
         customer_path = "stone__order__customer"
@@ -328,7 +331,11 @@ def report_rows(key: str, objects) -> list[dict]:
             )
             row = {
                 "reference": reference,
-                "stone_type": stone.stone_type.name,
+                "stone_type": (
+                    stone.stone_type.name
+                    if stone.stone_type_id
+                    else stone.stone_category.name
+                ),
                 "status": "Finalized" if key == "findings" else obj.get_status_display(),
             }
         local_date = (

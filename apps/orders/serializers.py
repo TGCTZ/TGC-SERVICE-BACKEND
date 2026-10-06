@@ -5,8 +5,8 @@ from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
 from apps.gems.enums import OrderHold, OrderStage, StoneStatus
-from apps.gems.models import StoneType
-from apps.gems.serializers import StoneTypeSerializer
+from apps.gems.models import StoneCategory, StoneType
+from apps.gems.serializers import StoneCategorySerializer, StoneTypeSerializer
 
 from .models import Customer, Order, StatusHistory, Stone
 from .selectors import order_stage
@@ -82,6 +82,15 @@ class StoneSerializer(AuditFieldsMixin):
     change the status without leaving a trace.
     """
 
+    stone_category = serializers.PrimaryKeyRelatedField(
+        queryset=StoneCategory.objects.all(), required=False
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(), required=False, allow_null=True
+    )
+    stone_category_detail = StoneCategorySerializer(
+        source="stone_category", read_only=True
+    )
     stone_type_detail = StoneTypeSerializer(source="stone_type", read_only=True)
     order_reference = serializers.CharField(
         source="order.reference_number", read_only=True
@@ -103,6 +112,8 @@ class StoneSerializer(AuditFieldsMixin):
             "customer_name",
             "customer_phone",
             "label",
+            "stone_category",
+            "stone_category_detail",
             "stone_type",
             "stone_type_detail",
             "weight",
@@ -113,6 +124,30 @@ class StoneSerializer(AuditFieldsMixin):
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = (*AuditFieldsMixin.AUDIT_FIELDS, "label", "status", "order")
+
+    def validate(self, attrs):
+        """Keep categories and any selected legacy type consistent."""
+        category = attrs.get("stone_category")
+        stone_type = attrs.get("stone_type")
+
+        if stone_type is not None and category is None:
+            category = stone_type.category
+            attrs["stone_category"] = category
+
+        if category is None and self.instance is None:
+            raise serializers.ValidationError(
+                {"stone_category": "Select a stone category."}
+            )
+
+        if (
+            category is not None
+            and stone_type is not None
+            and stone_type.category_id != category.pk
+        ):
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this category."}
+            )
+        return attrs
 
     @extend_schema_field(StoneReportSerializer)
     def get_report_detail(self, stone):
@@ -290,11 +325,33 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 class AddStoneSerializer(serializers.Serializer):
     """Payload for identifying one stone.
 
-    Type only: it is what the bill is priced from. Weight is a bench
-    measurement and arrives later, with the findings.
+    The category prices the bill. ``stone_type`` remains accepted for older
+    clients and derives its category; exact type is recorded later at the bench.
     """
 
-    stone_type = serializers.PrimaryKeyRelatedField(queryset=StoneType.objects.all())
+    stone_category = serializers.PrimaryKeyRelatedField(
+        queryset=StoneCategory.objects.all(), required=False
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(), required=False
+    )
+
+    def validate(self, attrs):
+        """Derive a legacy category and reject type/category mismatches."""
+        category = attrs.get("stone_category")
+        stone_type = attrs.get("stone_type")
+        if category is None and stone_type is not None:
+            category = stone_type.category
+            attrs["stone_category"] = category
+        if category is None:
+            raise serializers.ValidationError(
+                {"stone_category": "Select a stone category."}
+            )
+        if stone_type is not None and stone_type.category_id != category.pk:
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this category."}
+            )
+        return attrs
 
 
 class TransitionSerializer(serializers.Serializer):

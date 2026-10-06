@@ -35,7 +35,7 @@ def _assert_payment_settled(stone) -> None:
 # That one creates a row of another model, which is a real route around
 # ``orders.add_customer``; this writes one column of the stone the report is
 # already about, and that column is a finding this endpoint exists to record.
-_STONE_FIELDS = ("weight", "weight_unit")
+_STONE_FIELDS = ("stone_type", "weight", "weight_unit")
 
 
 def _pop_stone_fields(fields: dict) -> dict:
@@ -136,7 +136,7 @@ def update_report(
 #:
 #: Deliberately short. The form stays permissive so a sitting at the bench can be
 #: saved half-done, which means this is the only place completeness is ever
-#: checked - and a certificate quotes these four: what the stone is, what it
+#: checked - and a certificate quotes these five: what the stone is, what it
 #: looks like, how big it is, and the verdict. Everything else is situational; a
 #: stone may legitimately defeat a test and still deserve a certificate.
 #:
@@ -145,9 +145,10 @@ def update_report(
 #: is also where :func:`apps.certificates.services.issue_certificate` looks.
 FINALIZE_REQUIRED_FIELDS = (
     ("species", "species"),
+    ("stone.stone_type", "stone type"),
     ("color", "colour"),
     ("stone.weight", "weight"),
-    ("conclusion", "conclusion"),
+    ("conclusion", "comments"),
 )
 
 

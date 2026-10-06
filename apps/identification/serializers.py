@@ -4,12 +4,15 @@ from rest_framework import serializers
 
 from apps.core.serializers import AuditFieldsMixin
 from apps.gems.enums import WeightUnit
+from apps.gems.models import StoneType
 from apps.gems.serializers import (
     ColorSerializer,
     InstrumentSerializer,
     OriginSerializer,
     ShapeCutSerializer,
     SpeciesSerializer,
+    StoneCategorySerializer,
+    StoneTypeSerializer,
     TreatmentSerializer,
     VarietySerializer,
 )
@@ -44,6 +47,16 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     shape_cut_detail = ShapeCutSerializer(source="shape_cut", read_only=True)
     color_detail = ColorSerializer(source="color", read_only=True)
     treatment_detail = TreatmentSerializer(source="treatment", read_only=True)
+    stone_category_detail = StoneCategorySerializer(
+        source="stone.stone_category", read_only=True
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    stone_type_detail = StoneTypeSerializer(source="stone.stone_type", read_only=True)
     instruments_used = InstrumentUsedSerializer(many=True, read_only=True)
 
     stone_label = serializers.CharField(source="stone.label", read_only=True)
@@ -92,6 +105,9 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "order_reference",
             "customer_name",
             "customer_phone",
+            "stone_category_detail",
+            "stone_type",
+            "stone_type_detail",
             "report_number",
             "species",
             "species_detail",
@@ -145,7 +161,18 @@ class IdentificationReportSerializer(AuditFieldsMixin):
         return str(obj.verified_by) if obj.verified_by_id else None
 
     def validate(self, attrs):
-        """Keep a selected variety attached to the report's selected species."""
+        """Keep selected type/category and variety/species relationships valid."""
+        stone_type = attrs.get("stone_type")
+        stone = attrs.get("stone", self.instance.stone if self.instance else None)
+        if (
+            stone_type is not None
+            and stone is not None
+            and stone_type.category_id != stone.stone_category_id
+        ):
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this stone's category."}
+            )
+
         species = attrs.get("species", getattr(self.instance, "species", None))
         variety = attrs.get("variety", getattr(self.instance, "variety", None))
         if variety and species and variety.species_id != species.pk:

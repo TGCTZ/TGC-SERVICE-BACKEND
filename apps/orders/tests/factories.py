@@ -44,7 +44,7 @@ class OrderFactory(DjangoModelFactory):
 
 
 class StoneFactory(DjangoModelFactory):
-    """A stone that has been identified - type only, not yet weighed."""
+    """A categorized stone, optionally typed, and not yet weighed."""
 
     class Meta:
         model = Stone
@@ -52,4 +52,5 @@ class StoneFactory(DjangoModelFactory):
     order = factory.SubFactory(OrderFactory)
     label = factory.Sequence(lambda n: chr(65 + n % 26))
     stone_type = factory.SubFactory(StoneTypeFactory)
+    stone_category = factory.LazyAttribute(lambda stone: stone.stone_type.category)
     status = StoneStatus.RECEIVED

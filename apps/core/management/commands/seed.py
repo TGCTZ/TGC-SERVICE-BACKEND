@@ -19,10 +19,8 @@ DEMO_PASSWORD = "1234567890"  # noqa: S105 - demo data, never a real credential
 CHANNELS = ("CRDB Bank", "NMB Bank", "M-Pesa", "Tigo Pesa", "Airtel Money")
 NATURE_WEIGHTS = (
     ("natural", 70),
-    ("treated", 14),
-    ("enhanced", 8),
+    ("artificial", 24),
     ("synthetic", 6),
-    ("artificial", 2),
 )
 
 

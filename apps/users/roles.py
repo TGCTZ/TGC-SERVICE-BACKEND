@@ -126,11 +126,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         MODULE_GATES["orders"],
         MODULE_GATES["reference"],
     ],
-    # The bench: identifies each stone's type (preliminary, which fixes the
-    # price), then after payment records the findings against the
-    # reference tables it reads.
+    # The bench records each stone's exact type and findings. Reception chose
+    # the pricing category at intake, before the order reaches this role.
     "gemmologist": [
         *_perms("gems", GEMS_MODELS, READ),
+        "gems.add_stonetype",
         "gems.add_species",
         "gems.add_variety",
         "gems.add_origin",

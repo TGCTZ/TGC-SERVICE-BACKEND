@@ -37,7 +37,7 @@ def _price_for(stone) -> Decimal:
         ServiceError: If the category has no price set. An unpriced tier is a
             configuration gap, and billing zero would be worse than refusing.
     """
-    category = stone.stone_type.category
+    category = stone.stone_category
     if category.price is None:
         raise ServiceError(f"No price set for stone category '{category}'.")
     return category.price
@@ -63,7 +63,7 @@ def preview_bill_for_order(order) -> dict:
         ``total`` over the priced ones, ``currency``, and ``blockers`` -
         the human-readable reasons this order cannot be billed yet.
     """
-    stones = list(order.stones.select_related("stone_type__category"))
+    stones = list(order.stones.select_related("stone_category", "stone_type"))
 
     items, total, blockers = [], Decimal("0"), []
 
@@ -73,8 +73,8 @@ def preview_bill_for_order(order) -> dict:
         blockers.append("Order has no stones to bill.")
 
     for stone in stones:
-        category = stone.stone_type.category
-        amount = category.price if category else None
+        category = stone.stone_category
+        amount = category.price
         if amount is None:
             blockers.append(f"No price set for stone category '{category}'.")
         else:
@@ -84,8 +84,12 @@ def preview_bill_for_order(order) -> dict:
             {
                 "stone": stone.id,
                 "label": stone.label,
-                "description": stone.stone_type.name,
-                "category": str(category) if category else "",
+                "description": (
+                    stone.stone_type.name
+                    if stone.stone_type_id
+                    else category.name
+                ),
+                "category": category.name,
                 "amount": amount,
             }
         )
@@ -103,7 +107,7 @@ def _create_local_bill(order, service_provider, user) -> Bill:
     """Create the bill and its snapshotted line items; mark stones billed."""
     if Bill.objects.filter(order=order).exists():
         raise ServiceError(f"Order {order.reference_number} already has a bill.")
-    stones = list(order.stones.select_related("stone_type__category"))
+    stones = list(order.stones.select_related("stone_category", "stone_type"))
     if not stones:
         raise ServiceError("Order has no stones to bill.")
 
@@ -126,7 +130,11 @@ def _create_local_bill(order, service_provider, user) -> Bill:
         item = BillItem(
             bill=bill,
             stone=stone,
-            description=stone.stone_type.name,
+            description=(
+                stone.stone_type.name
+                if stone.stone_type_id
+                else stone.stone_category.name
+            ),
             unit_price=amount,
             # Weight is unknown at billing time; findings come after payment.
             weight=None,

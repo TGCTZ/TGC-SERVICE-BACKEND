@@ -45,7 +45,7 @@ def _paid_stone(settings, *, weight=Decimal("2.500")):
     """A stone whose order is billed and settled, and weighed at the bench.
 
     Weight arrives after the refresh, not with ``add_stone``: identification
-    records the type only, and the bench weighs the stone during the findings.
+    records the category only, and the bench records type and weight later.
     """
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=1)

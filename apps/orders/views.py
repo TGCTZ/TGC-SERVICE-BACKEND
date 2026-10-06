@@ -227,12 +227,16 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     # Prefetched, not joined: the relation is a reverse FK so that a discarded
     # report frees the stone rather than occupying it forever.
     queryset = Stone.objects.select_related(
-        "order", "order__customer", "stone_type", "stone_type__category"
+        "order",
+        "order__customer",
+        "stone_category",
+        "stone_type",
+        "stone_type__category",
     ).prefetch_related("reports")
     serializer_class = StoneSerializer
 
     search_fields = STONE_SEARCH_FIELDS
-    filter_fields = ("order", "stone_type", "status", "weight_unit")
+    filter_fields = ("order", "stone_category", "stone_type", "status", "weight_unit")
     ordering_fields = ("id", "label", "status", "weight", "created_at")
 
     action_permissions = {"transition": ["orders.transition_stone"]}

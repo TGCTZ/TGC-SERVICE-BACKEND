@@ -90,6 +90,20 @@ def test_a_stone_type_is_priced_through_its_category(admin_user, auth_client):
     assert response.data["category_detail"]["price"] == "30000.00"
 
 
+def test_gemmologist_can_add_a_type_for_the_selected_category(
+    gemmologist_user, auth_client
+):
+    """The bench can add a missing exact type while recording findings."""
+    category = StoneCategoryFactory(name="Precious")
+
+    response = auth_client(gemmologist_user).post(
+        "/api/v1/stone-types/", {"name": "New gem type", "category": category.pk}
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["category"] == category.pk
+
+
 def test_variety_names_are_unique_per_species():
     """Two species may each have a variety of the same name."""
     corundum = SpeciesFactory(name="Corundum")

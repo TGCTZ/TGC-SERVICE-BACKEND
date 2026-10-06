@@ -8,13 +8,15 @@ from apps.orders.services import add_stone
 from .bill import bill_needs_attention, generate_bill_for_order
 
 
-def identify_stone(order, *, stone_type, user=None):
+def identify_stone(order, *, stone_category=None, stone_type=None, user=None):
     """Save the stone, then bill the completed order when automation is enabled.
 
     The stone commits before the bill is issued. If pricing fails, the order
     remains identified and appears in Billing needs attention for a safe retry.
     """
-    stone = add_stone(order, stone_type=stone_type, user=user)
+    stone = add_stone(
+        order, stone_category=stone_category, stone_type=stone_type, user=user
+    )
     if not settings.AUTO_BILL_AFTER_IDENTIFICATION:
         return stone, None, None
     if order.stones.count() != order.stone_count:

@@ -48,11 +48,12 @@ class WeightUnit(models.TextChoices):
 
     CARAT = ("carat", "Carat")
     GRAM = ("gram", "Gram")
+    KILOGRAM = ("kilogram", "Kilogram")
 
     @property
     def symbol(self) -> str:
         """Short display symbol, e.g. 'ct' or 'g'."""
-        return {self.CARAT: "ct", self.GRAM: "g"}[self]
+        return {self.CARAT: "ct", self.GRAM: "g", self.KILOGRAM: "kg"}[self]
 
 
 class Transparency(models.TextChoices):
@@ -67,10 +68,8 @@ class NatureType(models.TextChoices):
     """Whether the stone is natural or man-made/altered."""
 
     NATURAL = ("natural", "Natural")
-    SYNTHETIC = ("synthetic", "Synthetic")
-    TREATED = ("treated", "Treated")
-    ENHANCED = ("enhanced", "Enhanced")
     ARTIFICIAL = ("artificial", "Artificial")
+    SYNTHETIC = ("synthetic", "Synthetic")
 
 
 class OpticCharacter(models.TextChoices):

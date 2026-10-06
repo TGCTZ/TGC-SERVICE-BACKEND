@@ -13,11 +13,12 @@ from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
 from apps.core.exceptions import ServiceError
-from apps.gems.enums import BillStatus, WeightUnit
+from apps.gems.enums import BillStatus, NatureType, WeightUnit
 from apps.gems.tests.factories import (
     ColorFactory,
     InstrumentFactory,
     SpeciesFactory,
+    StoneCategoryFactory,
     StoneTypeFactory,
 )
 from apps.identification.models import IdentificationReport, InstrumentUsed
@@ -29,6 +30,11 @@ from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
+
+
+def test_nature_type_choices_are_limited_to_the_lab_values():
+    """Only the three supported nature classifications can be recorded."""
+    assert NatureType.values == ["natural", "artificial", "synthetic"]
 
 
 @pytest.fixture
@@ -363,6 +369,56 @@ def test_report_endpoint_records_the_weight_in_one_request(
     assert paid_stone.weight_unit == WeightUnit.GRAM
 
 
+def test_report_endpoint_records_an_exact_type_in_the_stone(
+    settings, admin_user, auth_client
+):
+    """Findings save the exact type on the stone without replacing its tier."""
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    category = StoneCategoryFactory(price=Decimal("1000.00"))
+    stone = add_stone(order, stone_category=category)
+    simulate_payment(generate_bill_for_order(order))
+    exact_type = StoneTypeFactory(category=category)
+
+    response = auth_client(admin_user).post(
+        "/api/v1/identification-reports/",
+        {"stone": stone.pk, "stone_type": exact_type.pk},
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["stone_type_detail"]["id"] == exact_type.pk
+    stone.refresh_from_db()
+    assert stone.stone_type_id == exact_type.pk
+
+
+def test_report_endpoint_rejects_a_type_from_another_category(
+    paid_stone, admin_user, auth_client
+):
+    """The API enforces the same type/category rule as the selector."""
+    other_type = StoneTypeFactory()
+
+    response = auth_client(admin_user).post(
+        "/api/v1/identification-reports/",
+        {"stone": paid_stone.pk, "stone_type": other_type.pk},
+    )
+
+    assert response.status_code == 400
+    assert "belonging to this stone's category" in str(response.data)
+
+
+def test_finalize_requires_exact_type_for_category_only_stone(settings, user):
+    """The saved billing category is not enough to finalize findings."""
+    settings.GEPG_SIMULATE = True
+    order = OrderFactory(stone_count=1)
+    category = StoneCategoryFactory(price=Decimal("1000.00"))
+    stone = add_stone(order, stone_category=category)
+    simulate_payment(generate_bill_for_order(order))
+    report = create_finalizable_report(stone, user)
+
+    with pytest.raises(ServiceError, match="stone type"):
+        finalize_report(report, user=user)
+
+
 def test_a_finalized_report_refuses_a_weight_change(paid_stone, admin_user, auth_client):
     """The lock covers the stone's weight too.
 
@@ -397,7 +453,7 @@ def test_finalize_needs_the_required_findings(paid_stone, user):
     # Every missing field at once, not just the first: a gemmologist should not
     # have to discover them one failed click at a time.
     message = str(refusal.value)
-    for field in ("species", "colour", "weight", "conclusion"):
+    for field in ("species", "colour", "weight", "comments"):
         assert field in message
 
     report.refresh_from_db()
@@ -408,7 +464,7 @@ def test_finalize_names_only_what_is_still_missing(paid_stone, user):
     """The three that are answered drop out of the message."""
     report = create_finalizable_report(paid_stone, user, conclusion="")
 
-    with pytest.raises(ServiceError, match="conclusion") as refusal:
+    with pytest.raises(ServiceError, match="comments") as refusal:
         finalize_report(report, user=user)
 
     assert "species" not in str(refusal.value)
