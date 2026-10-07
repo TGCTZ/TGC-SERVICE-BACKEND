@@ -118,8 +118,8 @@
          y 46     the three columns                                h 154
          (10mm bottom margin; no footer)
 
-       Horizontally: 10mm side margins, three 89mm columns with
-       5mm gutters (89*3 + 5*2 = 277 = 297 - 2*10).
+       Horizontally: 4.5mm side margins, 88mm / 94mm / 88mm columns,
+       and 9mm gutters (88 + 94 + 88 + 9*2 = 288 = 297 - 2*4.5).
        ========================================================== */
     .sheet {
       position: relative;
@@ -130,8 +130,8 @@
 
     .band {
       position: absolute;
-      left: 10mm;
-      width: 277mm;
+      left: 4.5mm;
+      width: 288mm;
     }
 
     /* ---------- Header ---------- */
@@ -243,13 +243,12 @@
     .column {
       position: absolute;
       top: 46mm;
-      width: 89mm;
       height: 154mm;
     }
 
-    .column-1 { left: 10mm; }
-    .column-2 { left: 104mm; }
-    .column-3 { left: 198mm; }
+    .column-1 { left: 4.5mm;   width: 88mm; }
+    .column-2 { left: 101.5mm; width: 94mm; }
+    .column-3 { left: 204.5mm; width: 88mm; }
 
     /* ---------- Sections ---------- */
     .section {
@@ -277,8 +276,8 @@
        SECTIONS - top and height within each 154mm column, 3mm apart.
 
        COLUMN 1                     COLUMN 2
-         0    description     77      0    gemstone photo   87
-         80   official stamp  47      90   identification   64
+         0    description     77      0    gemstone photo   77
+        80   official stamp  47     80   identification   74
          130  gemmologists    24
 
        COLUMN 3
@@ -289,14 +288,14 @@
 
        Each section is a 7mm header plus its rows: description
        7 x 10mm, gemmologists 2 x 8.5mm, identification 5 x 8.5mm
-       plus a 14.5mm comment, instruments 12 x 7mm.
+       plus a 24.5mm comment, instruments 12 x 7mm.
        ========================================================== */
     .s-description    { top: 0;     height: 77mm; }
     .s-stamp          { top: 80mm;  height: 47mm; }
     .s-gemmologists   { top: 130mm; height: 24mm; }
 
-    .s-photo          { top: 0;     height: 87mm; }
-    .s-identification { top: 90mm;  height: 64mm; }
+    .s-photo          { top: 0;     height: 77mm; }
+    .s-identification { top: 80mm;  height: 74mm; }
 
     .s-instruments    { top: 0;     height: 94mm; }
     .s-verify         { top: 97mm;  height: 26mm; }
@@ -348,14 +347,14 @@
     .rows-10  td { height: 10mm; }
     .rows-8-5 td { height: 8.5mm; }
 
-    /* The conclusion gets two lines and no more, at 5mm each; longer is a data
+    /* The conclusion gets four lines and no more, at 5mm each; longer is a data
        problem, and the cell clips rather than pushing the table off the page. */
     .grid td.comment {
-      height: 14.5mm;
+      height: 24.5mm;
     }
 
     .grid td.comment div {
-      max-height: 10mm;
+      max-height: 20mm;
       line-height: 5mm;
       overflow: hidden;
     }
@@ -381,7 +380,7 @@
 
     /* ---------- Photograph ---------- */
     .photo {
-      height: 80mm;
+      height: 70mm;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -392,7 +391,7 @@
        photograph that is not exactly the box's aspect ratio. */
     .photo img {
       max-width: 100%;
-      max-height: 76mm;
+      max-height: 66mm;
       object-fit: contain;
     }
 
