@@ -179,13 +179,12 @@ An action that is not listed falls back to the method map, so ordinary CRUD and
 | `POST /bills/{id}/simulate-payment/` | `billing.generate_bill` *(development only)* |
 | `GET /certificates/worklist/` | `certificates.issue_certificate` |
 | `POST /certificates/` | `certificates.issue_certificate` |
-| `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
 | `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |
 
 `pdf` is deliberately absent from `action_permissions`: it is a **read** of data
 the detail endpoint already returns in full, so the method-map fallback gives it
 `view_certificate` and no role needs a new grant. Bespoke permissions are
-reserved for verbs that change state — issuing, revoking, transitioning — where
+reserved for verbs that change state — issuing and transitioning — where
 "may read this" and "may do this" genuinely differ.
 
 ## Module gates

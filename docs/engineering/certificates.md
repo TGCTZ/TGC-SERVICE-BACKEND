@@ -75,15 +75,9 @@ uses the order's year and five-digit sequence plus the stone label. For example,
 stored `CERT-2627-00042-A` is displayed as `CERT-26/27-00042-A`. Verification
 URLs keep the slash-free stored identifier.
 
-## Revoking
-
-`revoke_certificate()` marks the row revoked. It does **not** delete it, and the
-number stays allocated.
-
-A revoked certificate still renders and still downloads, carrying a REVOKED
-watermark. Refusing would be the wrong instinct: whoever is holding the paper
-copy has to be able to learn that it no longer stands, and staff still have to
-reconcile the paperwork. The watermark carries the meaning.
+Certificates are permanent once issued. There is no revoke endpoint or UI action.
+Historical records already marked revoked keep their status and watermark when
+viewed, downloaded, or checked through the public verification page.
 
 ## The PDF
 
@@ -107,10 +101,8 @@ practical way to test the snapshot guarantee — that renaming a colour afterwar
 does not rewrite the document.
 
 PDFs are **rendered on demand and never stored**. The body is frozen snapshots,
-so re-rendering is deterministic; the one mutable input is the revocation
-status, and a revoked certificate has to pick up its watermark at download time.
-A stored file could not do that without an invalidation step nobody would
-remember to run. The filename gains a `-revoked` suffix when appropriate.
+so re-rendering is deterministic. Historical records marked revoked keep their
+watermark and gain a `-revoked` filename suffix when downloaded.
 
 Lab identity on the page — ministry, lab name, address — comes from
 `CERTIFICATE_MINISTRY_NAME`, `CERTIFICATE_LAB_NAME` and
@@ -235,7 +227,6 @@ Registered under `/api/v1/certificates/`:
 | Endpoint | Permission |
 | --- | --- |
 | `POST /certificates/` | `certificates.issue_certificate` |
-| `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
 | `GET /certificates/worklist/` | stones with a finalized report and a paid bill, not yet certified |
 | `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |
 

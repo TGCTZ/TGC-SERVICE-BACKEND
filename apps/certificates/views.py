@@ -19,11 +19,11 @@ from apps.orders.serializers import StoneSerializer
 from .models import Certificate
 from .selectors import certification_worklist
 from .serializers import CertificateSerializer, IssueCertificateSerializer
-from .services import issue_certificate, render_certificate_pdf, revoke_certificate
+from .services import issue_certificate, render_certificate_pdf
 
 
 class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
-    """Certificates, plus issuance, revocation and PDF download."""
+    """Certificates, issuance and PDF download."""
 
     queryset = Certificate.objects.select_related(
         "stone",
@@ -49,7 +49,6 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     action_permissions = {
         "create": ["certificates.issue_certificate"],
-        "revoke": ["certificates.revoke_certificate"],
         "worklist": ["certificates.issue_certificate"],
         # `pdf` is deliberately absent: ActionPermissions falls back to the HTTP
         # method map, so a GET resolves to certificates.view_certificate. A
@@ -78,13 +77,6 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         return Response(
             self.get_serializer(certificate).data, status=status.HTTP_201_CREATED
         )
-
-    @extend_schema(request=None, responses=CertificateSerializer)
-    @action(detail=True, methods=["post"])
-    def revoke(self, request, pk=None):
-        """Withdraw this certificate."""
-        certificate = revoke_certificate(self.get_object(), user=request.user)
-        return Response(self.get_serializer(certificate).data)
 
     @extend_schema(responses=StoneSerializer)
     @action(detail=False, methods=["get"])
@@ -135,9 +127,8 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
         Rendered on demand rather than stored. The body is frozen snapshot
         columns, so re-rendering is deterministic; the one mutable input is
-        ``status``, and a revoked certificate has to pick up its watermark at
-        download time - which a stored file could not do without an
-        invalidation step.
+        ``status``: a legacy revoked certificate keeps its watermark when
+        downloaded, while new certificates are issued without a revoke action.
         """
         certificate = self.get_object()
         suffix = "-revoked" if certificate.status == CertificateStatus.REVOKED else ""

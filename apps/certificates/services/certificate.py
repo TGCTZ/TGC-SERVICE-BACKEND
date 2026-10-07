@@ -1,4 +1,4 @@
-"""Certificate issuance and revocation."""
+"""Certificate issuance."""
 
 from django.db import transaction
 from django.db.models import Q
@@ -158,22 +158,3 @@ def _notify_if_order_ready_for_collection(order, user) -> None:
         link=f"/orders?search={order.reference_number}",
         exclude=user,
     )
-
-
-def revoke_certificate(certificate: Certificate, *, user=None) -> Certificate:
-    """Withdraw a certificate.
-
-    The row stays, and so does its number, so the certificate still downloads -
-    watermarked REVOKED. That is the whole point: whoever is holding the paper
-    copy has to be able to learn that it no longer stands.
-
-    Raises:
-        ServiceError: If the certificate is already revoked.
-    """
-    if certificate.status == CertificateStatus.REVOKED:
-        raise ServiceError("Certificate is already revoked.")
-    certificate.status = CertificateStatus.REVOKED
-    if user is not None:
-        certificate.updated_by = user
-    certificate.save(update_fields=["status", "updated_at", "updated_by"])
-    return certificate

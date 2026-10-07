@@ -99,7 +99,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
             "identification.finalize_report",
             *_perms("certificates", CERTIFICATE_MODELS, ("add", "view")),
             "certificates.issue_certificate",
-            "certificates.revoke_certificate",
         ]
         + ["auth.view_group", "auth.add_group", "auth.change_group", "auth.delete_group"]
         + ["auth.view_permission", "auditlog.view_logentry", "audit.view_systemlog"]

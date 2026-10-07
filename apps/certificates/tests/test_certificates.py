@@ -1,4 +1,4 @@
-"""Certificate issuance, its three guards, revocation and PDF download."""
+"""Certificate issuance, its guards, PDF download and verification."""
 
 from decimal import Decimal
 
@@ -10,7 +10,7 @@ from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
-from apps.certificates.services import assets, issue_certificate, revoke_certificate
+from apps.certificates.services import assets, issue_certificate
 from apps.certificates.services.pdf import TEMPLATE, certificate_context
 from apps.core.exceptions import ServiceError
 from apps.core.services import format_reference_number
@@ -120,19 +120,6 @@ def test_a_stone_cannot_be_certified_twice(certifiable_stone, user):
         issue_certificate(certifiable_stone, user=user)
 
 
-def test_a_revoked_certificate_still_blocks_reissue(certifiable_stone, user):
-    """Ported behaviour: the existence check is not status-aware.
-
-    Revoking does not free the stone to be certified again - there is no
-    re-issue path, which is why ``CertificateStatus.REISSUED`` is unreachable.
-    """
-    certificate = issue_certificate(certifiable_stone, user=user)
-    revoke_certificate(certificate, user=user)
-
-    with pytest.raises(ServiceError, match="already has a certificate"):
-        issue_certificate(certifiable_stone, user=user)
-
-
 def test_certification_needs_a_finalized_report(settings, user):
     """A draft is not evidence."""
     stone = _paid_stone(settings)
@@ -186,18 +173,6 @@ def test_certification_needs_a_recorded_weight(settings, user):
 
     with pytest.raises(ServiceError, match="no recorded weight"):
         issue_certificate(stone, user=user)
-
-
-def test_revoking_is_one_way(certifiable_stone, user):
-    """A withdrawn certificate cannot be withdrawn twice."""
-    certificate = issue_certificate(certifiable_stone, user=user)
-    revoke_certificate(certificate, user=user)
-
-    certificate.refresh_from_db()
-    assert certificate.status == CertificateStatus.REVOKED
-
-    with pytest.raises(ServiceError, match="already revoked"):
-        revoke_certificate(certificate, user=user)
 
 
 def test_certification_worklist_is_the_three_guards_as_a_queue(
@@ -282,9 +257,10 @@ def test_pdf_download_requires_the_view_permission(
 def test_a_revoked_certificate_still_downloads(
     certifiable_stone, admin_user, auth_client
 ):
-    """Refusing would leave staff unable to reconcile paperwork."""
+    """Legacy revoked records retain their historical PDF watermark."""
     certificate = issue_certificate(certifiable_stone)
-    revoke_certificate(certificate)
+    certificate.status = CertificateStatus.REVOKED
+    certificate.save(update_fields=["status"])
 
     response = auth_client(admin_user).get(f"/api/v1/certificates/{certificate.pk}/pdf/")
 
@@ -471,12 +447,13 @@ def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, c
 
 
 def test_verify_page_says_so_when_a_certificate_is_revoked(settings, user, client):
-    """The whole reason a revoked certificate keeps its number and its row."""
+    """The public verifier continues to identify legacy revoked records."""
     stone = _paid_stone(settings)
     report = create_finalizable_report(stone, user)
     finalize_report(report, user=user)
     certificate = issue_certificate(stone, user=user)
-    revoke_certificate(certificate, user=user)
+    certificate.status = CertificateStatus.REVOKED
+    certificate.save(update_fields=["status"])
 
     response = client.get(f"/verify/{certificate.certificate_number}/")
 

@@ -102,7 +102,6 @@ class Certificate(BaseModel):
         ordering = ["-issued_at"]
         permissions = [
             ("issue_certificate", "Can issue a certificate"),
-            ("revoke_certificate", "Can revoke a certificate"),
         ]
         constraints = [
             models.UniqueConstraint(

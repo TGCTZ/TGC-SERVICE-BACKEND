@@ -41,7 +41,7 @@ The full walk-through, with statuses and roles, is in
 | One identification report per stone | Findings are per stone | `IdentificationReport.stone` |
 | A finalized report is locked | A certificate must not describe findings that later change | `finalize_report` |
 | One certificate per stone, printed from a snapshot of the report | A certificate must say what it said on the day it was issued | `Certificate.*_snapshot` |
-| Certificates are revoked, never deleted; a revoked one still downloads, watermarked | Whoever holds the paper must be able to reconcile it | `revoke_certificate` |
+| Issued certificates are permanent; no revoke action is provided | Certificate issuance is write-once | `Certificate` |
 | Reference data (colours, species, origins…) is admin-managed lookup lists | Staff pick from lists; free text drifts | `apps/gems` |
 | A customer is a lasting record, unique by phone | Customers return; reception finds them rather than re-registering | `Customer` |
 | Reference numbers read `PREFIX-<yy><yy>-NNNNN` over the financial year (July-June), restarting each year: `ORD-`, `BILL-`, `CERT-`, and `TGC-` for reports | One format everywhere, aligned with the government financial year | `apps/core/services.py` |

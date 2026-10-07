@@ -97,9 +97,8 @@ def render_certificate_pdf(certificate: Certificate) -> bytes:
         certificate: The certificate to render.
 
     Returns:
-        The PDF as bytes. A revoked certificate still renders, carrying a
-        REVOKED watermark - refusing would leave staff unable to reconcile
-        paperwork, and the watermark carries the meaning.
+        The PDF as bytes. Historical revoked certificates retain their
+        REVOKED watermark when re-rendered.
     """
     # WeasyPrint loads native libraries during import; only PDFs need them.
     from weasyprint import HTML

@@ -83,7 +83,7 @@ def hold_order(order: Order, *, status: str, reason: str = "", user=None) -> Ord
     **Cancelling a paid order is refused.** Money has changed hands and this
     system has no refund path, so a cancelled-but-paid order would be a record
     nobody could act on. Hold it instead and settle the refund outside the
-    system, or revoke the certificates if they have been issued.
+    system.
 
     Nothing is undone here. Stones keep their own statuses, the bill stays as it
     is, and releasing the hold returns the order to exactly where it was - which

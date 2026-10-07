@@ -142,9 +142,11 @@ class OrderStage(models.TextChoices):
 
 
 class CertificateStatus(models.TextChoices):
-    """Validity state of a certificate.
+    """Certificate lifecycle states, including a legacy revoked value.
 
-    ``reissued`` is unreachable; there is no re-issue service.
+    New certificates are issued as ``issued``. ``revoked`` remains readable for
+    historical rows; ``reissued`` is unreachable because there is no re-issue
+    service.
     """
 
     ISSUED = ("issued", "Issued")
