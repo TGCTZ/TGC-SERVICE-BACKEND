@@ -281,8 +281,8 @@
          130  gemmologists    24
 
        COLUMN 3
-         0    instruments used 94
-         97   QR box           26
+         0    instruments used 77
+         80   QR box           43
          124  'Scan to verify'  8 (outside the box)
          133  statement        21
 
@@ -297,8 +297,8 @@
     .s-photo          { top: 0;     height: 77mm; }
     .s-identification { top: 80mm;  height: 74mm; }
 
-    .s-instruments    { top: 0;     height: 94mm; }
-    .s-verify         { top: 97mm;  height: 26mm; }
+    .s-instruments    { top: 0;     height: 77mm; }
+    .s-verify         { top: 80mm;  height: 43mm; }
     .verify-caption   { position: absolute; left: 0; right: 0; top: 124mm; height: 8mm; }
     .s-statement      { top: 133mm; height: 21mm; }
 
@@ -336,6 +336,12 @@
       text-transform: uppercase;
     }
 
+    /* The identification labels are shorter than the description labels, so
+       give the comment value more room without changing the other columns. */
+    .s-identification .grid td.label {
+      width: 38%;
+    }
+
     /* 10pt at 1.05 leading fits two lines in an 8mm row: the longest finding,
        "Doubly refractive (uniaxial)", wraps once rather than clipping. */
     .grid td.value {
@@ -356,6 +362,7 @@
     .grid td.comment div {
       max-height: 20mm;
       line-height: 5mm;
+      overflow-wrap: anywhere;
       overflow: hidden;
     }
 
@@ -441,8 +448,8 @@
     }
 
     .verify img {
-      width: 22mm;
-      height: 22mm;
+      width: 38mm;
+      height: 38mm;
     }
 
     /* Below the QR's box rather than inside it, as on the paper form. */
