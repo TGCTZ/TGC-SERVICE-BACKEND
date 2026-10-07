@@ -7,6 +7,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import F
 
 from apps.core.permissions import OrdersOrStonesViewPermission, StrictModelPermissions
@@ -241,6 +242,7 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     action_permissions = {"transition": ["orders.transition_stone"]}
 
+    @transaction.atomic
     def perform_update(self, serializer):
         """Delegate to the service, so every stone write goes through one door.
 
@@ -250,6 +252,11 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         serializer.instance = update_stone(
             serializer.instance, user=self.request.user, **serializer.validated_data
         )
+        report = serializer.instance.report
+        if report is not None and report.is_finalized:
+            from apps.certificates.services import refresh_certificate_snapshot
+
+            refresh_certificate_snapshot(report, user=self.request.user)
 
     def perform_destroy(self, instance):
         """Refuse to delete a stone a bill was priced from.

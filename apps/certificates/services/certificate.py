@@ -136,6 +136,51 @@ def issue_certificate(stone, *, user=None) -> Certificate:
     return certificate
 
 
+@transaction.atomic
+def refresh_certificate_snapshot(report, *, user=None) -> Certificate | None:
+    """Refresh editable facts on an issued certificate without changing its issuance.
+
+    The certificate is a customer-facing snapshot, so corrections update its
+    findings in the same transaction as the source report/stone. Issuance facts
+    (number, date, issuer, and frozen signatory names) deliberately stay put.
+    """
+    certificate = Certificate.objects.filter(report=report).first()
+    if certificate is None:
+        return None
+
+    stone = report.stone
+    certificate.stone_type_snapshot = _name(stone.stone_type)
+    certificate.weight_snapshot = stone.weight
+    certificate.weight_unit_snapshot = stone.weight_unit
+    certificate.color_snapshot = _name(report.color)
+    certificate.origin_snapshot = _name(report.origin)
+    certificate.species_snapshot = _name(report.species)
+    certificate.variety_snapshot = _name(report.variety)
+    certificate.shape_cut_snapshot = _name(report.shape_cut)
+    certificate.transparency_snapshot = report.get_transparency_display() or ""
+    certificate.optic_character_snapshot = report.get_optic_character_display() or ""
+    certificate.treatment_snapshot = _name(report.treatment)
+    certificate.nature_type_snapshot = report.get_nature_type_display() or ""
+    certificate.refractive_index_snapshot = report.refractive_index
+    certificate.specific_gravity_snapshot = (
+        "" if report.specific_gravity is None else str(report.specific_gravity)
+    )
+    certificate.comments_snapshot = report.conclusion
+    certificate.instruments_snapshot = _instruments(report)
+    certificate.photo_snapshot = stone.photo or None
+    if user is not None:
+        certificate.updated_by = user
+    certificate.save(update_fields=[
+        "stone_type_snapshot", "weight_snapshot", "weight_unit_snapshot",
+        "color_snapshot", "origin_snapshot", "species_snapshot", "variety_snapshot",
+        "shape_cut_snapshot", "transparency_snapshot", "optic_character_snapshot",
+        "treatment_snapshot", "nature_type_snapshot", "refractive_index_snapshot",
+        "specific_gravity_snapshot", "comments_snapshot", "instruments_snapshot",
+        "photo_snapshot", "updated_at", "updated_by",
+    ])
+    return certificate
+
+
 def _notify_if_order_ready_for_collection(order, user) -> None:
     """Tell reception once every stone in the order is certified.
 

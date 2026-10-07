@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from django.db import transaction
 
-from apps.certificates.services import issue_certificate
+from apps.certificates.services import issue_certificate, refresh_certificate_snapshot
 from apps.core.exceptions import ServiceError
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
@@ -167,10 +167,10 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="workflow-feed")
     def workflow_feed(self, request):
-        """Reports plus paid stones without a report, with drafts represented once."""
-        reports = (
-            self.get_queryset().filter(is_finalized=False).order_by("-created_at", "-pk")
-        )
+        """Open findings by default, with finalized reports available on request."""
+        reports = self.get_queryset().order_by("-created_at", "-pk")
+        if request.query_params.get("status") != "Finalized":
+            reports = reports.filter(is_finalized=False)
         report_data = IdentificationReportSerializer(
             reports, many=True, context=self.get_serializer_context()
         ).data
@@ -222,29 +222,44 @@ class InstrumentUsedViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     filter_fields = ("report", "instrument")
     ordering_fields = ("id", "created_at")
 
+    @transaction.atomic
     def perform_create(self, serializer):
-        """Refuse to add an instrument to a finalized report."""
-        self._assert_report_open(serializer.validated_data["report"])
+        """Save the instrument and its certificate snapshot as one change."""
+        report = serializer.validated_data["report"]
+        self._assert_report_editable(report, self.request.user)
         serializer.save()
+        if report.is_finalized:
+            refresh_certificate_snapshot(report, user=self.request.user)
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        """Refuse to edit an instrument on a finalized report."""
-        self._assert_report_open(
-            serializer.validated_data.get("report", serializer.instance.report)
-        )
+        """Save the instrument and its certificate snapshot as one change."""
+        previous_report = serializer.instance.report
+        report = serializer.validated_data.get("report", previous_report)
+        self._assert_report_editable(previous_report, self.request.user)
+        self._assert_report_editable(report, self.request.user)
         serializer.save()
+        for affected_report in {previous_report, report}:
+            if affected_report.is_finalized:
+                refresh_certificate_snapshot(affected_report, user=self.request.user)
 
+    @transaction.atomic
     def perform_destroy(self, instance):
-        """Refuse to remove an instrument from a finalized report."""
-        self._assert_report_open(instance.report)
+        """Remove the instrument and refresh the certificate atomically."""
+        report = instance.report
+        self._assert_report_editable(report, self.request.user)
         super().perform_destroy(instance)
+        if report.is_finalized:
+            refresh_certificate_snapshot(report, user=self.request.user)
 
     @staticmethod
-    def _assert_report_open(report) -> None:
-        """The finalize lock covers the report's instruments too.
+    def _assert_report_editable(report, user=None) -> None:
+        """Only the correction permission may pass the finalized lock.
 
         Without this the readings could be rewritten after the report they
         belong to was locked, which would make the lock meaningless.
         """
-        if report.is_finalized:
+        if report.is_finalized and (
+            user is None or not user.has_perm("identification.edit_finalized_report")
+        ):
             raise ServiceError("A finalized report cannot be edited.")

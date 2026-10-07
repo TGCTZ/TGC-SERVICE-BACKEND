@@ -12,6 +12,8 @@ from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
+from apps.certificates.services import issue_certificate
+from apps.certificates.services.pdf import certificate_context
 from apps.core.exceptions import ServiceError
 from apps.core.services import format_reference_number
 from apps.gems.enums import BillStatus, NatureType, WeightUnit
@@ -232,6 +234,27 @@ def test_finalize_endpoint_keeps_the_paid_bill_requirement(
     assert not Certificate.objects.filter(stone=paid_stone).exists()
 
 
+def test_finalized_reports_are_listed_only_in_the_finalized_feed(
+    paid_stone, admin_user, auth_client
+):
+    """The normal findings queue stays focused on open work."""
+    report = create_finalizable_report(paid_stone, admin_user)
+    finalize_report(report, user=admin_user)
+    client = auth_client(admin_user)
+
+    open_work = client.get("/api/v1/identification-reports/workflow-feed/")
+    finalized = client.get(
+        "/api/v1/identification-reports/workflow-feed/", {"status": "Finalized"}
+    )
+
+    assert open_work.status_code == 200
+    assert open_work.data["results"] == []
+    assert finalized.status_code == 200
+    assert len(finalized.data["results"]) == 1
+    assert finalized.data["results"][0]["status"] == "Finalized"
+    assert finalized.data["results"][0]["record_id"] == report.pk
+
+
 def test_patching_a_finalized_report_is_refused(paid_stone, admin_user, auth_client):
     """The lock holds over the API, not just in the service."""
     report = create_finalizable_report(paid_stone, None)
@@ -246,6 +269,151 @@ def test_patching_a_finalized_report_is_refused(paid_stone, admin_user, auth_cli
     assert response.status_code == 400
     report.refresh_from_db()
     assert report.conclusion == "Natural ruby."
+
+
+@pytest.mark.parametrize("role_name", ["admin", "superadmin"])
+def test_admin_correction_updates_snapshot_and_preserves_issuance(
+    paid_stone, roles, gemmologist_user, auth_client, role_name
+):
+    """A correction changes the certified facts, not when or by whom it was issued."""
+    from django.contrib.auth.models import Group
+
+    from apps.certificates.services import issue_certificate
+    from apps.gems.enums import CertificateStatus
+    from apps.users.tests.factories import UserFactory
+
+    admin = UserFactory()
+    admin.groups.add(Group.objects.get(name=role_name))
+    second_gemmologist = UserFactory()
+    second_gemmologist.groups.add(Group.objects.get(name="gemmologist"))
+    report = create_finalizable_report(paid_stone, gemmologist_user)
+    finalize_report(report, user=gemmologist_user, verified_by=second_gemmologist)
+    certificate = issue_certificate(paid_stone, user=admin)
+    replacement_type = StoneTypeFactory(category=paid_stone.stone_category)
+    original = {
+        "number": certificate.certificate_number,
+        "issued_at": certificate.issued_at,
+        "issued_by": certificate.issued_by_id,
+        "gemmologist": certificate.gemmologist,
+        "gemmologist_two": certificate.gemmologist_two,
+    }
+
+    response = auth_client(admin).patch(
+        f"/api/v1/identification-reports/{report.pk}/",
+        {
+            "conclusion": "Corrected finding.",
+            "weight": "3.125",
+            "stone_type": replacement_type.pk,
+        },
+    )
+
+    assert response.status_code == 200, response.data
+    report.refresh_from_db()
+    paid_stone.refresh_from_db()
+    certificate.refresh_from_db()
+    assert report.conclusion == "Corrected finding."
+    assert paid_stone.weight == Decimal("3.125")
+    assert paid_stone.stone_type_id == replacement_type.pk
+    assert certificate.comments_snapshot == report.conclusion
+    assert certificate.weight_snapshot == paid_stone.weight
+    assert certificate.stone_type_snapshot == replacement_type.name
+    assert certificate.updated_by == admin
+    assert report.updated_by == admin
+    assert certificate.certificate_number == original["number"]
+    assert certificate.issued_at == original["issued_at"]
+    assert certificate.issued_by_id == original["issued_by"]
+    assert certificate.gemmologist == original["gemmologist"]
+    assert certificate.gemmologist_two == original["gemmologist_two"]
+    assert certificate.status == CertificateStatus.ISSUED
+
+    instrument = InstrumentFactory()
+    instrument_response = auth_client(admin).post(
+        "/api/v1/instruments-used/",
+        {"report": report.pk, "instrument": instrument.pk},
+    )
+    assert instrument_response.status_code == 201, instrument_response.data
+    certificate.refresh_from_db()
+    used_names = {
+        item["name"] for item in certificate.instruments_snapshot if item["used"]
+    }
+    assert used_names == {instrument.name}
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    photo = SimpleUploadedFile(
+        "corrected.gif",
+        b"GIF89a\x01\x00\x01\x00\x00\xff\x00,\x00\x00\x00\x00"
+        b"\x01\x00\x01\x00\x00\x02\x00;",
+        content_type="image/gif",
+    )
+    photo_response = auth_client(admin).patch(
+        f"/api/v1/stones/{paid_stone.pk}/", {"photo": photo}, format="multipart"
+    )
+    assert photo_response.status_code == 200, photo_response.data
+    paid_stone.refresh_from_db()
+    certificate.refresh_from_db()
+    assert certificate.photo_snapshot.name == paid_stone.photo.name
+    assert certificate_context(certificate)["certificate"].comments_snapshot == (
+        "Corrected finding."
+    )
+
+    verification = auth_client(admin).get(
+        f"/verify/{certificate.certificate_number}/"
+    )
+    assert verification.status_code == 200
+    verification_html = verification.content.decode()
+    assert replacement_type.name in verification_html
+    assert "3.125" in verification_html
+
+
+def test_gemmologist_cannot_edit_a_finalized_report(
+    paid_stone, gemmologist_user, auth_client
+):
+    """The bench can finalize findings but cannot rewrite their sign-off."""
+    report = create_finalizable_report(paid_stone, gemmologist_user)
+    finalize_report(report, user=gemmologist_user)
+
+    response = auth_client(gemmologist_user).patch(
+        f"/api/v1/identification-reports/{report.pk}/",
+        {"conclusion": "Unauthorized correction."},
+    )
+
+    assert response.status_code == 400
+    report.refresh_from_db()
+    assert report.conclusion == "Natural ruby."
+
+
+def test_failed_snapshot_refresh_rolls_back_a_correction(
+    paid_stone, roles, auth_client, monkeypatch
+):
+    """Snapshot failure must roll back both findings and stone measurements."""
+    from django.contrib.auth.models import Group
+
+    from apps.users.tests.factories import UserFactory
+
+    admin = UserFactory()
+    admin.groups.add(Group.objects.get(name="admin"))
+    report = create_finalizable_report(paid_stone, admin)
+    finalize_report(report, user=admin)
+    issue_certificate(paid_stone, user=admin)
+
+    def fail_refresh(*args, **kwargs):
+        raise ServiceError("Snapshot refresh failed.")
+
+    monkeypatch.setattr(
+        "apps.identification.services.report.refresh_certificate_snapshot",
+        fail_refresh,
+    )
+    response = auth_client(admin).patch(
+        f"/api/v1/identification-reports/{report.pk}/",
+        {"conclusion": "This must roll back.", "weight": "8.000"},
+    )
+
+    assert response.status_code == 400
+    report.refresh_from_db()
+    paid_stone.refresh_from_db()
+    assert report.conclusion == "Natural ruby."
+    assert paid_stone.weight == Decimal("2.500")
 
 
 def test_is_finalized_is_not_directly_writable(paid_stone, admin_user, auth_client):

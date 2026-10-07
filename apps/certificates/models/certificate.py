@@ -12,10 +12,9 @@ class Certificate(BaseModel):
     """A certificate for one stone.
 
     The snapshot fields are deliberate denormalization, not an oversight. A
-    certificate is a statement made on a date, and it has to keep saying the
-    same thing afterwards: renaming a colour in the lookup table, or correcting a
-    stone type, must never silently rewrite a document already in a customer's
-    hands.
+    certificate is a statement made on a date. Lookup renames do not change its
+    snapshots; an authorized finalized-report correction is the explicit path
+    for refreshing those facts in place.
     """
 
     stone = models.OneToOneField(

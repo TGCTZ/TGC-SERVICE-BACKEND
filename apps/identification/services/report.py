@@ -3,6 +3,7 @@
 from django.db import transaction
 from django.utils import timezone
 
+from apps.certificates.services import refresh_certificate_snapshot
 from apps.core.exceptions import ServiceError
 from apps.core.services import reference_number_for_order
 from apps.gems.enums import BillStatus
@@ -110,12 +111,16 @@ def update_report(
             applied to the stone.
 
     Raises:
-        ServiceError: If the report is finalized. This is the strongest guard in
-            the system: a certificate quotes the report, so a finalized report
-            that could still change would make an issued certificate a claim
-            about nothing in particular.
+        ServiceError: If the report is finalized and the caller lacks the
+            dedicated correction permission, or a correction would remove a
+            fact required by the issued certificate.
     """
-    if report.is_finalized:
+    can_edit_finalized = bool(
+        report.is_finalized
+        and user is not None
+        and user.has_perm("identification.edit_finalized_report")
+    )
+    if report.is_finalized and not can_edit_finalized:
         raise ServiceError("A finalized report cannot be edited.")
     _assert_payment_settled(report.stone)
     stone_fields = _pop_stone_fields(fields)
@@ -128,6 +133,13 @@ def update_report(
 
     if stone_fields:
         update_stone(report.stone, user=user, **stone_fields)
+    if can_edit_finalized:
+        missing = _missing_for_finalize(report)
+        if missing:
+            raise ServiceError(
+                "A finalized report must retain the {}.".format(", ".join(missing))
+            )
+        refresh_certificate_snapshot(report, user=user)
     return report
 
 
@@ -170,8 +182,9 @@ def finalize_report(
 ) -> IdentificationReport:
     """Lock a report against further edits, naming both gemmologists.
 
-    One-way: there is no un-finalize service. A mistake after this point is
-    corrected by revoking the certificate, not by quietly rewriting the findings.
+    One-way: there is no un-finalize service. A later correction is a privileged
+    edit of the findings and existing certificate snapshot; it does not erase
+    the original sign-off.
 
     ``verified_by`` is the second signatory. Asked for here rather than while the
     report is being written because it is a sign-off, not a finding - and this is

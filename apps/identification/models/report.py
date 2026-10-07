@@ -114,7 +114,10 @@ class IdentificationReport(BaseModel):
 
     class Meta:
         ordering = ["-created_at"]
-        permissions = [("finalize_report", "Can finalize an identification report")]
+        permissions = [
+            ("finalize_report", "Can finalize an identification report"),
+            ("edit_finalized_report", "Can edit a finalized identification report"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["report_number"],

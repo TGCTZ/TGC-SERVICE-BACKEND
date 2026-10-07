@@ -68,9 +68,8 @@ class CertificateSerializer(AuditFieldsMixin):
             "issued_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
-        # Everything but the stone is written by the issuing service: the number,
-        # the snapshots and the status all have to be minted together or the
-        # document does not mean anything.
+        # The API does not accept direct writes to issuance metadata or snapshots.
+        # Corrections flow through the permission-checked report and stone services.
         read_only_fields = tuple(f for f in fields if f != "stone")
 
     def get_instrument_checklist(self, obj) -> list[dict]:

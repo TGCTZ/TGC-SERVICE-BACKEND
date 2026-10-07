@@ -194,6 +194,13 @@ def update_stone(
         ServiceError: If a billed stone's category changes, if its type belongs
             to another category, or if a finalized report's type changes.
     """
+    report = stone.report
+    if report is not None and report.is_finalized:
+        if user is None or not user.has_perm("identification.edit_finalized_report"):
+            raise ServiceError("A finalized report's stone cannot be edited.")
+        if stone_category is not _UNSET and stone_category.pk != stone.stone_category_id:
+            raise ServiceError("A finalized report's stone category cannot change.")
+
     if stone_category is not _UNSET and stone_category.pk != stone.stone_category_id:
         assert_stone_retypeable(stone)
         stone.stone_category = stone_category
@@ -210,10 +217,13 @@ def update_stone(
         if stone_type is not None:
             if stone_type.category_id != stone.stone_category_id:
                 raise ServiceError("Choose a type belonging to this category.")
-            report = stone.report
-            if report is not None and report.is_finalized:
+            if report is not None and report.is_finalized and not user.has_perm(
+                "identification.edit_finalized_report"
+            ):
                 raise ServiceError("A finalized report's stone type cannot change.")
-        elif stone.report is not None and stone.report.is_finalized:
+        elif report is not None and report.is_finalized and not user.has_perm(
+            "identification.edit_finalized_report"
+        ):
             raise ServiceError("A finalized report's stone type cannot change.")
         stone.stone_type = stone_type
     if weight is not _UNSET:
