@@ -6,7 +6,6 @@ from django.db import transaction
 
 from apps.gems.color_palette import sync_color_palette
 from apps.gems.models import (
-    Instrument,
     StoneCategory,
     StoneType,
 )
@@ -30,7 +29,6 @@ STONE_TYPES = (
     ("Spinel", "Semi-precious"),
 )
 
-INSTRUMENTS = ("Refractometer", "Polariscope", "Dichroscope", "Spectroscope", "UV lamp")
 USER_STATUSES = ("Active", "Suspended", "Pending", "Archived")
 GENDERS = ("Female", "Male", "Non-binary", "Prefer not to say")
 
@@ -59,8 +57,7 @@ class Command(BaseCommand):
 
         sync_color_palette()
 
-        for name in INSTRUMENTS:
-            Instrument.objects.get_or_create(name=name)
+        call_command("sync_instruments", verbosity=0)
 
         for name in USER_STATUSES:
             UserStatus.objects.get_or_create(name=name)

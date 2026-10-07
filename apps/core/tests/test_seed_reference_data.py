@@ -7,6 +7,7 @@ from django.core.management import call_command
 
 from apps.gems.color_palette import COLORS
 from apps.gems.enums import ColorGroup
+from apps.gems.instrument_list import INSTRUMENTS
 from apps.gems.models import (
     Color,
     Instrument,
@@ -47,7 +48,11 @@ def test_shared_setup_creates_the_reference_baseline_and_roles():
     assert Origin.objects.count() == 0
     assert ShapeCut.objects.count() == 0
     assert Treatment.objects.count() == 0
-    assert Instrument.objects.count() == 5
+    assert Instrument.objects.count() == 10
+    active_names = set(
+        Instrument.objects.filter(is_active=True).values_list("name", flat=True)
+    )
+    assert active_names == set(INSTRUMENTS)
     assert UserStatus.objects.count() == 4
     assert Gender.objects.count() == 4
     assert Group.objects.filter(name="superadmin").exists()
@@ -121,6 +126,34 @@ def test_color_sync_makes_the_active_palette_exact_and_is_idempotent():
 
     call_command("sync_colors", verbosity=0)
     assert set(Color.objects.values_list("name", flat=True)) == names
+
+
+def test_instrument_sync_replaces_active_list_without_deleting_rows():
+    """Sync reactivates canonical rows and retires other live instruments."""
+    reactivated = Instrument.objects.create(name="Color Filter", is_active=False)
+    legacy = Instrument.objects.create(name="UV lamp")
+    custom = Instrument.objects.create(name="Custom instrument")
+
+    call_command("sync_instruments", verbosity=0)
+
+    active_names = set(
+        Instrument.objects.filter(is_active=True).values_list("name", flat=True)
+    )
+    assert active_names == set(INSTRUMENTS)
+    reactivated.refresh_from_db()
+    legacy.refresh_from_db()
+    custom.refresh_from_db()
+    assert reactivated.is_active
+    assert not legacy.is_active
+    assert not custom.is_active
+    assert Instrument.objects.filter(pk=legacy.pk).exists()
+    assert Instrument.objects.filter(pk=custom.pk).exists()
+
+    call_command("sync_instruments", verbosity=0)
+    active_names = set(
+        Instrument.objects.filter(is_active=True).values_list("name", flat=True)
+    )
+    assert active_names == set(INSTRUMENTS)
 
 
 def test_shared_setup_resynchronizes_declared_role_permissions():

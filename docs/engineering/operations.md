@@ -80,12 +80,14 @@ admins and managers from the Users screen. Do not run `seed` in production - it
 creates demo accounts with a known password.
 
 `seed_reference_data` is safe to rerun for missing reference rows and preserves
-existing lookup values, including prices. Colors are the exception: the
-identification palette is authoritative, so other color rows are soft-deleted
-and canonical group assignments are restored. The command also runs
-`setup_roles`, which replaces permissions on declared roles with the matrix in
-`apps/users/roles.py`. Role edits made in the UI for those roles will therefore
-be overwritten; use `sync_colors` when only the palette needs an update.
+existing lookup values, including prices. Colors and instruments are the
+exceptions: the identification palette is authoritative, and only the canonical
+instrument list stays active. Other color rows are soft-deleted; other
+instruments are deactivated so report history remains intact. The command also
+runs `setup_roles`, which replaces permissions on declared roles with the matrix
+in `apps/users/roles.py`. Role edits made in the UI for those roles will
+therefore be overwritten; use `sync_colors` or `sync_instruments` when only
+those lists need updating.
 
 To synchronize the identification color palette in development or production,
 run this command against that environment's database after deploying the code
@@ -97,6 +99,17 @@ uv run python manage.py sync_colors
 
 This color-specific command restores the canonical palette, updates its groups,
 and soft-deletes colors outside the palette without synchronizing role permissions.
+
+To synchronize the active instrument list in development or production, run this
+command against that environment's database after deploying the code:
+
+```bash
+uv run python manage.py sync_instruments
+```
+
+This command activates the ten canonical instruments and deactivates every
+other live instrument without deleting rows or report usage. Development's
+`seed` command runs the same synchronization through `seed_reference_data`.
 
 Species, variety, origin, shape/cut, and treatment lookups start empty. The
 rollout migration permanently removes their current rows and clears those

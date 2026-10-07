@@ -4,6 +4,7 @@ import factory
 from factory.django import DjangoModelFactory
 
 from apps.gems.enums import ColorGroup
+from apps.gems.instrument_list import INSTRUMENTS
 from apps.gems.models import (
     Color,
     Instrument,
@@ -122,9 +123,7 @@ class InstrumentFactory(DjangoModelFactory):
         model = Instrument
         django_get_or_create = ("name",)
 
-    name = factory.Iterator(
-        ["Refractometer", "Polariscope", "Dichroscope", "Spectroscope", "UV lamp"]
-    )
+    name = factory.Iterator(INSTRUMENTS)
 
 
 class TreatmentFactory(DjangoModelFactory):
