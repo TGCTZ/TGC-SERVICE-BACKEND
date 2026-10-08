@@ -1,6 +1,13 @@
 """Shared service helpers available to every app."""
 
+import re
+
 from django.db.models import Max
+
+_ORDER_REFERENCE_RE = re.compile(r"^ORD-(\d{4})-(\d{1,5})$")
+_DISPLAY_REFERENCE_RE = re.compile(
+    r"^(?P<prefix>[A-Z]+)-(?P<year>\d{4})-(?P<sequence>\d{1,5})(?P<label>-[A-Za-z0-9]+)?$"
+)
 
 
 def financial_year(when=None) -> tuple[int, int]:
@@ -23,13 +30,10 @@ def financial_year(when=None) -> tuple[int, int]:
 
 
 def generate_reference_number(model, field: str, prefix: str, *, width: int = 5) -> str:
-    """Return the next human-readable reference, e.g. ``ORD-2627-00001``.
+    """Allocate the next order sequence, e.g. ``ORD-2627-00001``.
 
-    One shape for every identifier the system issues - orders, bills, reports and
-    certificates - so a number read aloud or typed into a search box is
-    recognisable without knowing which document it came from. Reports used to
-    carry slashes (``TGC/2026/2027/0765``), which made them unsafe in a filename
-    or a URL path segment; the separator is now a dash everywhere.
+    Related bill, findings, and certificate numbers derive their year and
+    sequence from the order instead of maintaining their own counters.
 
     The year component is the financial year rather than the calendar one,
     because that is the period the lab reports on, and the sequence restarts with
@@ -64,3 +68,43 @@ def generate_reference_number(model, field: str, prefix: str, *, width: int = 5)
     # (99,999 a year per document type) replaced four on a flushed database.
     sequence = int(latest.rsplit("-", 1)[1]) + 1 if latest else 1
     return f"{stem}{sequence:0{width}d}"
+
+
+def reference_number_for_order(
+    order, prefix: str, *, stone_label: str | None = None
+) -> str:
+    """Build a related document reference from its order's year and sequence.
+
+    Order numbers are the sequence source of truth. Bills share the order number
+    at order level; findings and certificates add the stone label so each
+    per-stone record remains distinguishable.
+    """
+    match = _ORDER_REFERENCE_RE.fullmatch(order.reference_number)
+    if match is None:
+        raise ValueError(
+            f"Order reference {order.reference_number!r} does not contain a valid "
+            "year and sequence."
+        )
+
+    year, sequence = match.groups()
+    reference = f"{prefix}-{year}-{int(sequence):05d}"
+    return f"{reference}-{stone_label}" if stone_label else reference
+
+
+def format_reference_number(value: str | None) -> str | None:
+    """Format a stored reference's financial year for people, not integrations.
+
+    Stored identifiers deliberately remain slash-free so they are safe as
+    GePG values, filenames, and verification URL path segments.
+    """
+    if value is None:
+        return None
+    match = _DISPLAY_REFERENCE_RE.fullmatch(value)
+    if match is None:
+        return value
+
+    prefix = match.group("prefix")
+    year = match.group("year")
+    sequence = match.group("sequence")
+    label = match.group("label") or ""
+    return f"{prefix}-{year[:2]}/{year[2:]}-{sequence}{label}"

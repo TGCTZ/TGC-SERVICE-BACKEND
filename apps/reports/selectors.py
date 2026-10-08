@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from apps.billing.models import Bill, Payment
 from apps.certificates.models import Certificate
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import BillStatus
 from apps.identification.models import IdentificationReport
 from apps.orders.models import Order, Stone
@@ -87,7 +88,7 @@ def _source(key):
         )
     if key == "stones":
         source = Stone.objects.select_related(
-            "order__customer", "order__bill", "stone_type"
+            "order__customer", "order__bill", "stone_category", "stone_type"
         )
         date_field = "created_at"
         customer_path = "order__customer"
@@ -95,7 +96,10 @@ def _source(key):
     else:
         model = IdentificationReport if key == "findings" else Certificate
         source = model.objects.select_related(
-            "stone__order__customer", "stone__order__bill", "stone__stone_type"
+            "stone__order__customer",
+            "stone__order__bill",
+            "stone__stone_category",
+            "stone__stone_type",
         )
         date_field = "identified_at" if key == "findings" else "issued_at"
         customer_path = "stone__order__customer"
@@ -299,7 +303,7 @@ def report_rows(key: str, objects) -> list[dict]:
             order, event_date = obj.order, obj.issued_at
             control_number = obj.control_number
             row = {
-                "reference": obj.bill_number,
+                "reference": format_reference_number(obj.bill_number),
                 "currency": obj.currency,
                 "amount": str(obj.total_amount),
                 "status": obj.get_status_display(),
@@ -310,7 +314,10 @@ def report_rows(key: str, objects) -> list[dict]:
             order, event_date = obj, obj.received_date
             bill = getattr(order, "bill", None)
             control_number = bill.control_number if bill else ""
-            row = {"reference": obj.reference_number, "stones": obj.stone_count}
+            row = {
+                "reference": format_reference_number(obj.reference_number),
+                "stones": obj.stone_count,
+            }
         else:
             stone = obj if key == "stones" else obj.stone
             order = stone.order
@@ -322,13 +329,25 @@ def report_rows(key: str, objects) -> list[dict]:
                 else (obj.identified_at if key == "findings" else obj.issued_at)
             )
             reference = (
-                stone.label
+                format_reference_number(
+                    reference_number_for_order(
+                        stone.order, "ORD", stone_label=stone.label
+                    )
+                )
                 if key == "stones"
-                else (obj.report_number if key == "findings" else obj.certificate_number)
+                else (
+                    format_reference_number(obj.report_number)
+                    if key == "findings"
+                    else format_reference_number(obj.certificate_number)
+                )
             )
             row = {
                 "reference": reference,
-                "stone_type": stone.stone_type.name,
+                "stone_type": (
+                    stone.stone_type.name
+                    if stone.stone_type_id
+                    else stone.stone_category.name
+                ),
                 "status": "Finalized" if key == "findings" else obj.get_status_display(),
             }
         local_date = (
@@ -339,7 +358,7 @@ def report_rows(key: str, objects) -> list[dict]:
         row_data = {
             "id": obj.pk,
             "event_date": local_date.isoformat(),
-            "order": order.reference_number if order else "",
+            "order": format_reference_number(order.reference_number) if order else "",
             **row,
         }
         if key in ("billing", "outstanding", "collections", "exceptions"):

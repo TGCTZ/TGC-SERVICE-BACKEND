@@ -12,11 +12,16 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import BillStatus, StoneStatus
 from apps.orders.services import transition_stone
 
-from ..gateways.gepg import build_bill_response_ack, parse_bill_response, submit_bill
+from ..gateways.gepg import (
+    ACK_SUCCESS,
+    build_bill_response_ack,
+    parse_bill_response,
+    submit_bill,
+)
 from ..models import Bill, BillItem
 
 logger = logging.getLogger(__name__)
@@ -32,7 +37,7 @@ def _price_for(stone) -> Decimal:
         ServiceError: If the category has no price set. An unpriced tier is a
             configuration gap, and billing zero would be worse than refusing.
     """
-    category = stone.stone_type.category
+    category = stone.stone_category
     if category.price is None:
         raise ServiceError(f"No price set for stone category '{category}'.")
     return category.price
@@ -58,18 +63,20 @@ def preview_bill_for_order(order) -> dict:
         ``total`` over the priced ones, ``currency``, and ``blockers`` -
         the human-readable reasons this order cannot be billed yet.
     """
-    stones = list(order.stones.select_related("stone_type__category"))
+    stones = list(order.stones.select_related("stone_category", "stone_type"))
 
     items, total, blockers = [], Decimal("0"), []
 
     if Bill.objects.filter(order=order).exists():
-        blockers.append(f"Order {order.reference_number} already has a bill.")
+        blockers.append(
+            f"Order {format_reference_number(order.reference_number)} already has a bill."
+        )
     if not stones:
         blockers.append("Order has no stones to bill.")
 
     for stone in stones:
-        category = stone.stone_type.category
-        amount = category.price if category else None
+        category = stone.stone_category
+        amount = category.price
         if amount is None:
             blockers.append(f"No price set for stone category '{category}'.")
         else:
@@ -79,8 +86,10 @@ def preview_bill_for_order(order) -> dict:
             {
                 "stone": stone.id,
                 "label": stone.label,
-                "description": stone.stone_type.name,
-                "category": str(category) if category else "",
+                "description": (
+                    stone.stone_type.name if stone.stone_type_id else category.name
+                ),
+                "category": category.name,
                 "amount": amount,
             }
         )
@@ -97,15 +106,17 @@ def preview_bill_for_order(order) -> dict:
 def _create_local_bill(order, service_provider, user) -> Bill:
     """Create the bill and its snapshotted line items; mark stones billed."""
     if Bill.objects.filter(order=order).exists():
-        raise ServiceError(f"Order {order.reference_number} already has a bill.")
-    stones = list(order.stones.select_related("stone_type__category"))
+        raise ServiceError(
+            f"Order {format_reference_number(order.reference_number)} already has a bill."
+        )
+    stones = list(order.stones.select_related("stone_category", "stone_type"))
     if not stones:
         raise ServiceError("Order has no stones to bill.")
 
     now = timezone.now()
     bill = Bill(
         order=order,
-        bill_number=generate_reference_number(Bill, "bill_number", "BILL"),
+        bill_number=reference_number_for_order(order, "BILL"),
         service_provider=service_provider,
         status=BillStatus.PENDING,
         issued_at=now,
@@ -121,7 +132,11 @@ def _create_local_bill(order, service_provider, user) -> Bill:
         item = BillItem(
             bill=bill,
             stone=stone,
-            description=stone.stone_type.name,
+            description=(
+                stone.stone_type.name
+                if stone.stone_type_id
+                else stone.stone_category.name
+            ),
             unit_price=amount,
             # Weight is unknown at billing time; findings come after payment.
             weight=None,
@@ -134,7 +149,10 @@ def _create_local_bill(order, service_provider, user) -> Bill:
         item.save()
         total += amount
         transition_stone(
-            stone, StoneStatus.BILLED, user=user, note=f"Billed on {bill.bill_number}"
+            stone,
+            StoneStatus.BILLED,
+            user=user,
+            note=f"Billed on {format_reference_number(bill.bill_number)}",
         )
 
     bill.total_amount = total
@@ -142,15 +160,9 @@ def _create_local_bill(order, service_provider, user) -> Bill:
     return bill
 
 
-def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
-    """Create a bill for an order and submit it to GePG for a control number.
-
-    The local bill is committed first and the gateway call happens outside that
-    transaction: a network failure must not roll back a bill the lab has already
-    issued, and the control number can still arrive later on the async callback.
-    """
-    bill = _create_local_bill(order, service_provider, user)
-
+def _submit_existing_bill(bill: Bill, *, user=None) -> Bill:
+    """Submit a saved bill; retries keep its number, lines, and stone statuses."""
+    order = bill.order
     username = user.get_username() if user is not None else "System"
     result = submit_bill(bill, order.customer, username)
 
@@ -172,6 +184,38 @@ def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
         ]
     )
     return bill
+
+
+def bill_needs_attention(bill: Bill) -> bool:
+    """An accepted async submission is pending, while a rejected one needs retry."""
+    return (
+        bill.status == BillStatus.PENDING
+        and not bill.control_number
+        and bill.status_code not in ACK_SUCCESS
+    )
+
+
+def generate_bill_for_order(order, *, service_provider=None, user=None) -> Bill:
+    """Create a bill, commit it, then submit it to GePG for a control number."""
+    bill = _create_local_bill(order, service_provider, user)
+    return _submit_existing_bill(bill, user=user)
+
+
+def retry_bill_for_order(order, *, user=None) -> Bill:
+    """Recover automatic billing without ever issuing a second bill."""
+    if order.is_held:
+        raise ServiceError("Release the order before retrying billing.")
+    bill = Bill.objects.filter(order=order).first()
+    if bill is None:
+        if order.stone_count == 0 or order.stones.count() != order.stone_count:
+            raise ServiceError("Identify every stone before retrying billing.")
+        return generate_bill_for_order(order, user=user)
+    if not bill_needs_attention(bill):
+        raise ServiceError(
+            f"Bill {format_reference_number(bill.bill_number)} is already submitted "
+            "to GePG."
+        )
+    return _submit_existing_bill(bill, user=user)
 
 
 @transaction.atomic

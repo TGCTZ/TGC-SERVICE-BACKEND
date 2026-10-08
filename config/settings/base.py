@@ -287,3 +287,7 @@ GEPG_BILL_EXPIRY_DAYS = env.int("GEPG_BILL_EXPIRY_DAYS", default=365)
 # Skips the network call and returns a fake control number, so the whole
 # order -> bill -> payment -> certificate flow can be walked offline.
 GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)
+
+# False retains the review and manual billing steps.
+AUTO_BILL_AFTER_IDENTIFICATION = env.bool("AUTO_BILL_AFTER_IDENTIFICATION", default=False)
+GEPG_ACK_SUCCESS_CODES = frozenset({"7101", "7241"})

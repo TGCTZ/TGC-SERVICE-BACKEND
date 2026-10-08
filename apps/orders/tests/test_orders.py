@@ -6,8 +6,9 @@ import pytest
 
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import StoneStatus, WeightUnit
-from apps.gems.tests.factories import StoneTypeFactory
+from apps.gems.tests.factories import StoneCategoryFactory, StoneTypeFactory
 from apps.orders.models import Customer, Order, StatusHistory, Stone
 from apps.orders.selectors import identification_worklist
 from apps.orders.services import add_stone, create_order, transition_stone, update_stone
@@ -154,6 +155,38 @@ def test_add_stone_endpoint_identifies_and_caps(admin_user, auth_client):
     )
     assert second.status_code == 400
     assert "already been identified" in str(second.data)
+
+
+def test_identify_stones_endpoint_accepts_category_without_a_type(
+    admin_user, auth_client
+):
+    """Intake can choose a pricing tier before the bench records exact type."""
+    order = OrderFactory(stone_count=1)
+    category = StoneCategoryFactory(name="Precious", price=Decimal("30000.00"))
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/orders/{order.pk}/stones/", {"stone_category": category.pk}
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["stone_category"] == category.pk
+    assert response.data["stone_category_detail"]["name"] == "Precious"
+    assert response.data["stone_type"] is None
+
+
+def test_identify_stones_rejects_a_type_from_another_category(admin_user, auth_client):
+    """Legacy payloads still cannot pair a category with an unrelated type."""
+    order = OrderFactory(stone_count=1)
+    category = StoneCategoryFactory(name="Precious")
+    stone_type = StoneTypeFactory()
+
+    response = auth_client(admin_user).post(
+        f"/api/v1/orders/{order.pk}/stones/",
+        {"stone_category": category.pk, "stone_type": stone_type.pk},
+    )
+
+    assert response.status_code == 400
+    assert "belonging to this category" in str(response.data)
 
 
 def test_transition_endpoint_requires_the_transition_permission(admin_user, auth_client):
@@ -460,9 +493,16 @@ def test_identification_filter_splits_the_list_in_two(admin_user, auth_client):
         assert response.status_code == 200, response.data
         return {row["reference_number"] for row in response.data["results"]}
 
-    assert refs("?identification=pending") == {pending.reference_number}
-    assert refs("?identification=complete") == {complete.reference_number}
-    assert refs() == {pending.reference_number, complete.reference_number}
+    assert refs("?identification=pending") == {
+        format_reference_number(pending.reference_number)
+    }
+    assert refs("?identification=complete") == {
+        format_reference_number(complete.reference_number)
+    }
+    assert refs() == {
+        format_reference_number(pending.reference_number),
+        format_reference_number(complete.reference_number),
+    }
 
 
 def test_stage_and_identification_filters_combine(admin_user, auth_client, user):
@@ -492,9 +532,16 @@ def test_stage_and_identification_filters_combine(admin_user, auth_client, user)
         return {row["reference_number"] for row in response.data["results"]}
 
     # The stage by itself still returns both - that is what a hold means.
-    assert refs("?stage=on_hold") == {partial.reference_number, full.reference_number}
-    assert refs("?stage=on_hold&identification=complete") == {full.reference_number}
-    assert refs("?stage=on_hold&identification=pending") == {partial.reference_number}
+    assert refs("?stage=on_hold") == {
+        format_reference_number(partial.reference_number),
+        format_reference_number(full.reference_number),
+    }
+    assert refs("?stage=on_hold&identification=complete") == {
+        format_reference_number(full.reference_number)
+    }
+    assert refs("?stage=on_hold&identification=pending") == {
+        format_reference_number(partial.reference_number)
+    }
 
 
 def test_an_unknown_identification_value_is_ignored(admin_user, auth_client):
@@ -507,8 +554,8 @@ def test_an_unknown_identification_value_is_ignored(admin_user, auth_client):
     assert response.data["count"] == 1
 
 
-def test_a_billed_stone_cannot_be_retyped(settings, admin_user, auth_client):
-    """The type is what priced the bill, so changing it would falsify the bill."""
+def test_a_billed_stone_cannot_change_category(settings, admin_user, auth_client):
+    """The saved category priced the bill, so changing it would falsify it."""
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=1)
     stone = add_stone(order, stone_type=StoneTypeFactory(price=Decimal("30000.00")))
@@ -516,15 +563,16 @@ def test_a_billed_stone_cannot_be_retyped(settings, admin_user, auth_client):
     stone.refresh_from_db()
 
     response = auth_client(admin_user).patch(
-        f"/api/v1/stones/{stone.pk}/", {"stone_type": StoneTypeFactory().pk}
+        f"/api/v1/stones/{stone.pk}/",
+        {"stone_category": StoneCategoryFactory().pk},
     )
 
     assert response.status_code == 400
     assert "priced the bill" in str(response.data)
 
-    original = stone.stone_type_id
+    original = stone.stone_category_id
     stone.refresh_from_db()
-    assert stone.stone_type_id == original
+    assert stone.stone_category_id == original
 
 
 def test_a_billed_stone_still_accepts_its_weight(settings, admin_user, auth_client):
@@ -624,7 +672,7 @@ def test_order_reports_its_bill_number(settings, admin_user, auth_client):
     bill = generate_bill_for_order(order)
 
     after = client.get(f"/api/v1/orders/{order.pk}/")
-    assert after.data["bill_number"] == bill.bill_number
+    assert after.data["bill_number"] == format_reference_number(bill.bill_number)
 
 
 def test_order_stage_follows_the_least_advanced_stone(settings, user):
@@ -923,11 +971,11 @@ def test_orders_endpoint_filters_by_stage(settings, admin_user, auth_client):
     response = client.get("/api/v1/orders/?stage=ready_to_bill")
     assert response.status_code == 200, response.data
     references = {row["reference_number"] for row in response.data["results"]}
-    assert ready.reference_number in references
-    assert unpaid.reference_number not in references
+    assert format_reference_number(ready.reference_number) in references
+    assert format_reference_number(unpaid.reference_number) not in references
 
     awaiting = client.get("/api/v1/orders/?stage=awaiting_payment")
-    assert unpaid.reference_number in {
+    assert format_reference_number(unpaid.reference_number) in {
         row["reference_number"] for row in awaiting.data["results"]
     }
 

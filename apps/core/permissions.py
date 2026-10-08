@@ -1,6 +1,6 @@
 """Permission classes."""
 
-from rest_framework.permissions import DjangoModelPermissions
+from rest_framework.permissions import BasePermission, DjangoModelPermissions
 
 
 class StrictModelPermissions(DjangoModelPermissions):
@@ -25,6 +25,19 @@ class StrictModelPermissions(DjangoModelPermissions):
         "PATCH": ["%(app_label)s.change_%(model_name)s"],
         "DELETE": ["%(app_label)s.delete_%(model_name)s"],
     }
+
+
+class OrdersOrStonesViewPermission(BasePermission):
+    """Allow the shared Identification entry to count work for either audience."""
+
+    def has_permission(self, request, view):
+        """Accept order or stone read permission for the pending-count badge."""
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and (user.has_perm("orders.view_order") or user.has_perm("orders.view_stone"))
+        )
 
 
 class ActionPermissions(StrictModelPermissions):

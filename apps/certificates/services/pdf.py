@@ -15,6 +15,7 @@ exactly what it said on the day it was issued.
 from django.conf import settings
 from django.template.loader import render_to_string
 
+from apps.core.services import format_reference_number
 from apps.gems.enums import CertificateStatus, WeightUnit
 
 from ..models import Certificate
@@ -28,6 +29,10 @@ from .assets import (
 )
 
 TEMPLATE = "certificates/certificate.html"
+
+# The clean masthead is the issued-document default. Set this to ``"banner"``
+# in code to use the original pre-composed banner as the alternate style.
+HEADER_STYLE = "clean"
 
 
 def certificate_context(certificate: Certificate) -> dict:
@@ -54,18 +59,22 @@ def certificate_context(certificate: Certificate) -> dict:
 
     return {
         "certificate": certificate,
+        "certificate_number": format_reference_number(certificate.certificate_number),
         "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
         "is_revoked": certificate.status == CertificateStatus.REVOKED,
+        "header_style": HEADER_STYLE,
         "ministry_name": settings.CERTIFICATE_MINISTRY_NAME,
         "lab_name": settings.CERTIFICATE_LAB_NAME,
         "lab_address": settings.CERTIFICATE_LAB_ADDRESS,
         "stone_label": stone.label,
-        "order_reference": order.reference_number,
+        "order_reference": format_reference_number(order.reference_number),
         "customer_name": order.customer.full_name,
         # The number printed as REPORT NO. Snapshotted, falling back to the live
         # report only for certificates issued before snapshotting existed.
         "report_number": (
-            certificate.report_number_snapshot or certificate.report.report_number
+            format_reference_number(
+                certificate.report_number_snapshot or certificate.report.report_number
+            )
         ),
         "instruments": instrument_checklist(certificate),
         # The frozen copy, falling back to the stone's live photograph for
@@ -88,9 +97,8 @@ def render_certificate_pdf(certificate: Certificate) -> bytes:
         certificate: The certificate to render.
 
     Returns:
-        The PDF as bytes. A revoked certificate still renders, carrying a
-        REVOKED watermark - refusing would leave staff unable to reconcile
-        paperwork, and the watermark carries the meaning.
+        The PDF as bytes. Historical revoked certificates retain their
+        REVOKED watermark when re-rendered.
     """
     # WeasyPrint loads native libraries during import; only PDFs need them.
     from weasyprint import HTML

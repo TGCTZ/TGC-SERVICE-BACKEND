@@ -14,8 +14,15 @@ class Stone(BaseModel):
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="stones")
     label = models.CharField(max_length=20)
+    stone_category = models.ForeignKey(
+        "gems.StoneCategory", on_delete=models.PROTECT, related_name="stones"
+    )
     stone_type = models.ForeignKey(
-        "gems.StoneType", on_delete=models.PROTECT, related_name="stones"
+        "gems.StoneType",
+        on_delete=models.PROTECT,
+        related_name="stones",
+        null=True,
+        blank=True,
     )
     weight = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     weight_unit = models.CharField(
@@ -29,7 +36,7 @@ class Stone(BaseModel):
     # On the stone rather than the report because it is a picture of the stone,
     # not a finding about it: it survives a report being revised, and a stone
     # can be photographed at intake before anyone has looked at it. Left
-    # editable after billing, unlike the stone's type - a photograph does not
+    # editable after billing, unlike the stone's category - a photograph does not
     # price anything, and the bench takes it late.
     photo = models.ImageField(upload_to="stones/", blank=True, null=True)
 

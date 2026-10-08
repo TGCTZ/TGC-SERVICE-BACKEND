@@ -1,13 +1,10 @@
-"""Factories for the gemmological reference tables.
-
-Reused by ``manage.py seed``, so the shapes here are the shapes a developer
-sees on a freshly seeded database.
-"""
+"""Factories for gemmological tests."""
 
 import factory
 from factory.django import DjangoModelFactory
 
 from apps.gems.enums import ColorGroup
+from apps.gems.instrument_list import INSTRUMENTS
 from apps.gems.models import (
     Color,
     Instrument,
@@ -16,6 +13,7 @@ from apps.gems.models import (
     Species,
     StoneCategory,
     StoneType,
+    Treatment,
     Variety,
 )
 
@@ -125,6 +123,14 @@ class InstrumentFactory(DjangoModelFactory):
         model = Instrument
         django_get_or_create = ("name",)
 
-    name = factory.Iterator(
-        ["Refractometer", "Polariscope", "Dichroscope", "Spectroscope", "UV lamp"]
-    )
+    name = factory.Iterator(INSTRUMENTS)
+
+
+class TreatmentFactory(DjangoModelFactory):
+    """A treatment or enhancement recorded during identification."""
+
+    class Meta:
+        model = Treatment
+        django_get_or_create = ("name",)
+
+    name = factory.Sequence(lambda n: f"Treatment {n}")

@@ -5,9 +5,12 @@ Swapping ``AUTH_USER_MODEL`` afterwards means unpicking foreign keys across
 every table in the project, so this is effectively a one-time decision.
 """
 
+import uuid
+
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import BaseModel, ReferenceModel
 
@@ -105,6 +108,17 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     def get_short_name(self) -> str:
         """Django admin hook."""
         return self.first_name
+
+
+class AuthSession(models.Model):
+    """One login's server-side idle deadline, shared by its rotating JWTs."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="auth_sessions"
+    )
+    last_interaction_at = models.DateTimeField(default=timezone.now)
+    revoked_at = models.DateTimeField(null=True, blank=True)
 
 
 class IdentityDetail(BaseModel):

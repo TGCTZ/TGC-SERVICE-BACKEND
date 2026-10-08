@@ -33,6 +33,8 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "certificates" /
 #: similar file it finds.
 ASSETS = {
     "header_banner": "header-banner.jpg",
+    "coat_of_arms": "coat-of-arms.png",
+    "tgc_logo": "tgc-logo.png",
     "official_stamp": "official-stamp.png",
 }
 

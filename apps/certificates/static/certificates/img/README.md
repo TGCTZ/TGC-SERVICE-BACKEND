@@ -6,17 +6,16 @@ to have run, and WeasyPrint needs no `base_url`.
 
 | File | Used for | Status |
 |---|---|---|
-| `header-banner.jpg` | Header, full width | Present — the ministry's flag banner with the coat of arms, the TGC logo and the four title lines composited in. 2300×216, the 277×26mm band's own proportions (~211dpi) |
-| `tgc-logo.png` | Source for the banner | Present — converted from the frontend's `tgc-logo.webp`. No longer embedded on its own |
-| `coat-of-arms.png` | Source for the banner | Present — the legacy system's `armcoat.png`. Tighter crop than the frontend's `coat-of-arm.webp`. No longer embedded on its own |
+| `header-banner.jpg` | Alternate full-width header | Present — the ministry's flag banner with the coat of arms, the TGC logo and the four title lines composited in. 2300×216, the 277×26mm band's own proportions (~211dpi) |
+| `tgc-logo.png` | Clean header, right side | Present — converted from the frontend's `tgc-logo.webp` |
+| `coat-of-arms.png` | Clean header, left side | Present — the legacy system's `armcoat.png`, tightly cropped |
 | `official-stamp.png` | Stamp box, column 1 | Present — the lab's ink stamp |
 
 A missing file is not an error: `asset_data_uri` logs a warning once and the
-template leaves the box empty under its caption — for the stamp that is the
-space the lab stamps by hand, so no placeholder text is printed. The banner is
-the exception: the lab's name is in its pixels, so without it the header falls
-back to the titles as plain text. Drop the file in with the exact name above
-and it appears on the next render, no code change.
+template omits that image. The default clean header keeps all four title lines
+as text, so the issuing lab remains identified even if a logo is unavailable.
+The original banner remains an alternate style; `HEADER_STYLE` in
+`services/pdf.py` is the hard-coded choice (`"clean"` by default, or `"banner"`).
 
 ## Neither mark is its source file byte-for-byte
 

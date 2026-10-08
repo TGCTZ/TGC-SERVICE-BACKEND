@@ -10,7 +10,7 @@ from apps.billing.selectors import billing_worklist
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
 from apps.gems.enums import BillStatus, StoneStatus
-from apps.gems.tests.factories import StoneTypeFactory
+from apps.gems.tests.factories import StoneCategoryFactory, StoneTypeFactory
 from apps.orders.models import StatusHistory
 from apps.orders.services import add_stone
 from apps.orders.tests.factories import OrderFactory
@@ -34,6 +34,9 @@ def test_generating_a_bill_prices_every_stone(billable_order):
     bill = generate_bill_for_order(billable_order)
 
     assert bill.bill_number.startswith("BILL-")
+    assert (
+        bill.bill_number.split("-")[1:] == billable_order.reference_number.split("-")[1:]
+    )
     assert bill.total_amount == Decimal("150000.00")
     assert bill.items.count() == 3
     assert bill.status == BillStatus.PENDING
@@ -320,6 +323,26 @@ def test_preview_prices_an_order_without_creating_anything():
     # And it agrees with what generation actually charges.
     bill = generate_bill_for_order(order)
     assert bill.total_amount == preview["total"]
+
+
+def test_category_only_stones_can_be_priced_and_billed(settings):
+    """Intake bills from the category before the bench records a type."""
+    settings.GEPG_SIMULATE = True
+    from apps.billing.services import preview_bill_for_order
+
+    order = OrderFactory(stone_count=1)
+    category = StoneCategoryFactory(name="Precious", price=Decimal("30000.00"))
+    add_stone(order, stone_category=category)
+
+    preview = preview_bill_for_order(order)
+    assert preview["items"][0]["description"] == "Precious"
+    assert preview["items"][0]["category"] == "Precious"
+    assert preview["total"] == Decimal("30000.00")
+
+    bill = generate_bill_for_order(order)
+    item = BillItem.objects.get(bill=bill)
+    assert item.description == "Precious"
+    assert item.unit_price == Decimal("30000.00")
 
 
 def test_preview_names_the_reason_an_order_cannot_be_billed():

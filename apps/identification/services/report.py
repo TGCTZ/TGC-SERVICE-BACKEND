@@ -3,11 +3,10 @@
 from django.db import transaction
 from django.utils import timezone
 
+from apps.certificates.services import refresh_certificate_snapshot
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
-from apps.gems.enums import BillStatus, StoneStatus
-from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify_subscribers
+from apps.core.services import reference_number_for_order
+from apps.gems.enums import BillStatus
 from apps.orders.services import update_stone
 
 from ..models import IdentificationReport
@@ -37,7 +36,7 @@ def _assert_payment_settled(stone) -> None:
 # That one creates a row of another model, which is a real route around
 # ``orders.add_customer``; this writes one column of the stone the report is
 # already about, and that column is a finding this endpoint exists to record.
-_STONE_FIELDS = ("weight", "weight_unit")
+_STONE_FIELDS = ("stone_type", "weight", "weight_unit")
 
 
 def _pop_stone_fields(fields: dict) -> dict:
@@ -82,11 +81,10 @@ def create_report(*, stone, user=None, **fields) -> IdentificationReport:
 
     report = IdentificationReport(
         stone=stone,
-        # TGC-<fy>-<seq> - printed on the certificate as
-        # REPORT NO, and the same shape as every other reference the system
-        # issues, so it survives a filename and a URL path segment intact.
-        report_number=generate_reference_number(
-            IdentificationReport, "report_number", "TGC"
+        # Findings share the order's sequence, with the stone label preserving
+        # a distinct reference for every stone in that order.
+        report_number=reference_number_for_order(
+            stone.order, "TGC", stone_label=stone.label
         ),
         **fields,
     )
@@ -113,12 +111,16 @@ def update_report(
             applied to the stone.
 
     Raises:
-        ServiceError: If the report is finalized. This is the strongest guard in
-            the system: a certificate quotes the report, so a finalized report
-            that could still change would make an issued certificate a claim
-            about nothing in particular.
+        ServiceError: If the report is finalized and the caller lacks the
+            dedicated correction permission, or a correction would remove a
+            fact required by the issued certificate.
     """
-    if report.is_finalized:
+    can_edit_finalized = bool(
+        report.is_finalized
+        and user is not None
+        and user.has_perm("identification.edit_finalized_report")
+    )
+    if report.is_finalized and not can_edit_finalized:
         raise ServiceError("A finalized report cannot be edited.")
     _assert_payment_settled(report.stone)
     stone_fields = _pop_stone_fields(fields)
@@ -131,6 +133,13 @@ def update_report(
 
     if stone_fields:
         update_stone(report.stone, user=user, **stone_fields)
+    if can_edit_finalized:
+        missing = _missing_for_finalize(report)
+        if missing:
+            raise ServiceError(
+                "A finalized report must retain the {}.".format(", ".join(missing))
+            )
+        refresh_certificate_snapshot(report, user=user)
     return report
 
 
@@ -138,7 +147,7 @@ def update_report(
 #:
 #: Deliberately short. The form stays permissive so a sitting at the bench can be
 #: saved half-done, which means this is the only place completeness is ever
-#: checked - and a certificate quotes these four: what the stone is, what it
+#: checked - and a certificate quotes these five: what the stone is, what it
 #: looks like, how big it is, and the verdict. Everything else is situational; a
 #: stone may legitimately defeat a test and still deserve a certificate.
 #:
@@ -147,9 +156,10 @@ def update_report(
 #: is also where :func:`apps.certificates.services.issue_certificate` looks.
 FINALIZE_REQUIRED_FIELDS = (
     ("species", "species"),
+    ("stone.stone_type", "stone type"),
     ("color", "colour"),
     ("stone.weight", "weight"),
-    ("conclusion", "conclusion"),
+    ("conclusion", "comments"),
 )
 
 
@@ -172,8 +182,9 @@ def finalize_report(
 ) -> IdentificationReport:
     """Lock a report against further edits, naming both gemmologists.
 
-    One-way: there is no un-finalize service. A mistake after this point is
-    corrected by revoking the certificate, not by quietly rewriting the findings.
+    One-way: there is no un-finalize service. A later correction is a privileged
+    edit of the findings and existing certificate snapshot; it does not erase
+    the original sign-off.
 
     ``verified_by`` is the second signatory. Asked for here rather than while the
     report is being written because it is a sign-off, not a finding - and this is
@@ -223,29 +234,4 @@ def finalize_report(
             "updated_by",
         ]
     )
-    _notify_if_order_ready_for_certification(report.stone.order, user)
     return report
-
-
-def _notify_if_order_ready_for_certification(order, user) -> None:
-    """Tell the certifiers once every stone in the order has final findings.
-
-    Once per order rather than per report: a ten-stone order would otherwise
-    raise ten notifications for what the certifier treats as one batch.
-    Cancelled stones will never be certified, so they do not hold the order up.
-    """
-    finalized = IdentificationReport.objects.filter(is_finalized=True).values("stone_id")
-    outstanding = (
-        order.stones.exclude(status=StoneStatus.CANCELLED)
-        .exclude(pk__in=finalized)
-        .exists()
-    )
-    if outstanding:
-        return
-    notify_subscribers(
-        NotificationKind.READY_TO_CERTIFY,
-        title=f"Order {order.reference_number} is ready for certification",
-        body="Findings are finalized for every stone.",
-        link="/worklists/certification",
-        exclude=user,
-    )

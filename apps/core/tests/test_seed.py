@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 
 from apps.core.management.commands.seed import DEMO_PASSWORD
+from apps.gems.models import StoneCategory
 from apps.users.roles import ROLE_PERMISSIONS
 
 pytestmark = pytest.mark.django_db
@@ -28,3 +29,16 @@ def test_every_role_gets_a_demo_account():
     # its role, so the hierarchy applies to it.
     admin = get_user_model().objects.get(email="admin@example.com")
     assert not admin.is_superuser
+
+
+def test_demo_seed_reuses_shared_reference_rows_without_resetting_edits():
+    """Demo generation preserves customized shared lookup rows."""
+    call_command("seed_reference_data", verbosity=0)
+    category = StoneCategory.objects.get(name="Precious")
+    category.price = 12_345
+    category.save(update_fields=["price"])
+
+    call_command("seed", users=0, orders=0, verbosity=0)
+
+    assert StoneCategory.objects.count() == 3
+    assert StoneCategory.objects.get(name="Precious").price == 12_345

@@ -89,9 +89,30 @@ def test_unauthenticated_and_users_without_report_permissions_are_refused(
     assert api_client.get("/api/v1/reports/").data == []
 
 
+def test_report_gates_control_catalog_results_and_exports(api_client, user):
+    """Source access alone must not bypass either report gate."""
+    _grant(user, "billing.view_bill")
+    api_client.force_authenticate(user)
+    assert api_client.get("/api/v1/reports/").data == []
+    assert api_client.get("/api/v1/reports/financial/", DATES).status_code == 403
+
+    _grant(user, "core.module_reports")
+    user = type(user).objects.get(pk=user.pk)
+    api_client.force_authenticate(user)
+    assert api_client.get("/api/v1/reports/financial/export/", DATES).status_code == 403
+
+    _grant(user, "core.report_financial")
+    user = type(user).objects.get(pk=user.pk)
+    api_client.force_authenticate(user)
+    assert [page["key"] for page in api_client.get("/api/v1/reports/").data] == [
+        "financial"
+    ]
+    assert api_client.get("/api/v1/reports/financial/", DATES).status_code == 200
+
+
 def test_bill_only_user_cannot_read_payment_totals_or_outstanding(api_client, user):
     """Combined pages must omit sections requiring another model's permission."""
-    _grant(user, "billing.view_bill")
+    _grant(user, "core.module_reports", "core.report_financial", "billing.view_bill")
     api_client.force_authenticate(user)
     _payment(_bill())
     response = api_client.get("/api/v1/reports/financial/", DATES)
@@ -110,7 +131,7 @@ def test_bill_only_user_cannot_read_payment_totals_or_outstanding(api_client, us
 
 def test_catalog_and_operational_sections_follow_individual_permissions(api_client, user):
     """Order readers cannot discover certificate or findings data."""
-    _grant(user, "orders.view_order")
+    _grant(user, "core.module_reports", "core.report_operational", "orders.view_order")
     api_client.force_authenticate(user)
     catalog = api_client.get("/api/v1/reports/")
     assert [page["key"] for page in catalog.data] == ["operational"]
@@ -280,7 +301,13 @@ def test_financial_rows_use_control_numbers_without_exposing_customer_data(
     api_client, user
 ):
     """Financial reports identify bills by gateway number, not customer identity."""
-    _grant(user, "billing.view_bill", "billing.view_payment")
+    _grant(
+        user,
+        "core.module_reports",
+        "core.report_financial",
+        "billing.view_bill",
+        "billing.view_payment",
+    )
     visible = _bill(control_number="991234567890")
     _payment(visible)
     api_client.force_authenticate(user)
@@ -304,7 +331,7 @@ def test_financial_rows_use_control_numbers_without_exposing_customer_data(
 
 def test_operational_reports_keep_customer_filter_and_column(api_client, user):
     """Customer identification remains useful for operational work tracking."""
-    _grant(user, "orders.view_order")
+    _grant(user, "core.module_reports", "core.report_operational", "orders.view_order")
     order = OrderFactory(received_date="2026-09-05")
     api_client.force_authenticate(user)
     response = api_client.get(
@@ -368,7 +395,7 @@ def test_export_limit_rejects_instead_of_truncating(api_client, admin_user, monk
 
 def test_query_count_does_not_grow_with_rows(api_client, user):
     """Joined customer names and options must not cause per-row database reads."""
-    _grant(user, "billing.view_bill")
+    _grant(user, "core.module_reports", "core.report_financial", "billing.view_bill")
     api_client.force_authenticate(user)
     token = set_current_user(user)
     try:

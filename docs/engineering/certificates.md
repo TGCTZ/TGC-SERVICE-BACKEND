@@ -70,20 +70,14 @@ The report and the bill are reached by **traversal** (`stone.order.bill`) rather
 than by importing `apps.identification` or `apps.billing`, because certificates
 sit above both in the layer order.
 
-On success the stone transitions to `certified`, and the certificate takes a
-number from `generate_reference_number(Certificate, "certificate_number",
-"CERT")` — `CERT-2627-00001`, scanning `all_objects` so a soft-deleted row never
-reissues a number it once held.
+On success the stone transitions to `certified`, and the certificate number
+uses the order's year and five-digit sequence plus the stone label. For example,
+stored `CERT-2627-00042-A` is displayed as `CERT-26/27-00042-A`. Verification
+URLs keep the slash-free stored identifier.
 
-## Revoking
-
-`revoke_certificate()` marks the row revoked. It does **not** delete it, and the
-number stays allocated.
-
-A revoked certificate still renders and still downloads, carrying a REVOKED
-watermark. Refusing would be the wrong instinct: whoever is holding the paper
-copy has to be able to learn that it no longer stands, and staff still have to
-reconcile the paperwork. The watermark carries the meaning.
+Certificates are permanent once issued. There is no revoke endpoint or UI action.
+Historical records already marked revoked keep their status and watermark when
+viewed, downloaded, or checked through the public verification page.
 
 ## The PDF
 
@@ -107,10 +101,8 @@ practical way to test the snapshot guarantee — that renaming a colour afterwar
 does not rewrite the document.
 
 PDFs are **rendered on demand and never stored**. The body is frozen snapshots,
-so re-rendering is deterministic; the one mutable input is the revocation
-status, and a revoked certificate has to pick up its watermark at download time.
-A stored file could not do that without an invalidation step nobody would
-remember to run. The filename gains a `-revoked` suffix when appropriate.
+so re-rendering is deterministic. Historical records marked revoked keep their
+watermark and gain a `-revoked` filename suffix when downloaded.
 
 Lab identity on the page — ministry, lab name, address — comes from
 `CERTIFICATE_MINISTRY_NAME`, `CERTIFICATE_LAB_NAME` and
@@ -136,22 +128,24 @@ file - so a misnamed file is reported as missing instead of being guessed at.
 
 | Name | File | Where it prints |
 | --- | --- | --- |
-| `header_banner` | `header-banner.jpg` | The whole header band, 277 × 26mm |
+| `header_banner` | `header-banner.jpg` | Alternate full-width header, 277 × 26mm |
+| `coat_of_arms` | `coat-of-arms.png` | Clean header, left side |
+| `tgc_logo` | `tgc-logo.png` | Clean header, right side |
 | `official_stamp` | `official-stamp.png` | The stamp box in column 1 |
 
-The header is one pre-composed image: the ministry's flag banner with the coat of
-arms, the titles and the TGC logo drawn in. It is a JPEG because it is a
-photographic texture (PNG was four times the size), built at the band's own
-277:26 proportions so it fills the band without cropping. `coat-of-arms.png` and
-`tgc-logo.png` are kept in the folder as the banner's sources; the template no
-longer embeds them on their own.
+The default clean header embeds the coat of arms and TGC logo separately around
+the four title lines: country, ministry, lab and report name. The original
+pre-composed banner remains available as an alternate. `HEADER_STYLE` in
+`services/pdf.py` is hard-coded to `"clean"`; changing it to `"banner"` switches
+the PDF to the original image.
 
 A missing file returns `None` with a one-time warning rather than raising, so a
 certificate still renders:
 
 - no stamp - the box is left empty, since it is where the lab stamps by hand;
-- no banner - the header prints the ministry, lab and document titles as text,
-  because the lab's name exists nowhere else on the page.
+- no logo - its position is left clear while all four title lines remain
+  visible;
+- no alternate banner - the clean header remains in use.
 
 Found files are cached for the life of the process, so replacing one needs a
 restart (or `forget_assets()`); a missing file is re-checked on every render.
@@ -233,7 +227,6 @@ Registered under `/api/v1/certificates/`:
 | Endpoint | Permission |
 | --- | --- |
 | `POST /certificates/` | `certificates.issue_certificate` |
-| `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
 | `GET /certificates/worklist/` | stones with a finalized report and a paid bill, not yet certified |
 | `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |
 

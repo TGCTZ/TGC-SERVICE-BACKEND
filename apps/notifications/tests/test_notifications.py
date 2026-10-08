@@ -201,7 +201,7 @@ def test_each_station_hears_when_the_order_reaches_it(
         update_stone(stone, weight=Decimal("1.000"))
         with django_capture_on_commit_callbacks(execute=True):
             finalize_report(create_finalizable_report(stone, finalizer), user=finalizer)
-    assert _kinds_for(gemmologist_user).count(NotificationKind.READY_TO_CERTIFY) == 1
+    assert NotificationKind.READY_TO_CERTIFY not in _kinds_for(gemmologist_user)
 
     for stone in (first, second):
         stone.refresh_from_db()
@@ -213,7 +213,6 @@ def test_each_station_hears_when_the_order_reaches_it(
     assert _kinds_for(gemmologist_user) == [
         NotificationKind.ORDER_RECEIVED,
         NotificationKind.BILL_PAID,
-        NotificationKind.READY_TO_CERTIFY,
     ]
     assert _kinds_for(accountant_user) == [NotificationKind.READY_TO_BILL]
     assert _kinds_for(admin_user) == []

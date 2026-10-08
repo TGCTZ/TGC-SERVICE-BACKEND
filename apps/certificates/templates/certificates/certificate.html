@@ -33,7 +33,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ certificate.certificate_number }}</title>
+  <title>{{ certificate_number }}</title>
   <style>
     {{ font_faces }}
 
@@ -118,8 +118,8 @@
          y 46     the three columns                                h 154
          (10mm bottom margin; no footer)
 
-       Horizontally: 10mm side margins, three 89mm columns with
-       5mm gutters (89*3 + 5*2 = 277 = 297 - 2*10).
+       Horizontally: 4.5mm side margins, 88mm / 94mm / 88mm columns,
+       and 9mm gutters (88 + 94 + 88 + 9*2 = 288 = 297 - 2*4.5).
        ========================================================== */
     .sheet {
       position: relative;
@@ -130,70 +130,95 @@
 
     .band {
       position: absolute;
-      left: 10mm;
-      width: 277mm;
+      left: 4.5mm;
+      width: 288mm;
     }
 
     /* ---------- Header ---------- */
-    /* One pre-composed image: the coat of arms, the ministry and lab titles
-       and the TGC logo over the ministry's flag banner. It is built at the
-       band's own 277:26 proportions (2300 x 216px, ~211dpi), so it fills the
-       band edge to edge; object-fit only matters if a replacement of another
-       shape is dropped in, and then it crops rather than squashes. */
     .header {
       top: 8mm;
       height: 26mm;
     }
 
-    .header img {
+    .header-banner img {
       display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
 
-    /* Printed only when header-banner.jpg is missing: the lab's name now lives
-       in the image's pixels, and a certificate must never go out without the
-       name of the body that issued it. Tighter leading than the body's 1.3,
-       as display type wants. */
-    .header .titles {
+    .header-clean {
+      background: #fff;
+    }
+
+    .header-clean .titles {
+      position: absolute;
+      inset: 0 35mm;
       font-family: "TGC Arial", Arial, "Liberation Sans", sans-serif;
-      line-height: 1.1;
-      padding-top: 4mm;
+      line-height: 1.02;
+      padding-top: 1mm;
       text-align: center;
       white-space: nowrap;
       color: var(--tgc-blue);
     }
 
-    /* As on the paper form: a small ministry line, the lab's name as the
-       largest type, and the document title smaller
-       beneath it - all bold, in navy. The lab's name is the widest line, wider
-       than the middle column it is centred over. */
+    .header-clean .coat-of-arms,
+    .header-clean .tgc-logo {
+      position: absolute;
+      top: 1.5mm;
+      height: 22mm;
+      object-fit: contain;
+    }
+
+    .header-clean .coat-of-arms {
+      left: 5mm;
+      width: 19mm;
+    }
+
+    .header-clean .tgc-logo {
+      right: 5mm;
+      width: 22mm;
+    }
+
+    /* Match all four lines in the original banner while keeping each mark
+       crisp as its own image. */
+    .titles .country,
     .titles .ministry {
-      font-size: 12pt;
       font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
+      letter-spacing: 0.35px;
       color: var(--navy);
     }
 
+    .titles .country {
+      font-size: 14pt;
+    }
+
+    .titles .ministry {
+      font-size: 15pt;
+    }
+
     .titles .lab {
-      font-size: 18pt;
+      font-size: 16pt;
       font-weight: 700;
-      letter-spacing: 0.2mm;
+      letter-spacing: 0.15mm;
       /* Letter-spacing trails the last letter too; this keeps it centred. */
       padding-left: 0.2mm;
       text-transform: uppercase;
       color: var(--navy);
-      margin: 0.8mm 0;
+      margin: 0.5mm 0;
     }
 
     .titles .doc {
+      display: inline-block;
       font-size: 13pt;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
+      color: #fff;
+      background: var(--header-teal);
+      line-height: 5.5mm;
+      padding: 0 2mm;
       text-transform: uppercase;
-      color: var(--navy);
+      margin-top: 3mm;
     }
 
     /* ---------- Info bar ---------- */
@@ -218,13 +243,12 @@
     .column {
       position: absolute;
       top: 46mm;
-      width: 89mm;
       height: 154mm;
     }
 
-    .column-1 { left: 10mm; }
-    .column-2 { left: 104mm; }
-    .column-3 { left: 198mm; }
+    .column-1 { left: 4.5mm;   width: 88mm; }
+    .column-2 { left: 101.5mm; width: 94mm; }
+    .column-3 { left: 204.5mm; width: 88mm; }
 
     /* ---------- Sections ---------- */
     .section {
@@ -252,29 +276,29 @@
        SECTIONS - top and height within each 154mm column, 3mm apart.
 
        COLUMN 1                     COLUMN 2
-         0    description     77      0    gemstone photo   87
-         80   official stamp  47      90   identification   64
+         0    description     77      0    gemstone photo   77
+        80   official stamp  47     80   identification   74
          130  gemmologists    24
 
        COLUMN 3
-         0    instruments used 94
-         97   QR box           26
+         0    instruments used 77
+         80   QR box           43
          124  'Scan to verify'  8 (outside the box)
          133  statement        21
 
        Each section is a 7mm header plus its rows: description
        7 x 10mm, gemmologists 2 x 8.5mm, identification 5 x 8.5mm
-       plus a 14.5mm comment, instruments 12 x 7mm.
+       plus a 24.5mm comment, instruments 12 x 7mm.
        ========================================================== */
     .s-description    { top: 0;     height: 77mm; }
     .s-stamp          { top: 80mm;  height: 47mm; }
     .s-gemmologists   { top: 130mm; height: 24mm; }
 
-    .s-photo          { top: 0;     height: 87mm; }
-    .s-identification { top: 90mm;  height: 64mm; }
+    .s-photo          { top: 0;     height: 77mm; }
+    .s-identification { top: 80mm;  height: 74mm; }
 
-    .s-instruments    { top: 0;     height: 94mm; }
-    .s-verify         { top: 97mm;  height: 26mm; }
+    .s-instruments    { top: 0;     height: 77mm; }
+    .s-verify         { top: 80mm;  height: 43mm; }
     .verify-caption   { position: absolute; left: 0; right: 0; top: 124mm; height: 8mm; }
     .s-statement      { top: 133mm; height: 21mm; }
 
@@ -312,6 +336,12 @@
       text-transform: uppercase;
     }
 
+    /* The identification labels are shorter than the description labels, so
+       give the comment value more room without changing the other columns. */
+    .s-identification .grid td.label {
+      width: 38%;
+    }
+
     /* 10pt at 1.05 leading fits two lines in an 8mm row: the longest finding,
        "Doubly refractive (uniaxial)", wraps once rather than clipping. */
     .grid td.value {
@@ -323,15 +353,16 @@
     .rows-10  td { height: 10mm; }
     .rows-8-5 td { height: 8.5mm; }
 
-    /* The conclusion gets two lines and no more, at 5mm each; longer is a data
+    /* The conclusion gets four lines and no more, at 5mm each; longer is a data
        problem, and the cell clips rather than pushing the table off the page. */
     .grid td.comment {
-      height: 14.5mm;
+      height: 24.5mm;
     }
 
     .grid td.comment div {
-      max-height: 10mm;
+      max-height: 20mm;
       line-height: 5mm;
+      overflow-wrap: anywhere;
       overflow: hidden;
     }
 
@@ -356,7 +387,7 @@
 
     /* ---------- Photograph ---------- */
     .photo {
-      height: 80mm;
+      height: 70mm;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -367,7 +398,7 @@
        photograph that is not exactly the box's aspect ratio. */
     .photo img {
       max-width: 100%;
-      max-height: 76mm;
+      max-height: 66mm;
       object-fit: contain;
     }
 
@@ -417,8 +448,8 @@
     }
 
     .verify img {
-      width: 22mm;
-      height: 22mm;
+      width: 38mm;
+      height: 38mm;
     }
 
     /* Below the QR's box rather than inside it, as on the paper form. */
@@ -486,11 +517,14 @@
     <div class="revoked-band">This certificate has been revoked and no longer stands</div>
   {% endif %}
 
-  <div class="band header">
-    {% if header_banner %}
+  <div class="band header {% if header_style == 'banner' and header_banner %}header-banner{% else %}header-clean{% endif %}">
+    {% if header_style == 'banner' and header_banner %}
       <img src="{{ header_banner }}" alt="The United Republic of Tanzania, Ministry of Minerals: Tanzania Gemmological Centre, Gemstone Identification Report">
     {% else %}
+      {% if coat_of_arms %}<img class="coat-of-arms" src="{{ coat_of_arms }}" alt="Coat of arms of Tanzania">{% endif %}
+      {% if tgc_logo %}<img class="tgc-logo" src="{{ tgc_logo }}" alt="Tanzania Gemmological Centre logo">{% endif %}
       <div class="titles">
+        <div class="country">The United Republic of Tanzania</div>
         <div class="ministry">{{ ministry_name }}</div>
         <div class="lab">{{ lab_name }}</div>
         <div class="doc">Gemstone Identification Report</div>

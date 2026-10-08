@@ -1,4 +1,4 @@
-"""Certificate issuance, its three guards, revocation and PDF download."""
+"""Certificate issuance, its guards, PDF download and verification."""
 
 from decimal import Decimal
 
@@ -10,16 +10,16 @@ from apps.billing.dev import simulate_payment
 from apps.billing.services import generate_bill_for_order
 from apps.certificates.models import Certificate
 from apps.certificates.selectors import certification_worklist
-from apps.certificates.services import assets, issue_certificate, revoke_certificate
+from apps.certificates.services import assets, issue_certificate
 from apps.certificates.services.pdf import TEMPLATE, certificate_context
 from apps.core.exceptions import ServiceError
+from apps.core.services import format_reference_number
 from apps.gems.enums import (
     CertificateStatus,
     NatureType,
     OpticCharacter,
     StoneStatus,
     Transparency,
-    Treatment,
     WeightUnit,
 )
 from apps.gems.tests.factories import (
@@ -29,6 +29,7 @@ from apps.gems.tests.factories import (
     ShapeCutFactory,
     SpeciesFactory,
     StoneTypeFactory,
+    TreatmentFactory,
     VarietyFactory,
 )
 from apps.identification.models import InstrumentUsed
@@ -45,7 +46,7 @@ def _paid_stone(settings, *, weight=Decimal("2.500")):
     """A stone whose order is billed and settled, and weighed at the bench.
 
     Weight arrives after the refresh, not with ``add_stone``: identification
-    records the type only, and the bench weighs the stone during the findings.
+    records the category only, and the bench records type and weight later.
     """
     settings.GEPG_SIMULATE = True
     order = OrderFactory(stone_count=1)
@@ -76,6 +77,9 @@ def test_issuing_freezes_the_findings(certifiable_stone, user):
     certificate = issue_certificate(certifiable_stone, user=user)
 
     assert certificate.certificate_number.startswith("CERT-")
+    assert certificate.certificate_number == certificate.report.report_number.replace(
+        "TGC-", "CERT-", 1
+    )
     assert certificate.stone_type_snapshot == certifiable_stone.stone_type.name
     assert certificate.weight_snapshot == Decimal("2.500")
     assert certificate.weight_unit_snapshot == WeightUnit.CARAT
@@ -105,25 +109,12 @@ def test_issuing_certifies_the_stone(certifiable_stone, user):
     entry = StatusHistory.objects.filter(
         stone=certifiable_stone, to_status=StoneStatus.CERTIFIED
     ).latest("changed_at")
-    assert certificate.certificate_number in entry.note
+    assert format_reference_number(certificate.certificate_number) in entry.note
 
 
 def test_a_stone_cannot_be_certified_twice(certifiable_stone, user):
     """One certificate per stone."""
     issue_certificate(certifiable_stone, user=user)
-
-    with pytest.raises(ServiceError, match="already has a certificate"):
-        issue_certificate(certifiable_stone, user=user)
-
-
-def test_a_revoked_certificate_still_blocks_reissue(certifiable_stone, user):
-    """Ported behaviour: the existence check is not status-aware.
-
-    Revoking does not free the stone to be certified again - there is no
-    re-issue path, which is why ``CertificateStatus.REISSUED`` is unreachable.
-    """
-    certificate = issue_certificate(certifiable_stone, user=user)
-    revoke_certificate(certificate, user=user)
 
     with pytest.raises(ServiceError, match="already has a certificate"):
         issue_certificate(certifiable_stone, user=user)
@@ -182,18 +173,6 @@ def test_certification_needs_a_recorded_weight(settings, user):
 
     with pytest.raises(ServiceError, match="no recorded weight"):
         issue_certificate(stone, user=user)
-
-
-def test_revoking_is_one_way(certifiable_stone, user):
-    """A withdrawn certificate cannot be withdrawn twice."""
-    certificate = issue_certificate(certifiable_stone, user=user)
-    revoke_certificate(certificate, user=user)
-
-    certificate.refresh_from_db()
-    assert certificate.status == CertificateStatus.REVOKED
-
-    with pytest.raises(ServiceError, match="already revoked"):
-        revoke_certificate(certificate, user=user)
 
 
 def test_certification_worklist_is_the_three_guards_as_a_queue(
@@ -278,9 +257,10 @@ def test_pdf_download_requires_the_view_permission(
 def test_a_revoked_certificate_still_downloads(
     certifiable_stone, admin_user, auth_client
 ):
-    """Refusing would leave staff unable to reconcile paperwork."""
+    """Legacy revoked records retain their historical PDF watermark."""
     certificate = issue_certificate(certifiable_stone)
-    revoke_certificate(certificate)
+    certificate.status = CertificateStatus.REVOKED
+    certificate.save(update_fields=["status"])
 
     response = auth_client(admin_user).get(f"/api/v1/certificates/{certificate.pk}/pdf/")
 
@@ -303,7 +283,9 @@ def test_the_document_says_what_it_said_when_issued(certifiable_stone, user):
     context = certificate_context(certificate)
 
     assert context["certificate"].color_snapshot == "Red"
-    assert context["order_reference"] == certifiable_stone.order.reference_number
+    assert context["order_reference"] == format_reference_number(
+        certifiable_stone.order.reference_number
+    )
     assert context["customer_name"] == certifiable_stone.order.customer.full_name
     assert context["is_revoked"] is False
 
@@ -331,7 +313,7 @@ def test_certificate_freezes_every_finding_it_prints(settings, user):
         origin=OriginFactory(name="Mogok"),
         transparency=Transparency.TRANSPARENT,
         optic_character=OpticCharacter.DR,
-        treatment=Treatment.HEATED,
+        treatment=TreatmentFactory(name="Heated"),
         nature_type=NatureType.NATURAL,
         refractive_index="1.762-1.770",
         conclusion="Natural ruby, heated.",
@@ -459,18 +441,19 @@ def test_verify_page_is_public_and_reports_a_valid_certificate(settings, user, c
     assert response.status_code == 200
     body = response.content.decode()
     assert "Valid certificate" in body
-    assert certificate.certificate_number in body
+    assert format_reference_number(certificate.certificate_number) in body
     # The public page identifies the stone, never its owner.
     assert stone.order.customer.full_name not in body
 
 
 def test_verify_page_says_so_when_a_certificate_is_revoked(settings, user, client):
-    """The whole reason a revoked certificate keeps its number and its row."""
+    """The public verifier continues to identify legacy revoked records."""
     stone = _paid_stone(settings)
     report = create_finalizable_report(stone, user)
     finalize_report(report, user=user)
     certificate = issue_certificate(stone, user=user)
-    revoke_certificate(certificate, user=user)
+    certificate.status = CertificateStatus.REVOKED
+    certificate.save(update_fields=["status"])
 
     response = client.get(f"/verify/{certificate.certificate_number}/")
 
@@ -510,28 +493,20 @@ def test_a_mark_supplied_later_appears_without_a_restart(request, monkeypatch, t
     assert assets.asset_data_uri("official_stamp").startswith("data:image/png;base64,")
 
 
-def test_the_header_names_the_lab_even_without_its_banner(
-    request, monkeypatch, tmp_path, settings, certifiable_stone
-):
-    """The lab's name is in the banner's pixels, so losing the file must not lose it.
-
-    Every other mark degrades to an empty box when its file is missing. The
-    banner cannot: it is the only place the document names the body that
-    issued it, so without it the header prints the titles as text instead.
-    """
+def test_default_header_shows_both_marks_and_all_titles(settings, certifiable_stone):
+    """The clean default keeps the original masthead details as separate elements."""
     certificate = issue_certificate(certifiable_stone)
 
-    # The shipped banner is found, and the text titles stay out of the way.
-    html = render_to_string(TEMPLATE, certificate_context(certificate))
-    assert '<div class="titles">' not in html
+    context = certificate_context(certificate)
+    html = render_to_string(TEMPLATE, context)
 
-    request.addfinalizer(assets.forget_assets)
-    monkeypatch.setattr(assets, "ASSET_DIR", tmp_path)
-    assets.forget_assets()
-
-    html = render_to_string(TEMPLATE, certificate_context(certificate))
-    assert '<div class="titles">' in html
+    assert context["header_style"] == "clean"
+    assert context["coat_of_arms"].startswith("data:image/png;base64,")
+    assert context["tgc_logo"].startswith("data:image/png;base64,")
+    assert "The United Republic of Tanzania" in html
+    assert settings.CERTIFICATE_MINISTRY_NAME in html
     assert settings.CERTIFICATE_LAB_NAME in html
+    assert "Gemstone Identification Report" in html
 
 
 def test_the_document_carries_its_own_typefaces(certifiable_stone):

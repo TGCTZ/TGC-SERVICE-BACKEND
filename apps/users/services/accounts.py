@@ -16,8 +16,6 @@ import logging
 import re
 import secrets
 
-from rest_framework_simplejwt.tokens import RefreshToken
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -28,6 +26,7 @@ from apps.core.exceptions import ServiceError
 from apps.users.models import UserStatus
 from apps.users.services.auth import revoke_all_tokens
 from apps.users.services.roles import assert_can_assign
+from apps.users.services.sessions import issue_session_refresh
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -164,7 +163,7 @@ def complete_first_login_password(*, user, password: str) -> dict:
     user.must_change_password = False
     user.save(update_fields=["password", "must_change_password", "updated_at"])
     revoke_all_tokens(user)
-    refresh = RefreshToken.for_user(user)
+    refresh = issue_session_refresh(user)
     return {"access": str(refresh.access_token), "refresh": str(refresh)}
 
 

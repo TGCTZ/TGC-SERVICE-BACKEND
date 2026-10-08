@@ -40,6 +40,7 @@ class ColorGroup(models.TextChoices):
     ORANGE_YELLOW = ("orange_yellow", "Orange/Yellow")
     GREEN = ("green", "Green")
     BLUE = ("blue", "Blue")
+    BROWN = ("brown", "Brown")
 
 
 class WeightUnit(models.TextChoices):
@@ -47,11 +48,12 @@ class WeightUnit(models.TextChoices):
 
     CARAT = ("carat", "Carat")
     GRAM = ("gram", "Gram")
+    KILOGRAM = ("kilogram", "Kilogram")
 
     @property
     def symbol(self) -> str:
         """Short display symbol, e.g. 'ct' or 'g'."""
-        return {self.CARAT: "ct", self.GRAM: "g"}[self]
+        return {self.CARAT: "ct", self.GRAM: "g", self.KILOGRAM: "kg"}[self]
 
 
 class Transparency(models.TextChoices):
@@ -66,23 +68,8 @@ class NatureType(models.TextChoices):
     """Whether the stone is natural or man-made/altered."""
 
     NATURAL = ("natural", "Natural")
-    SYNTHETIC = ("synthetic", "Synthetic")
-    TREATED = ("treated", "Treated")
-    ENHANCED = ("enhanced", "Enhanced")
     ARTIFICIAL = ("artificial", "Artificial")
-
-
-class Treatment(models.TextChoices):
-    """Enhancement applied to the stone, if any."""
-
-    NONE = ("none", "None")
-    HEATED = ("heated", "Heated")
-    OILED = ("oiled", "Oiled")
-    DYED = ("dyed", "Dyed")
-    IRRADIATED = ("irradiated", "Irradiated")
-    FRACTURE_FILLED = ("fracture_filled", "Fracture filled")
-    BLEACHED = ("bleached", "Bleached")
-    IMPREGNATED = ("impregnated", "Impregnated")
+    SYNTHETIC = ("synthetic", "Synthetic")
 
 
 class OpticCharacter(models.TextChoices):
@@ -142,6 +129,7 @@ class OrderStage(models.TextChoices):
 
     IDENTIFYING = ("identifying", "Awaiting identification")
     READY_TO_BILL = ("ready_to_bill", "Ready to bill")
+    BILLING_ATTENTION = ("billing_attention", "Billing needs attention")
     AWAITING_PAYMENT = ("awaiting_payment", "Awaiting payment")
     PART_PAID = ("part_paid", "Partly paid")
     IN_FINDINGS = ("in_findings", "Findings in progress")
@@ -154,9 +142,11 @@ class OrderStage(models.TextChoices):
 
 
 class CertificateStatus(models.TextChoices):
-    """Validity state of a certificate.
+    """Certificate lifecycle states, including a legacy revoked value.
 
-    ``reissued`` is unreachable; there is no re-issue service.
+    New certificates are issued as ``issued``. ``revoked`` remains readable for
+    historical rows; ``reissued`` is unreachable because there is no re-issue
+    service.
     """
 
     ISSUED = ("issued", "Issued")

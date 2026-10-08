@@ -6,8 +6,22 @@ password and, on first sign-in, must set their own password and complete their
 profile before the system opens up to them.
 
 Code: `apps/users/services/accounts.py` (the flow),
-`apps/users/authentication.py` (the first-login rule),
+`apps/users/authentication.py` (the first-login and idle-session rules),
 `apps/users/templates/users/email/` (the email).
+
+## Inactivity timeout
+
+Each login creates an `AuthSession` identified by the JWT's `sid` claim. The API
+rejects access and refresh tokens once that session has gone 30 minutes without
+a reported human interaction. Ordinary API requests do not extend the deadline.
+
+The frontend listens for pointer, click, keyboard, input and wheel events and sends a throttled
+`POST /api/v1/auth/activity/` when the user interacts. It keeps a local deadline
+for prompt sign-out, including after a sleeping tab wakes, and shares the last
+interaction time across tabs. The backend checks its own deadline on every
+authenticated request and before refresh-token rotation. Logout revokes the
+session, so already-issued access tokens also stop working. A deployment of
+this change requires users holding older JWTs without `sid` to sign in again.
 
 ## Creating an account
 
@@ -57,7 +71,7 @@ authentication class - refuses every request outside `FIRST_LOGIN_ALLOWED` with 
 
 | URL name | Methods | Why |
 | --- | --- | --- |
-| `auth-login`, `auth-refresh`, `auth-logout` | any | Signing in and out |
+| `auth-login`, `auth-refresh`, `auth-logout`, `auth-activity` | any | Signing in and out, and extending the idle deadline |
 | `auth-me` | GET | Reading who you are (not editing - the profile step does that) |
 | `auth-first-login-password`, `auth-first-login-profile` | any | The two steps |
 | `config` | any | Deployment flags the client renders with |

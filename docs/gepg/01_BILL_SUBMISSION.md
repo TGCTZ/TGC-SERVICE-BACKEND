@@ -76,8 +76,8 @@ out the total itself.
 
 1. Prices each stone from `stone.stone_type.category.price`, and **freezes** the
    charge onto the line item — a later price change never alters a raised bill.
-2. Allocates `bill_number` as `BILL-YYYY-NNNN`, scanning soft-deleted rows so a
-   number is never reissued.
+2. Builds `bill_number` from the order's year and five-digit sequence. This
+   stored slash-free ID is sent to GePG; the UI formats its year as `YY/ZZ`.
 3. Builds `billSubReq` and posts it.
 4. Stores the control number if one came back.
 
@@ -92,7 +92,7 @@ control number.
 > | --- | --- |
 > | Two entry points, one per service | One: `generate_bill_for_order()` |
 > | A "production shop" service exists | It does not; this system only identifies stones |
-> | Bill id is `BILL-S-NO-{order}-{item}` | `BILL-YYYY-NNNN`, one per order |
+> | Bill id is `BILL-S-NO-{order}-{item}` | `BILL-YYZZ-NNNNN`, sharing the order sequence, one per order |
 > | Customer id derived from the item id | Derived from the customer's id |
 > | SMS is sent on success | No SMS exists anywhere |
 > | Store `control_number='PENDING'` | Never stored; the column stays empty |
@@ -291,7 +291,7 @@ that matter to submission:
 
 | Column | Notes |
 | --- | --- |
-| `bill_number` | `BILL-YYYY-NNNN`, allocated locally |
+| `bill_number` | Order-based `BILL-YYZZ-NNNNN`, allocated locally |
 | `control_number` | Issued by GePG; blank until it arrives |
 | `order` | One-to-one. One bill per order |
 | `service_provider` | Foreign key |

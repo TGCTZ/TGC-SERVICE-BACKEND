@@ -1,4 +1,4 @@
-"""JWT authentication that holds new accounts to their first login.
+"""JWT authentication that enforces login inactivity and first-login steps.
 
 An account created from the Users screen must set its own password and then
 complete its profile before it can do anything else. The frontend walks the
@@ -9,6 +9,8 @@ alone can be bypassed with a token and curl.
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from .services.sessions import active_session
+
 #: What a user may reach before finishing their first login, by URL name - and
 #: for which methods (None means any). Enough to sign in and out, read who they
 #: are, do the two first-login steps, and fill the profile step's gender list.
@@ -16,6 +18,7 @@ FIRST_LOGIN_ALLOWED = {
     "auth-login": None,
     "auth-refresh": None,
     "auth-logout": None,
+    "auth-activity": None,
     "auth-me": {"GET", "HEAD", "OPTIONS"},
     "auth-first-login-password": None,
     "auth-first-login-profile": None,
@@ -40,15 +43,16 @@ class FirstLoginRequired(PermissionDenied):
 
 
 class OnboardingJWTAuthentication(JWTAuthentication):
-    """Simple JWT, plus: refuse all but the first-login steps until they are done."""
+    """Require an active login session and any outstanding first-login steps."""
 
     def authenticate(self, request):
-        """Authenticate as usual, then check the first-login flags."""
+        """Validate the JWT, its idle deadline, and the first-login flags."""
         result = super().authenticate(request)
         if result is None:
             return None
 
-        user, _ = result
+        user, token = result
+        active_session(user.pk, token.payload.get("sid"))
         if user.must_change_password or user.must_complete_profile:
             match = getattr(request._request, "resolver_match", None)
             methods = FIRST_LOGIN_ALLOWED.get(getattr(match, "url_name", None), False)

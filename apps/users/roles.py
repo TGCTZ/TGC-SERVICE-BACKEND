@@ -51,6 +51,7 @@ GEMS_MODELS = (
     "origin",
     "shapecut",
     "instrument",
+    "treatment",
 )
 
 
@@ -64,6 +65,7 @@ MODULE_GATES = {
     "orders": "core.module_orders",
     "identification": "core.module_identification",
     "billing": "core.module_billing",
+    "reports": "core.module_reports",
     "certificates": "core.module_certificates",
     "reference": "core.module_reference",
     "user": "core.module_user",
@@ -97,11 +99,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
             "identification.finalize_report",
             *_perms("certificates", CERTIFICATE_MODELS, ("add", "view")),
             "certificates.issue_certificate",
-            "certificates.revoke_certificate",
         ]
         + ["auth.view_group", "auth.add_group", "auth.change_group", "auth.delete_group"]
         + ["auth.view_permission", "auditlog.view_logentry", "audit.view_systemlog"]
         + list(MODULE_GATES.values())
+        + ["core.report_financial", "core.report_operational"]
     ),
     # Front desk: registers customers and their orders, and hands finished
     # certificates back. Identifying a stone is the bench's job, not reception's,
@@ -123,11 +125,16 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         MODULE_GATES["orders"],
         MODULE_GATES["reference"],
     ],
-    # The bench: identifies each stone's type (preliminary, which fixes the
-    # price), then after payment records the findings against the
-    # reference tables it reads.
+    # The bench records each stone's exact type and findings. Reception chose
+    # the pricing category at intake, before the order reaches this role.
     "gemmologist": [
         *_perms("gems", GEMS_MODELS, READ),
+        "gems.add_stonetype",
+        "gems.add_species",
+        "gems.add_variety",
+        "gems.add_origin",
+        "gems.add_shapecut",
+        "gems.add_treatment",
         *_perms("orders", ("order", "stone"), READ),
         "billing.view_bill",
         # Identification. Django names this permission after the row
@@ -148,6 +155,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         MODULE_GATES["orders"],
         MODULE_GATES["identification"],
         MODULE_GATES["reference"],
+        MODULE_GATES["reports"],
+        "core.report_financial",
+        "core.report_operational",
     ],
     # Accounts owns pricing. Because Django permissions are per-model and the
     # identification fee lives on StoneType, this also grants the right to edit
@@ -162,6 +172,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         *_notified("ready_to_bill"),
         MODULE_GATES["billing"],
         MODULE_GATES["reference"],
+        MODULE_GATES["reports"],
+        "core.report_financial",
+        "core.report_operational",
     ],
 }
 

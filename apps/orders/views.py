@@ -1,25 +1,28 @@
 """API views for the order domain."""
 
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from django.conf import settings
+from django.db import transaction
 from django.db.models import F
 
-from apps.core.permissions import StrictModelPermissions
+from apps.core.permissions import OrdersOrStonesViewPermission, StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 
 from .models import Customer, Order, StatusHistory, Stone
 from .search import ORDER_SEARCH_FIELDS, STONE_SEARCH_FIELDS
 from .selectors import (
     annotate_identified,
+    identification_action_queryset,
     identification_worklist,
     orders_at_stage,
 )
 from .serializers import (
-    AddStoneSerializer,
     CustomerSerializer,
     HoldOrderSerializer,
     OrderSerializer,
@@ -28,7 +31,6 @@ from .serializers import (
     TransitionSerializer,
 )
 from .services import (
-    add_stone,
     assert_stone_retypeable,
     create_order,
     hold_order,
@@ -115,7 +117,6 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         return queryset
 
     action_permissions = {
-        "add_stone": ["orders.add_stone"],
         "worklist": ["orders.add_stone"],
         "hold": ["orders.hold_order"],
         "release": ["orders.hold_order"],
@@ -142,25 +143,6 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             user=self.request.user,
         )
         serializer.instance = order
-
-    @extend_schema(request=AddStoneSerializer, responses=StoneSerializer)
-    @action(detail=True, methods=["post"], url_path="stones")
-    def add_stone(self, request, pk=None):
-        """Record the identification of the next stone.
-
-        A dedicated action rather than ``POST /stones/``: the service owns the
-        label sequence and the cap at ``order.stone_count``, and a bare create
-        would bypass both.
-        """
-        order = self.get_object()
-        payload = AddStoneSerializer(data=request.data)
-        payload.is_valid(raise_exception=True)
-
-        stone = add_stone(order, user=request.user, **payload.validated_data)
-        return Response(
-            StoneSerializer(stone, context=self.get_serializer_context()).data,
-            status=status.HTTP_201_CREATED,
-        )
 
     @extend_schema(responses=OrderSerializer)
     @extend_schema(request=HoldOrderSerializer, responses=OrderSerializer)
@@ -198,6 +180,45 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
 
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Orders with identification actions still available."""
+        queryset = identification_action_queryset().order_by("-received_date", "-pk")
+        payload = OrderSerializer(
+            queryset, many=True, context=self.get_serializer_context()
+        ).data
+        waiting_ids = set(
+            queryset.filter(identified__lt=F("stone_count")).values_list("pk", flat=True)
+        )
+        rows = [
+            feed_row(
+                kind="order",
+                record_id=row["id"],
+                reference=row["reference_number"],
+                customer=(row.get("customer_detail") or {}).get("full_name"),
+                type_name="Order",
+                status=row.get("stage_label") or row.get("stage"),
+                date=row.get("received_date"),
+                waiting=row["id"] in waiting_ids,
+                detail=row,
+            )
+            for row in payload
+        ]
+        return paginated_workflow_feed(self, rows, request)
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="identification-count",
+        permission_classes=[OrdersOrStonesViewPermission],
+    )
+    def identification_count(self, request):
+        """Pending identification count for every viewer of the main entry."""
+        count = identification_action_queryset().filter(
+            identified__lt=F("stone_count")
+        ).count()
+        return Response({"count": count})
+
 
 class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over stones, plus status transitions."""
@@ -207,16 +228,21 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     # Prefetched, not joined: the relation is a reverse FK so that a discarded
     # report frees the stone rather than occupying it forever.
     queryset = Stone.objects.select_related(
-        "order", "order__customer", "stone_type", "stone_type__category"
+        "order",
+        "order__customer",
+        "stone_category",
+        "stone_type",
+        "stone_type__category",
     ).prefetch_related("reports")
     serializer_class = StoneSerializer
 
     search_fields = STONE_SEARCH_FIELDS
-    filter_fields = ("order", "stone_type", "status", "weight_unit")
+    filter_fields = ("order", "stone_category", "stone_type", "status", "weight_unit")
     ordering_fields = ("id", "label", "status", "weight", "created_at")
 
     action_permissions = {"transition": ["orders.transition_stone"]}
 
+    @transaction.atomic
     def perform_update(self, serializer):
         """Delegate to the service, so every stone write goes through one door.
 
@@ -226,6 +252,11 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         serializer.instance = update_stone(
             serializer.instance, user=self.request.user, **serializer.validated_data
         )
+        report = serializer.instance.report
+        if report is not None and report.is_finalized:
+            from apps.certificates.services import refresh_certificate_snapshot
+
+            refresh_certificate_snapshot(report, user=self.request.user)
 
     def perform_destroy(self, instance):
         """Refuse to delete a stone a bill was priced from.
@@ -235,6 +266,11 @@ class StoneViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         this one. Reuses the retypeable check because it asks the same question:
         has a bill been raised against this stone yet.
         """
+        if settings.AUTO_BILL_AFTER_IDENTIFICATION:
+            raise PermissionDenied(
+                "Preliminary identification cannot be removed while automatic "
+                "billing is enabled."
+            )
         assert_stone_retypeable(instance)
         super().perform_destroy(instance)
 

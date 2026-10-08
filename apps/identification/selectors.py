@@ -19,9 +19,8 @@ def findings_worklist():
         Stone.objects.select_related(
             "order",
             "order__customer",
+            "stone_category",
             "stone_type",
-            # The row serialises the stone type, which renders its
-            # category - one query per row without this join.
             "stone_type__category",
         )
         # `reports` is a reverse FK, so it is prefetched rather than joined; the

@@ -23,6 +23,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.views import View
 
+from apps.core.services import format_reference_number
 from apps.gems.enums import CertificateStatus, WeightUnit
 
 from .models import Certificate
@@ -52,7 +53,7 @@ class CertificateVerifyView(View):
                 request,
                 TEMPLATE,
                 {
-                    "certificate_number": certificate_number,
+                    "certificate_number": format_reference_number(certificate_number),
                     "found": False,
                     "lab_name": settings.CERTIFICATE_LAB_NAME,
                 },
@@ -66,11 +67,16 @@ class CertificateVerifyView(View):
             {
                 "found": True,
                 "certificate": certificate,
-                "certificate_number": certificate.certificate_number,
+                "certificate_number": format_reference_number(
+                    certificate.certificate_number
+                ),
                 "is_revoked": is_revoked,
                 "weight_unit": WeightUnit(certificate.weight_unit_snapshot).symbol,
                 "report_number": (
-                    certificate.report_number_snapshot or certificate.report.report_number
+                    format_reference_number(
+                        certificate.report_number_snapshot
+                        or certificate.report.report_number
+                    )
                 ),
                 "lab_name": settings.CERTIFICATE_LAB_NAME,
             },

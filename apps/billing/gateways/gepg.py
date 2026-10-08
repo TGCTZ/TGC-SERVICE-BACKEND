@@ -21,7 +21,7 @@ from .signing import sign_if_enabled
 
 logger = logging.getLogger(__name__)
 
-ACK_SUCCESS = {"7101", "7241"}
+ACK_SUCCESS = settings.GEPG_ACK_SUCCESS_CODES
 
 
 # ------------------------------------------------------------

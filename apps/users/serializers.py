@@ -2,7 +2,11 @@
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
+from rest_framework_simplejwt.settings import api_settings
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -12,6 +16,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.core.serializers import AuditFieldsMixin
 
 from .models import Gender, IdentityDetail, UserStatus
+from .services.sessions import active_session, issue_session_refresh
 
 User = get_user_model()
 
@@ -431,7 +436,7 @@ class LoginSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         """Embed a couple of cheap claims for clients that decode the token."""
-        token = super().get_token(user)
+        token = issue_session_refresh(user)
         token["email"] = user.email
         token["full_name"] = user.full_name
         return token
@@ -441,6 +446,17 @@ class LoginSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["user"] = MeSerializer(self.user, context=self.context).data
         return data
+
+
+class SessionTokenRefreshSerializer(TokenRefreshSerializer):
+    """Rotate tokens only while their login session remains active."""
+
+    def validate(self, attrs):
+        refresh = self.token_class(attrs["refresh"])
+        active_session(
+            refresh.payload.get(api_settings.USER_ID_CLAIM), refresh.payload.get("sid")
+        )
+        return super().validate(attrs)
 
 
 class LogoutSerializer(serializers.Serializer):

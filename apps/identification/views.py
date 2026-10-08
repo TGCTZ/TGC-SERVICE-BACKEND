@@ -5,9 +5,13 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.db import transaction
+
+from apps.certificates.services import issue_certificate, refresh_certificate_snapshot
 from apps.core.exceptions import ServiceError
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 from apps.orders.search import STONE_SEARCH_FIELDS
 from apps.orders.serializers import StoneSerializer
 
@@ -32,6 +36,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     queryset = IdentificationReport.objects.select_related(
         "stone",
+        "stone__stone_category",
+        "stone__stone_type",
+        "stone__stone_type__category",
         "stone__order",
         "stone__order__customer",
         "species",
@@ -39,6 +46,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "origin",
         "shape_cut",
         "color",
+        "treatment",
         "identified_by",
         "verified_by",
     ).prefetch_related("instruments_used", "instruments_used__instrument")
@@ -58,9 +66,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         "origin",
         "shape_cut",
         "color",
+        "treatment",
         "nature_type",
         "transparency",
-        "treatment",
         "optic_character",
         "is_polished",
     )
@@ -118,8 +126,9 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         request=FinalizeReportSerializer, responses=IdentificationReportSerializer
     )
     @action(detail=True, methods=["post"])
+    @transaction.atomic
     def finalize(self, request, pk=None):
-        """Lock this report against further edits, naming the second gemmologist."""
+        """Finalize the report and issue its certificate as one transaction."""
         payload = FinalizeReportSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         report = finalize_report(
@@ -127,6 +136,7 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             user=request.user,
             verified_by=payload.validated_data.get("verified_by"),
         )
+        issue_certificate(report.stone, user=request.user)
         return Response(self.get_serializer(report).data)
 
     @extend_schema(responses=GemmologistCandidateSerializer(many=True))
@@ -155,6 +165,53 @@ class IdentificationReportViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
         return self.get_paginated_response(serializer.data)
 
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """Open findings by default, with finalized reports available on request."""
+        reports = self.get_queryset().order_by("-created_at", "-pk")
+        if request.query_params.get("status") != "Finalized":
+            reports = reports.filter(is_finalized=False)
+        report_data = IdentificationReportSerializer(
+            reports, many=True, context=self.get_serializer_context()
+        ).data
+        waiting_stones = list(findings_worklist())
+        waiting_ids = {stone.pk for stone in waiting_stones}
+        reports_by_stone = {row["stone"]: row for row in report_data}
+        rows = []
+        for row in report_data:
+            draft = not row["is_finalized"]
+            rows.append(
+                feed_row(
+                    kind="report",
+                    record_id=row["id"],
+                    reference=row.get("report_number") or row.get("order_reference"),
+                    customer=row.get("customer_name"),
+                    type_name="Findings",
+                    status="Draft" if draft else "Finalized",
+                    date=row.get("identified_at") or row.get("created_at"),
+                    waiting=draft and row["stone"] in waiting_ids,
+                    detail=row,
+                )
+            )
+        for stone in waiting_stones:
+            if stone.pk in reports_by_stone:
+                continue
+            detail = StoneSerializer(stone, context=self.get_serializer_context()).data
+            rows.append(
+                feed_row(
+                    kind="stone",
+                    record_id=stone.pk,
+                    reference=detail.get("order_reference"),
+                    customer=detail.get("customer_name"),
+                    type_name="Stone findings",
+                    status="Awaiting findings",
+                    date=stone.order.received_date,
+                    waiting=True,
+                    detail=detail,
+                )
+            )
+        return paginated_workflow_feed(self, rows, request)
+
 
 class InstrumentUsedViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     """CRUD over the instruments recorded against a report."""
@@ -165,29 +222,44 @@ class InstrumentUsedViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     filter_fields = ("report", "instrument")
     ordering_fields = ("id", "created_at")
 
+    @transaction.atomic
     def perform_create(self, serializer):
-        """Refuse to add an instrument to a finalized report."""
-        self._assert_report_open(serializer.validated_data["report"])
+        """Save the instrument and its certificate snapshot as one change."""
+        report = serializer.validated_data["report"]
+        self._assert_report_editable(report, self.request.user)
         serializer.save()
+        if report.is_finalized:
+            refresh_certificate_snapshot(report, user=self.request.user)
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        """Refuse to edit an instrument on a finalized report."""
-        self._assert_report_open(
-            serializer.validated_data.get("report", serializer.instance.report)
-        )
+        """Save the instrument and its certificate snapshot as one change."""
+        previous_report = serializer.instance.report
+        report = serializer.validated_data.get("report", previous_report)
+        self._assert_report_editable(previous_report, self.request.user)
+        self._assert_report_editable(report, self.request.user)
         serializer.save()
+        for affected_report in {previous_report, report}:
+            if affected_report.is_finalized:
+                refresh_certificate_snapshot(affected_report, user=self.request.user)
 
+    @transaction.atomic
     def perform_destroy(self, instance):
-        """Refuse to remove an instrument from a finalized report."""
-        self._assert_report_open(instance.report)
+        """Remove the instrument and refresh the certificate atomically."""
+        report = instance.report
+        self._assert_report_editable(report, self.request.user)
         super().perform_destroy(instance)
+        if report.is_finalized:
+            refresh_certificate_snapshot(report, user=self.request.user)
 
     @staticmethod
-    def _assert_report_open(report) -> None:
-        """The finalize lock covers the report's instruments too.
+    def _assert_report_editable(report, user=None) -> None:
+        """Only the correction permission may pass the finalized lock.
 
         Without this the readings could be rewritten after the report they
         belong to was locked, which would make the lock meaningless.
         """
-        if report.is_finalized:
+        if report.is_finalized and (
+            user is None or not user.has_perm("identification.edit_finalized_report")
+        ):
             raise ServiceError("A finalized report cannot be edited.")

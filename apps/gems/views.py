@@ -12,6 +12,7 @@ from .models import (
     Species,
     StoneCategory,
     StoneType,
+    Treatment,
     Variety,
 )
 from .serializers import (
@@ -22,6 +23,7 @@ from .serializers import (
     SpeciesSerializer,
     StoneCategorySerializer,
     StoneTypeSerializer,
+    TreatmentSerializer,
     VarietySerializer,
 )
 
@@ -88,6 +90,16 @@ class OriginViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     queryset = Origin.objects.all()
     serializer_class = OriginSerializer
+    search_fields = ("name", "description")
+    filter_fields = ("is_active",)
+    ordering_fields = ("id", "name", "is_active", "created_at")
+
+
+class TreatmentViewSet(BaseModelViewSet, viewsets.ModelViewSet):
+    """CRUD over treatments and enhancements."""
+
+    queryset = Treatment.objects.all()
+    serializer_class = TreatmentSerializer
     search_fields = ("name", "description")
     filter_fields = ("is_active",)
     ordering_fields = ("id", "name", "is_active", "created_at")

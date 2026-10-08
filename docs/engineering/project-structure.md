@@ -43,7 +43,7 @@ and `urls.py` are load-bearing for a simple CRUD app.
 | `filters.py` `(optional)` | Only if the shared whitelist backend is not enough. |
 | `admin.py` `(optional)` | Django admin registration. |
 | `management/commands/` `(optional)` | Operational commands. |
-| `tests/factories.py` | `factory_boy` factories. Reused by `seed`. |
+| `tests/factories.py` | `factory_boy` factories for tests and selected demo records. |
 | `tests/test_*.py` | The suite. |
 
 ## The layers

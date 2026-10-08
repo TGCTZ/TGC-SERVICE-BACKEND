@@ -37,14 +37,14 @@ class OrderFactory(DjangoModelFactory):
         model = Order
         django_get_or_create = ("reference_number",)
 
-    reference_number = factory.Sequence(lambda n: f"ORD-2627-{n:04d}")
+    reference_number = factory.Sequence(lambda n: f"ORD-2627-{n:05d}")
     customer = factory.SubFactory(CustomerFactory)
     received_date = factory.Faker("date_this_year")
     stone_count = 3
 
 
 class StoneFactory(DjangoModelFactory):
-    """A stone that has been identified - type only, not yet weighed."""
+    """A categorized stone, optionally typed, and not yet weighed."""
 
     class Meta:
         model = Stone
@@ -52,4 +52,5 @@ class StoneFactory(DjangoModelFactory):
     order = factory.SubFactory(OrderFactory)
     label = factory.Sequence(lambda n: chr(65 + n % 26))
     stone_type = factory.SubFactory(StoneTypeFactory)
+    stone_category = factory.LazyAttribute(lambda stone: stone.stone_type.category)
     status = StoneStatus.RECEIVED

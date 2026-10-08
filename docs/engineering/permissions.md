@@ -179,29 +179,34 @@ An action that is not listed falls back to the method map, so ordinary CRUD and
 | `POST /bills/{id}/simulate-payment/` | `billing.generate_bill` *(development only)* |
 | `GET /certificates/worklist/` | `certificates.issue_certificate` |
 | `POST /certificates/` | `certificates.issue_certificate` |
-| `POST /certificates/{id}/revoke/` | `certificates.revoke_certificate` |
 | `GET /certificates/{id}/pdf/` | `certificates.view_certificate` *(method map)* |
 
 `pdf` is deliberately absent from `action_permissions`: it is a **read** of data
 the detail endpoint already returns in full, so the method-map fallback gives it
 `view_certificate` and no role needs a new grant. Bespoke permissions are
-reserved for verbs that change state — issuing, revoking, transitioning — where
+reserved for verbs that change state — issuing and transitioning — where
 "may read this" and "may do this" genuinely differ.
 
 ## Module gates
 
 Some permissions guard a whole UI section rather than a table: `module_orders`,
 `module_identification`, `module_billing`, `module_certificates`,
-`module_reference`, `module_user`, `module_settings`, `module_audit`. They have
+`module_reports`, `module_reference`, `module_user`, `module_settings`,
+`module_audit`. They have
 no model of their own, so they hang off `apps/core/models/gates.py` - an
 unmanaged model that creates no table but does create permissions.
 
-The gates are **presentation only**: the frontend hides a sidebar group (or an
+Most gates are **presentation only**: the frontend hides a sidebar group (or an
 Administration section) whose gate the user lacks, on top of each item's own
 model permission. No endpoint checks them, so a hidden page still opens from a
 direct link - access control stays with the model permissions. Unticking a gate
 on the roles screen is how an admin tidies a role's navigation without stripping
 the permissions its pages need.
+
+Reports is the exception. The report API also checks `module_reports` and the
+page gate (`report_financial` or `report_operational`) before applying source
+model view permissions to each section. Its three gates appear together under
+Reports in the role editor.
 
 The same unmanaged-model trick carries `audit.view_systemlog`
 (`apps/audit/models.py`); unlike the gates, it is enforced by its endpoint.

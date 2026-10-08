@@ -10,6 +10,7 @@ from django.http import HttpResponse
 
 from apps.core.filters import search_queryset
 from apps.core.viewsets import BaseModelViewSet
+from apps.core.workflow_feed import feed_row, paginated_workflow_feed
 from apps.gems.enums import CertificateStatus
 from apps.orders.models import Stone
 from apps.orders.search import STONE_SEARCH_FIELDS
@@ -18,11 +19,11 @@ from apps.orders.serializers import StoneSerializer
 from .models import Certificate
 from .selectors import certification_worklist
 from .serializers import CertificateSerializer, IssueCertificateSerializer
-from .services import issue_certificate, render_certificate_pdf, revoke_certificate
+from .services import issue_certificate, render_certificate_pdf
 
 
 class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
-    """Certificates, plus issuance, revocation and PDF download."""
+    """Certificates, issuance and PDF download."""
 
     queryset = Certificate.objects.select_related(
         "stone",
@@ -48,7 +49,6 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     action_permissions = {
         "create": ["certificates.issue_certificate"],
-        "revoke": ["certificates.revoke_certificate"],
         "worklist": ["certificates.issue_certificate"],
         # `pdf` is deliberately absent: ActionPermissions falls back to the HTTP
         # method map, so a GET resolves to certificates.view_certificate. A
@@ -78,13 +78,6 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
             self.get_serializer(certificate).data, status=status.HTTP_201_CREATED
         )
 
-    @extend_schema(request=None, responses=CertificateSerializer)
-    @action(detail=True, methods=["post"])
-    def revoke(self, request, pk=None):
-        """Withdraw this certificate."""
-        certificate = revoke_certificate(self.get_object(), user=request.user)
-        return Response(self.get_serializer(certificate).data)
-
     @extend_schema(responses=StoneSerializer)
     @action(detail=False, methods=["get"])
     def worklist(self, request):
@@ -103,6 +96,30 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
         )
         return self.get_paginated_response(serializer.data)
 
+    @action(detail=False, methods=["get"], url_path="workflow-feed")
+    def workflow_feed(self, request):
+        """List issued certificates; issuance happens when findings are finalized."""
+        certificates = CertificateSerializer(
+            self.get_queryset().order_by("-issued_at", "-pk"),
+            many=True,
+            context=self.get_serializer_context(),
+        ).data
+        rows = [
+            feed_row(
+                kind="certificate",
+                record_id=row["id"],
+                reference=row.get("certificate_number"),
+                customer=row.get("customer_name"),
+                type_name="Certificate",
+                status=row.get("status"),
+                date=row.get("issued_at") or row.get("created_at"),
+                waiting=False,
+                detail=row,
+            )
+            for row in certificates
+        ]
+        return paginated_workflow_feed(self, rows, request)
+
     @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
@@ -110,9 +127,8 @@ class CertificateViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
         Rendered on demand rather than stored. The body is frozen snapshot
         columns, so re-rendering is deterministic; the one mutable input is
-        ``status``, and a revoked certificate has to pick up its watermark at
-        download time - which a stored file could not do without an
-        invalidation step.
+        ``status``: a legacy revoked certificate keeps its watermark when
+        downloaded, while new certificates are issued without a revoke action.
         """
         certificate = self.get_object()
         suffix = "-revoked" if certificate.status == CertificateStatus.REVOKED else ""

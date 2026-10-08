@@ -16,6 +16,13 @@ Identification comes *before* billing, because typing the stone is what
 determines the fee. Each arrow is a service with its own guard, and each stage
 has a worklist that is the queue someone actually works from.
 
+Set `AUTO_BILL_AFTER_IDENTIFICATION=True` in `.env` to submit the bill to GePG
+as soon as the last preliminary stone type is saved. The default `False` keeps
+the edit and manual Generate bill steps. In automatic mode, missing prices or
+failed submissions appear in **Billing needs attention**; retrying resubmits the
+same bill when one already exists. An accepted asynchronous GePG response may
+deliver its control number later through the callback.
+
 The React client lives in the
 [TGC-SERVICE-FRONTEND](https://github.com/TGCTZ/TGC-SERVICE-FRONTEND) repository.
 
@@ -53,7 +60,6 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 createdb -U postgres tgcservice
 
 uv run python manage.py migrate
-uv run python manage.py setup_roles
 uv run python manage.py seed
 uv run python manage.py runserver
 ```
@@ -69,6 +75,9 @@ Health probes sit outside the versioned API, so they survive a version bump:
 
 Demo accounts are `<role>@example.com` with the password printed by `seed`, for each
 of `superadmin`, `admin`, `manager`, `receptionist`, `gemmologist` and `accountant`.
+`seed_reference_data` creates shared lookup rows, roles, and permissions without
+creating demo accounts or workflow records; `seed` runs it before adding demo data.
+Use `seed_reference_data` by itself when setting up an environment without demo data.
 For reports to have useful history to show, seed a fresh
 database with history instead:
 `uv run python manage.py seed --orders 150 --history-months 12`.

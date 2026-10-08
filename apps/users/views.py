@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.contrib.auth import get_user_model
@@ -31,6 +31,7 @@ from .serializers import (
     MeSerializer,
     PermissionSerializer,
     RoleSerializer,
+    SessionTokenRefreshSerializer,
     UserCreateSerializer,
     UserSerializer,
     UserStatusSerializer,
@@ -51,6 +52,7 @@ from .services.roles import (
     hidden_role_names,
     permission_labels,
 )
+from .services.sessions import record_interaction, revoke_session
 
 User = get_user_model()
 
@@ -76,23 +78,41 @@ class RefreshView(TokenRefreshView):
     """Exchange a refresh token for a fresh pair."""
 
     permission_classes = [AllowAny]
+    serializer_class = SessionTokenRefreshSerializer
     throttle_scope = "auth"
+
+
+class ActivityView(APIView):
+    """Record an actual browser interaction for the current login session."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={204: None})
+    def post(self, request):
+        """Extend the session only for an authenticated interaction."""
+        record_interaction(request.user.pk, request.auth.payload.get("sid"))
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class LogoutView(APIView):
     """Blacklist a refresh token, ending that session."""
 
     serializer_class = LogoutSerializer
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     @extend_schema(request=LogoutSerializer, responses={205: None})
     def post(self, request):
         """Blacklist the supplied refresh token."""
         serializer = LogoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # An already-expired or already-blacklisted token means the session is
-        # already over, which is exactly what the caller asked for.
+        raw_refresh = serializer.validated_data["refresh"]
+        # A concurrent refresh may have blacklisted this token already; its
+        # signature can still identify the login that needs to be ended.
         with contextlib.suppress(TokenError):
-            RefreshToken(serializer.validated_data["refresh"]).blacklist()
+            revoke_session(UntypedToken(raw_refresh).payload.get("sid"))
+        with contextlib.suppress(TokenError):
+            RefreshToken(raw_refresh).blacklist()
         return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
@@ -380,7 +400,7 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     @extend_schema(responses={200: dict})
     @action(detail=False, methods=["get"])
     def grouped(self, request):
-        """Permissions bucketed by app label, for rendering a role editor.
+        """Permissions bucketed for the role editor, with report gates together.
 
         Values are full ``app_label.codename`` labels rather than bare
         codenames, so they are the same strings a role's own ``permissions``
@@ -390,5 +410,12 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
         buckets: dict[str, list[str]] = {}
         for permission in self.filter_queryset(self.get_queryset()):
             app_label = permission.content_type.app_label
-            buckets.setdefault(app_label, []).append(f"{app_label}.{permission.codename}")
+            group = (
+                "reports"
+                if app_label == "core"
+                and permission.codename
+                in {"module_reports", "report_financial", "report_operational"}
+                else app_label
+            )
+            buckets.setdefault(group, []).append(f"{app_label}.{permission.codename}")
         return Response(buckets)

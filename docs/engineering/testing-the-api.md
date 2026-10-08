@@ -290,8 +290,9 @@ Fixtures in [`conftest.py`](../../conftest.py):
 | `roles` | Runs `setup_roles`, so the matrix exists |
 | `auth_client` | A **factory**: `auth_client(admin_user)` returns a credentialed client |
 
-Every app's `tests/factories.py` is shared with `manage.py seed`, so demo data
-and test data can never disagree about what a valid row looks like.
+The demo command reuses selected factories for generated accounts and workflow
+records. Canonical lookup rows come from `manage.py seed_reference_data`, which
+the demo command runs before generating its data.
 
 Conventions the suite follows are in [conventions.md](conventions.md) — module
 level `pytestmark = pytest.mark.django_db`, plain functions named for the

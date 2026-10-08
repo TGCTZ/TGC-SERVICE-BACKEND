@@ -2,14 +2,19 @@
 
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import WeightUnit
+from apps.gems.models import StoneType
 from apps.gems.serializers import (
     ColorSerializer,
     InstrumentSerializer,
     OriginSerializer,
     ShapeCutSerializer,
     SpeciesSerializer,
+    StoneCategorySerializer,
+    StoneTypeSerializer,
+    TreatmentSerializer,
     VarietySerializer,
 )
 
@@ -42,12 +47,25 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     origin_detail = OriginSerializer(source="origin", read_only=True)
     shape_cut_detail = ShapeCutSerializer(source="shape_cut", read_only=True)
     color_detail = ColorSerializer(source="color", read_only=True)
+    treatment_detail = TreatmentSerializer(source="treatment", read_only=True)
+    stone_category_detail = StoneCategorySerializer(
+        source="stone.stone_category", read_only=True
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    stone_type_detail = StoneTypeSerializer(source="stone.stone_type", read_only=True)
     instruments_used = InstrumentUsedSerializer(many=True, read_only=True)
 
     stone_label = serializers.CharField(source="stone.label", read_only=True)
-    order_reference = serializers.CharField(
+    report_number = DisplayReferenceField(read_only=True)
+    order_reference = DisplayReferenceField(
         source="stone.order.reference_number", read_only=True
     )
+    stone_reference = serializers.SerializerMethodField()
     # The customer, alongside the order they came in on. A reference number
     # alone identifies the paperwork; the name is what identifies the visit to
     # anyone reading a list of them.
@@ -88,8 +106,12 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "stone",
             "stone_label",
             "order_reference",
+            "stone_reference",
             "customer_name",
             "customer_phone",
+            "stone_category_detail",
+            "stone_type",
+            "stone_type_detail",
             "report_number",
             "species",
             "species_detail",
@@ -104,6 +126,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
             "nature_type",
             "transparency",
             "treatment",
+            "treatment_detail",
             "optic_character",
             "refractive_index",
             "specific_gravity",
@@ -140,6 +163,39 @@ class IdentificationReportSerializer(AuditFieldsMixin):
     def get_verified_by_label(self, obj) -> str | None:
         """The second gemmologist's display name, or None if only one signed."""
         return str(obj.verified_by) if obj.verified_by_id else None
+
+    def get_stone_reference(self, report):
+        """Identify the report's stone with the order sequence and label."""
+        return format_reference_number(
+            reference_number_for_order(
+                report.stone.order, "ORD", stone_label=report.stone.label
+            )
+        )
+
+    def validate(self, attrs):
+        """Keep selected type/category and variety/species relationships valid."""
+        stone_type = attrs.get("stone_type")
+        stone = attrs.get("stone", self.instance.stone if self.instance else None)
+        if (
+            stone_type is not None
+            and stone is not None
+            and stone_type.category_id != stone.stone_category_id
+        ):
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this stone's category."}
+            )
+
+        species = attrs.get("species", getattr(self.instance, "species", None))
+        variety = attrs.get("variety", getattr(self.instance, "variety", None))
+        if variety and species and variety.species_id != species.pk:
+            raise serializers.ValidationError(
+                {"variety": "Choose a variety belonging to the selected species."}
+            )
+        if variety and species is None:
+            raise serializers.ValidationError(
+                {"species": "Select a species before selecting a variety."}
+            )
+        return attrs
 
 
 class GemmologistCandidateSerializer(serializers.Serializer):

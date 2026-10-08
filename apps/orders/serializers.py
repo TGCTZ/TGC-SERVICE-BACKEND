@@ -3,10 +3,11 @@
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.core.serializers import AuditFieldsMixin
+from apps.core.serializers import AuditFieldsMixin, DisplayReferenceField
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import OrderHold, OrderStage, StoneStatus
-from apps.gems.models import StoneType
-from apps.gems.serializers import StoneTypeSerializer
+from apps.gems.models import StoneCategory, StoneType
+from apps.gems.serializers import StoneCategorySerializer, StoneTypeSerializer
 
 from .models import Customer, Order, StatusHistory, Stone
 from .selectors import order_stage
@@ -70,7 +71,7 @@ class StoneReportSerializer(serializers.Serializer):
     """
 
     id = serializers.IntegerField(read_only=True)
-    report_number = serializers.CharField(read_only=True)
+    report_number = DisplayReferenceField(read_only=True)
     is_finalized = serializers.BooleanField(read_only=True)
 
 
@@ -82,10 +83,20 @@ class StoneSerializer(AuditFieldsMixin):
     change the status without leaving a trace.
     """
 
+    stone_category = serializers.PrimaryKeyRelatedField(
+        queryset=StoneCategory.objects.all(), required=False
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(), required=False, allow_null=True
+    )
+    stone_category_detail = StoneCategorySerializer(
+        source="stone_category", read_only=True
+    )
     stone_type_detail = StoneTypeSerializer(source="stone_type", read_only=True)
-    order_reference = serializers.CharField(
+    order_reference = DisplayReferenceField(
         source="order.reference_number", read_only=True
     )
+    stone_reference = serializers.SerializerMethodField()
     # The customer, alongside the order the stone came in on. A reference number
     # identifies the paperwork; the name identifies the visit.
     customer_name = serializers.CharField(
@@ -100,9 +111,12 @@ class StoneSerializer(AuditFieldsMixin):
             "id",
             "order",
             "order_reference",
+            "stone_reference",
             "customer_name",
             "customer_phone",
             "label",
+            "stone_category",
+            "stone_category_detail",
             "stone_type",
             "stone_type_detail",
             "weight",
@@ -113,6 +127,30 @@ class StoneSerializer(AuditFieldsMixin):
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = (*AuditFieldsMixin.AUDIT_FIELDS, "label", "status", "order")
+
+    def validate(self, attrs):
+        """Keep categories and any selected legacy type consistent."""
+        category = attrs.get("stone_category")
+        stone_type = attrs.get("stone_type")
+
+        if stone_type is not None and category is None:
+            category = stone_type.category
+            attrs["stone_category"] = category
+
+        if category is None and self.instance is None:
+            raise serializers.ValidationError(
+                {"stone_category": "Select a stone category."}
+            )
+
+        if (
+            category is not None
+            and stone_type is not None
+            and stone_type.category_id != category.pk
+        ):
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this category."}
+            )
+        return attrs
 
     @extend_schema_field(StoneReportSerializer)
     def get_report_detail(self, stone):
@@ -130,6 +168,12 @@ class StoneSerializer(AuditFieldsMixin):
         """
         report = getattr(stone, "report", None)
         return StoneReportSerializer(report).data if report else None
+
+    def get_stone_reference(self, stone):
+        """Identify this stone under its order's shared sequence."""
+        return format_reference_number(
+            reference_number_for_order(stone.order, "ORD", stone_label=stone.label)
+        )
 
 
 class OrderSerializer(AuditFieldsMixin):
@@ -150,6 +194,7 @@ class OrderSerializer(AuditFieldsMixin):
     # Exposed so a screen can tell "ready to bill" from "already billed"
     # without a second request. `apps.orders` sits below `apps.billing`, so
     # this reads the reverse relation rather than importing it.
+    reference_number = DisplayReferenceField(read_only=True)
     bill_number = serializers.SerializerMethodField()
     control_number = serializers.SerializerMethodField()
     # The label the next stone identified here will carry, so the identification
@@ -228,7 +273,7 @@ class OrderSerializer(AuditFieldsMixin):
     def get_bill_number(self, obj) -> str | None:
         """This order's bill number, or None if it has not been billed."""
         bill = getattr(obj, "bill", None)
-        return bill.bill_number if bill is not None else None
+        return format_reference_number(bill.bill_number) if bill is not None else None
 
     def get_next_stone_label(self, obj) -> str | None:
         """What the next stone will be called, or None when the order is full."""
@@ -290,11 +335,33 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 class AddStoneSerializer(serializers.Serializer):
     """Payload for identifying one stone.
 
-    Type only: it is what the bill is priced from. Weight is a bench
-    measurement and arrives later, with the findings.
+    The category prices the bill. ``stone_type`` remains accepted for older
+    clients and derives its category; exact type is recorded later at the bench.
     """
 
-    stone_type = serializers.PrimaryKeyRelatedField(queryset=StoneType.objects.all())
+    stone_category = serializers.PrimaryKeyRelatedField(
+        queryset=StoneCategory.objects.all(), required=False
+    )
+    stone_type = serializers.PrimaryKeyRelatedField(
+        queryset=StoneType.objects.all(), required=False
+    )
+
+    def validate(self, attrs):
+        """Derive a legacy category and reject type/category mismatches."""
+        category = attrs.get("stone_category")
+        stone_type = attrs.get("stone_type")
+        if category is None and stone_type is not None:
+            category = stone_type.category
+            attrs["stone_category"] = category
+        if category is None:
+            raise serializers.ValidationError(
+                {"stone_category": "Select a stone category."}
+            )
+        if stone_type is not None and stone_type.category_id != category.pk:
+            raise serializers.ValidationError(
+                {"stone_type": "Choose a type belonging to this category."}
+            )
+        return attrs
 
 
 class TransitionSerializer(serializers.Serializer):

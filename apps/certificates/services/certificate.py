@@ -1,11 +1,11 @@
-"""Certificate issuance and revocation."""
+"""Certificate issuance."""
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.exceptions import ServiceError
-from apps.core.services import generate_reference_number
+from apps.core.services import format_reference_number, reference_number_for_order
 from apps.gems.enums import BillStatus, CertificateStatus, StoneStatus
 from apps.gems.models import Instrument
 from apps.notifications.models import NotificationKind
@@ -84,12 +84,14 @@ def issue_certificate(stone, *, user=None) -> Certificate:
     # the rule it actually expresses: a certificate states a weight.
     if stone.weight is None:
         raise ServiceError("Stone has no recorded weight to certify.")
+    if stone.stone_type_id is None:
+        raise ServiceError("Stone has no recorded exact type to certify.")
 
     certificate = Certificate(
         stone=stone,
         report=report,
-        certificate_number=generate_reference_number(
-            Certificate, "certificate_number", "CERT"
+        certificate_number=reference_number_for_order(
+            stone.order, "CERT", stone_label=stone.label
         ),
         stone_type_snapshot=stone.stone_type.name,
         weight_snapshot=stone.weight,
@@ -104,7 +106,7 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         # label is part of what the document says.
         transparency_snapshot=report.get_transparency_display() or "",
         optic_character_snapshot=report.get_optic_character_display() or "",
-        treatment_snapshot=report.get_treatment_display() or "",
+        treatment_snapshot=report.treatment.name if report.treatment_id else "",
         nature_type_snapshot=report.get_nature_type_display() or "",
         refractive_index_snapshot=report.refractive_index,
         specific_gravity_snapshot=(
@@ -128,9 +130,54 @@ def issue_certificate(stone, *, user=None) -> Certificate:
         stone,
         StoneStatus.CERTIFIED,
         user=user,
-        note=f"Certified {certificate.certificate_number}",
+        note=f"Certified {format_reference_number(certificate.certificate_number)}",
     )
     _notify_if_order_ready_for_collection(stone.order, user)
+    return certificate
+
+
+@transaction.atomic
+def refresh_certificate_snapshot(report, *, user=None) -> Certificate | None:
+    """Refresh editable facts on an issued certificate without changing its issuance.
+
+    The certificate is a customer-facing snapshot, so corrections update its
+    findings in the same transaction as the source report/stone. Issuance facts
+    (number, date, issuer, and frozen signatory names) deliberately stay put.
+    """
+    certificate = Certificate.objects.filter(report=report).first()
+    if certificate is None:
+        return None
+
+    stone = report.stone
+    certificate.stone_type_snapshot = _name(stone.stone_type)
+    certificate.weight_snapshot = stone.weight
+    certificate.weight_unit_snapshot = stone.weight_unit
+    certificate.color_snapshot = _name(report.color)
+    certificate.origin_snapshot = _name(report.origin)
+    certificate.species_snapshot = _name(report.species)
+    certificate.variety_snapshot = _name(report.variety)
+    certificate.shape_cut_snapshot = _name(report.shape_cut)
+    certificate.transparency_snapshot = report.get_transparency_display() or ""
+    certificate.optic_character_snapshot = report.get_optic_character_display() or ""
+    certificate.treatment_snapshot = _name(report.treatment)
+    certificate.nature_type_snapshot = report.get_nature_type_display() or ""
+    certificate.refractive_index_snapshot = report.refractive_index
+    certificate.specific_gravity_snapshot = (
+        "" if report.specific_gravity is None else str(report.specific_gravity)
+    )
+    certificate.comments_snapshot = report.conclusion
+    certificate.instruments_snapshot = _instruments(report)
+    certificate.photo_snapshot = stone.photo or None
+    if user is not None:
+        certificate.updated_by = user
+    certificate.save(update_fields=[
+        "stone_type_snapshot", "weight_snapshot", "weight_unit_snapshot",
+        "color_snapshot", "origin_snapshot", "species_snapshot", "variety_snapshot",
+        "shape_cut_snapshot", "transparency_snapshot", "optic_character_snapshot",
+        "treatment_snapshot", "nature_type_snapshot", "refractive_index_snapshot",
+        "specific_gravity_snapshot", "comments_snapshot", "instruments_snapshot",
+        "photo_snapshot", "updated_at", "updated_by",
+    ])
     return certificate
 
 
@@ -148,27 +195,11 @@ def _notify_if_order_ready_for_collection(order, user) -> None:
         return
     notify_subscribers(
         NotificationKind.READY_FOR_COLLECTION,
-        title=f"Order {order.reference_number} is ready for collection",
+        title=(
+            f"Order {format_reference_number(order.reference_number)} is ready "
+            "for collection"
+        ),
         body=f"All certificates are issued. Contact {order.customer} to collect.",
         link=f"/orders?search={order.reference_number}",
         exclude=user,
     )
-
-
-def revoke_certificate(certificate: Certificate, *, user=None) -> Certificate:
-    """Withdraw a certificate.
-
-    The row stays, and so does its number, so the certificate still downloads -
-    watermarked REVOKED. That is the whole point: whoever is holding the paper
-    copy has to be able to learn that it no longer stands.
-
-    Raises:
-        ServiceError: If the certificate is already revoked.
-    """
-    if certificate.status == CertificateStatus.REVOKED:
-        raise ServiceError("Certificate is already revoked.")
-    certificate.status = CertificateStatus.REVOKED
-    if user is not None:
-        certificate.updated_by = user
-    certificate.save(update_fields=["status", "updated_at", "updated_by"])
-    return certificate
