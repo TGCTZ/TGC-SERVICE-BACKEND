@@ -82,10 +82,10 @@ bill. But it does mean the permission to set a price is the permission to edit
 the category. If that separation matters later, expose price through a dedicated
 action gated on a custom permission rather than splitting the model.
 
-> ⚠️ The `accountant` role currently grants `gems.change_stonetype`, not
-> `gems.change_stonecategory`. Since the fee lives on the category, the role
-> that owns pricing cannot presently change a price. Treat this as an open
-> defect rather than a documented rule.
+> **Current access mismatch:** the seeded `accountant` role has
+> `gems.change_stonetype`, while prices are stored on `StoneCategory`. It cannot
+> change category prices through the category endpoint. This describes current
+> permissions; changing the role is outside this documentation cleanup.
 
 ## Keeping the database in step
 

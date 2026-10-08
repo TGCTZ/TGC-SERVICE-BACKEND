@@ -45,7 +45,7 @@ sequenceDiagram
         S-->>C: 401 Unauthorized
     else valid
         DB-->>S: user
-        S->>S: mint access + refresh,<br/>embed email and full_name claims
+        S->>S: mint access + refresh,<br/>embed email, full_name and session id
         S-->>V: access, refresh, user
         V->>A: record_login(user)
         A->>DB: UPDATE last_login_at
@@ -91,7 +91,7 @@ sequenceDiagram
 
     C->>P: POST /auth/first-login/password/ {password, password_confirm}
     P->>S: complete_first_login_password()
-    Note over S: refuses the temporary password,<br/>clears must_change_password,<br/>revokes every older token
+    Note over S: refuses the temporary password,<br/>clears must_change_password,<br/>blacklists outstanding refresh tokens
     S-->>C: 200 new access + refresh, user
     C->>R: POST /auth/first-login/profile/ {first_name, last_name, phone_number, gender}
     R->>S: complete_first_login_profile()

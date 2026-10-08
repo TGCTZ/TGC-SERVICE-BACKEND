@@ -97,8 +97,9 @@ def reset_temporary_password(*, user) -> str:
     """Give an account a new temporary password and send it again.
 
     For a colleague whose credentials email never came, or who has forgotten
-    their password. Every session is ended and the password must be changed
-    again at the next sign-in; a profile already completed stays completed.
+    their password. Outstanding refresh tokens are blacklisted and the password
+    must be changed again; existing access sessions expire through their normal
+    expiry and idle-timeout checks. A completed profile stays completed.
 
     Returns:
         The new temporary password, so it can be shown once.

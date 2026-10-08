@@ -1,8 +1,7 @@
 # Financial and operational reports
 
-Reports is a read-only L6 app. It imports the domain apps below it, with no report
-tables, workflow writes, or new roles. Dashboard has been replaced by
-two permission-filtered sidebar entries: Financial reports and Operational reports.
+Reports is a read-only app with no report tables or workflow writes. It provides
+two permission-filtered pages: Financial reports and Operational reports.
 
 ## API
 

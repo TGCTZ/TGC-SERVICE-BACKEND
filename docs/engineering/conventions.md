@@ -6,9 +6,7 @@ the tooling and the prose honest about each other.
 
 ## 1. Layering
 
-Apps are ordered by dependency layer in `INSTALLED_APPS`, annotated `L1`-`L6`.
-Imports point downward only. Two apps in the same layer must not import each
-other's models; shared data moves down into `apps.core`.
+Local apps are grouped by dependency layer in `INSTALLED_APPS`, annotated `L1`–`L6`. Prefer imports from lower layers. Apps in the same layer should not depend on each other; use a lower-level shared module or ORM relationships where practical. The current `identification` app does import certificate services to issue and refresh certificate snapshots, so this is a design goal rather than a repository-wide invariant.
 
 ## 2. Views are thin
 
@@ -79,8 +77,7 @@ brought back into line at any time.
 
 ## 12. Docstrings explain decisions
 
-Every module, class and public function gets one. Say *why*, not *what*: the
-code already says what. A docstring that restates the signature is noise.
+Document public modules, classes, and functions when a reader needs their contract, side effects, or reason for a non-obvious choice. Keep simple accessors and self-explanatory code free of boilerplate; Ruff checks the configured docstring rules.
 
 ## 13. Comments mark the non-obvious
 
@@ -140,7 +137,7 @@ Not `os.path`. Enforced by ruff `PTH`.
 ## 21. Reads that encode a gate live in `selectors.py`
 
 A queryset that answers "what is waiting to be worked on" is a business rule, not
-a view detail. The four worklists are aggregate or cross-app predicates that the
+a view detail. Worklists are aggregate or cross-app predicates that the
 whitelist filter backend cannot express - `Count("stones") < F("stone_count")`,
 `order__bill__status = PAID` - so a view holding one would put a rule where
 nobody looks for it, and a second screen would soon hold a slightly different
@@ -159,8 +156,7 @@ pagination, `?search=` and `?ordering=` come for free.
 
 ## 22. Workflow verbs are actions, gated by `ActionPermissions`
 
-A business action is a `POST` to its own route - `transition`, `finalize`,
-`generate`, `revoke` - not a writable field. The field is read-only precisely so
+A business action uses an explicit route, such as `transition`, `finalize`, or `generate`, rather than an ordinary writable status field. The field is read-only precisely so
 the state cannot move without the service running and the trail being written.
 
 `StrictModelPermissions` maps by HTTP method, so every `POST` would ask for

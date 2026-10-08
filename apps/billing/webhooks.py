@@ -1,24 +1,9 @@
-"""Server-to-server callbacks from the GePG payment gateway.
+"""Accept GePG callbacks outside the versioned, JWT-authenticated API.
 
-Deliberately plain Django views rather than DRF ones, mounted outside
-``/api/v1/``. Four reasons, all load-bearing:
-
-1. The callback URL is registered with GePG out of band. ``/api/v1/`` implies a
-   ``/api/v2/`` one day, and re-registering a URL with a government gateway is
-   not a deploy step.
-2. Signed XML in, signed XML out. DRF's content negotiation, ``JSONParser``,
-   pagination and ``api_exception_handler`` are all wrong here - even the
-   failure path has to be a well-formed ``7102`` acknowledgement, or GePG keeps
-   redelivering.
-3. They are unauthenticated. ``DEFAULT_PERMISSION_CLASSES = [IsAuthenticated]``
-   fails closed by design; reaching around it per view is exactly the drift that
-   setting exists to prevent. Staying outside DRF keeps the guarantee intact.
-4. ``csrf_exempt`` on a plain view is the narrowest possible carve-out.
-
-Note what is missing: nothing verifies that a request actually came from GePG.
-``GEPG_PUBLIC_CERT_PATH`` is configured but never read, so a forged
-``pmtSpNtfReq`` posted to this URL will mark a bill paid. This is carried over
-from the system being ported and is the first follow-up to close.
+These plain Django POST views keep the gateway callback URLs stable and return
+XML acknowledgements for handled requests. Responses are signed only when
+configured; unhandled exceptions are not guaranteed to produce an acknowledgement.
+Inbound signatures are not verified, and ``GEPG_PUBLIC_CERT_PATH`` is unused.
 """
 
 from django.http import HttpResponse

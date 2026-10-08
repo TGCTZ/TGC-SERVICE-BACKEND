@@ -1,96 +1,55 @@
-# Business decisions
+# Implemented business rules
 
-The business rules that shape the system: what was decided, why, and where it
-lives in code. Read this before changing behaviour that a rule below covers -
-if the rule itself needs to change, change it here in the same pull request.
-
-Decisions are **settled** (built, and confirmed by the lab) or **provisional**
-(built on a sensible default, awaiting the lab's confirmation). Questions the
-lab has not answered yet are at the end.
-
-## The pipeline
-
-```
-RECEPTION    an Order is created for one visit, with the number of stones handed in
-    ↓
-IDENTIFY     a gemmologist types each stone - which fixes its price
-    ↓
-BILLING      one Bill per Order, a GePG control number, the customer pays
-    ↓
-FINDINGS     after payment the gemmologist records and finalizes the report
-    ↓
-CERTIFICATE  one certificate per stone, downloadable as a PDF
-```
-
-The full walk-through, with statuses and roles, is in
+These are current code contracts, not a record of business approval. Update this
+page when those contracts change. The sequence of work is described in
 [Business workflow](business-workflow.md).
 
-## Settled
-
-| Rule | Why | In code |
-| --- | --- | --- |
-| An order holds one or many stones from one visit | Customers bring parcels; one receipt, one bill | `Order`, `Order.stone_count` |
-| Reception records only how many stones arrived; a `Stone` row is created when the bench identifies it | Typing a stone is gemmological work, not reception's | `orders.services.stone.add_stone` |
-| Each stone has its own status and moves independently | Stones from one parcel are finished at different times | `Stone.status`, `StoneStatus` |
-| The status list is fixed in code: received, under identification, billed, paid, certified, ready for collection, collected, plus on hold and cancelled | Stages rarely change, and code depends on them | `apps/gems/enums.py` |
-| Every status change is recorded - who, when, from what to what | The lab must be able to answer "who moved this stone" | `StatusHistory` |
-| Every write is audit-logged | Edits to reports, bills and records must be traceable | `django-auditlog`, `apps/core/audit.py` |
-| One bill per order | The customer pays once for the whole visit | `Bill.order` (one-to-one) |
-| Price is a flat fee per stone category, reached through the stone's type; weight does not change it | The lab charges by class of work, and a new type is priced the moment it exists | `StoneCategory.price`, `preview_bill_for_order` |
-| Weight is in carats (default) or grams | The two units the lab uses | `WeightUnit` |
-| One identification report per stone | Findings are per stone | `IdentificationReport.stone` |
-| A finalized report is locked | A certificate must not describe findings that later change | `finalize_report` |
-| One certificate per stone, printed from a snapshot of the report | A certificate must say what it said on the day it was issued | `Certificate.*_snapshot` |
-| Issued certificates are permanent; no revoke action is provided | Certificate issuance is write-once | `Certificate` |
-| Reference data (colours, species, origins…) is admin-managed lookup lists | Staff pick from lists; free text drifts | `apps/gems` |
-| A customer is a lasting record, unique by phone | Customers return; reception finds them rather than re-registering | `Customer` |
-| Reference numbers read `PREFIX-<yy><yy>-NNNNN` over the financial year (July-June), restarting each year: `ORD-`, `BILL-`, `CERT-`, and `TGC-` for reports | One format everywhere, aligned with the government financial year | `apps/core/services.py` |
-| Six roles: superadmin, admin, manager, receptionist, gemmologist, accountant | Four stations plus two roles that run the system | `apps/users/roles.py` |
-| No production module: identification → billing → findings → certificate | Removed from scope; stages cannot be skipped | - |
-
-## Recent decisions
-
-| Date | Rule | Why | In code |
-| --- | --- | --- | --- |
-| 2026-10-01 | The management statistics dashboard is retired in favor of Financial and Operational reports | Report access follows existing domain permissions | `apps/reports`, `apps/users/roles.py` |
-| 2026-09-25 | Roles form a hierarchy: everyone manages only the roles and people ranked below them, and does not see those above | Stops self-promotion and managers editing admins; only a superadmin manages admins | `ROLE_RANKS`, `apps/users/services/roles.py` |
-| 2026-09-25 | A customer's region is one of Tanzania's 31 regions | Free text could not be counted or searched reliably | `Region`, `apps/gems/regions.py` |
-| 2026-09-25 | No self-registration: staff create accounts from an email and a role | Every account belongs to someone the lab chose | `create_user_account` |
-| 2026-09-25 | New accounts get a random temporary password, not a shared default, and must set a password and complete their profile before using the system | A shared default lets anyone who knows a new colleague's email take the account first | `apps/users/services/accounts.py`, `apps/users/authentication.py` |
-| 2026-09-25 | Every user's country is Tanzania; new accounts start Active | The lab's staff are in Tanzania | `create_user_account` |
-
-## Provisional
-
-Built on these defaults; the lab has not confirmed them.
-
-| Rule | In code |
+| Rule | Implementation |
 | --- | --- |
-| A certificate is issued only after the bill is fully paid | the certification worklist filters on `BillStatus.PAID` |
-| Partial payments are allowed: a bill is `partially_paid` until payments cover the total | `process_payment_notification` |
-| The per-role list of actions in `ROLE_PERMISSIONS` | `apps/users/roles.py` |
+| An order groups one customer's visit and submitted stone count | `Order`, `create_order()` |
+| Stone registration requires a pricing category and is capped by the submitted count | `add_stone()` |
+| A type, when supplied, must belong to the selected category | Stone serializers and `update_stone()` |
+| Billing uses a flat fee per category, independent of weight | `preview_bill_for_order()`, `_create_local_bill()` |
+| There is one bill per order, with copied line amounts | `Bill.order`, `BillItem` |
+| Recorded payments may partially or fully settle a bill | `process_payment_notification()` |
+| Findings require a fully paid bill | `_assert_payment_settled()` |
+| Only one non-deleted identification report may exist per stone | `IdentificationReport` conditional constraint |
+| Finalization through the API also issues the certificate | `IdentificationReportViewSet.finalize()` |
+| Finalized findings can be corrected with a dedicated permission | `identification.edit_finalized_report`, `update_report()` |
+| Corrections refresh certificate findings without replacing issuance metadata | `refresh_certificate_snapshot()` |
+| No revoke action is exposed; historical revoked certificates still render | Certificate views, PDF renderer, public verification |
+| A status transition records the previous and new status and actor | `transition_stone()`, `StatusHistory` |
+| Account and role management follows role rank | `ROLE_RANKS`, user and role services |
+| Staff create accounts; first login requires password and profile completion | Account services and `OnboardingJWTAuthentication` |
 
-## Open questions
+## References
 
-- **Other ways to pay.** Does every bill go through GePG, or can the lab take cash
-  or another channel?
-- **Cancelling or reissuing a bill** after its control number is issued - allowed,
-  and by whom? (`BillStatus.CANCELLED` exists; nothing sets it.)
-- **Re-issuing a certificate** for a lost copy or a correction - a new number, or
-  the old one? (`CertificateStatus.REISSUED` exists; nothing sets it.)
-- **How long records are kept**, including the audit log.
+`generate_reference_number()` allocates the order sequence for a July–June
+financial year. Related documents derive that sequence with
+`reference_number_for_order()`; they do not allocate separate counters.
 
-## Data model
+| Document | Stored example | Display example |
+| --- | --- | --- |
+| Order | `ORD-2627-00042` | `ORD-26/27-00042` |
+| Bill | `BILL-2627-00042` | `BILL-26/27-00042` |
+| Findings for stone A | `TGC-2627-00042-A` | `TGC-26/27-00042-A` |
+| Certificate for stone A | `CERT-2627-00042-A` | `CERT-26/27-00042-A` |
 
+Stored values remain slash-free for gateway identifiers, filenames, and URLs.
+`format_reference_number()` adds the slash for display. The allocator scans
+deleted orders too and relies on the database constraint to reject concurrent
+duplicates; it does not reserve a sequence under a database lock.
+
+## Record relationships
+
+```text
+Customer -> Orders -> Stones -> Identification reports
+               |         |                |
+               Bill -> BillItems          Certificate
+                |                     (findings snapshot)
+             Payments
 ```
-Customer 1──< Order 1──1 Bill 1──< BillItem >──1 Stone
-                 │                                  │
-                 └──< Stone ────────────────────────┘
-                        │  status + StatusHistory
-                        │
-      ┌─────────────────┴──────────────────┐
-      │ 1                                  │ 1
- IdentificationReport                 Certificate
-      │                                (snapshot of the report)
-      └─ lookups: StoneType, Species, Variety, Color, Origin, ShapeCut, Instrument
-         enums: NatureType, Transparency, Treatment, OpticCharacter
-```
+
+Reports are a foreign-key collection with at most one live report per stone.
+Certificates retain a link to both their stone and source report. Reference
+tables and enums are documented in [Reference data](reference-data.md).

@@ -272,8 +272,7 @@ GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
 GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
 
 GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=False)
-# No default: a signing passphrase is a secret, and a blank one would let an
-# unsigned payload reach the gateway without anyone noticing.
+# PKCS#12 password used when loading the optional outbound signing key.
 GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
 GEPG_PRIVATE_KEY_PATH = env(
     "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")

@@ -55,8 +55,7 @@ def sign_content(xml: str) -> str:
 def sign_payload(xml: str) -> str:
     """Replace the signature placeholder in an XML payload with a real signature.
 
-    Returns the payload unchanged (with placeholder) if signing fails, so a
-    signing error never silently drops the request.
+    Returns the original XML when key loading or signing fails.
     """
     try:
         signature = sign_content(xml)
