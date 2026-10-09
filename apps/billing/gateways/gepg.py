@@ -3,6 +3,7 @@
 Isolates the GePG wire format (XML, HTTP, status codes) from the service layer.
 """
 
+import base64
 import logging
 import re
 import secrets
@@ -15,6 +16,7 @@ from defusedxml.ElementTree import ParseError
 from defusedxml.ElementTree import fromstring as parse_xml
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from .signing import sign_if_enabled
@@ -182,6 +184,54 @@ def submit_bill(bill, customer, username: str = "System") -> dict:
         return _result(False, None, "CONNECTION_ERROR", str(exc), False, None)
 
     return _parse_bill_response(raw)
+
+
+@transaction.atomic
+def send_control_number_sms(bill) -> bool:
+    """Send the old system's Beem SMS once after a control number is available."""
+    bill = bill.__class__.objects.select_for_update().get(pk=bill.pk)
+    if (
+        settings.GEPG_SIMULATE
+        or not bill.control_number
+        or bill.control_number == "PENDING"
+        or bill.control_number_sms_sent_at
+    ):
+        return False
+    api_key = getattr(settings, "BEEM_AFRICA_API_KEY", "")
+    secret = getattr(settings, "BEEM_AFRICA_SECRET_KEY", "")
+    phone = normalize_msisdn(bill.order.customer.phone)
+    if not api_key or not secret or not phone:
+        return False
+    payload = {
+        "source_addr": "TGC-INFO",
+        "schedule_time": "",
+        "encoding": 0,
+        "message": (
+            f"Pay TZS {bill.total_amount:,.0f} to the control number "
+            f"{bill.control_number}"
+        ),
+        "recipients": [{"recipient_id": 1, "dest_addr": phone}],
+    }
+    response = requests.post(
+        "https://apisms.beem.africa/v1/send",
+        json=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Basic "
+            + base64.b64encode(f"{api_key}:{secret}".encode()).decode(),
+        },
+        timeout=30,
+    )
+    if response.status_code != 200:
+        logger.warning(
+            "Beem SMS failed for bill %s with HTTP %s",
+            bill.bill_number,
+            response.status_code,
+        )
+        return False
+    bill.control_number_sms_sent_at = timezone.now()
+    bill.save(update_fields=["control_number_sms_sent_at", "updated_at"])
+    return True
 
 
 def _parse_bill_response(raw: str) -> dict:

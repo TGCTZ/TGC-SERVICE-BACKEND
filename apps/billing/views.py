@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from django.conf import settings
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from apps.core.filters import search_queryset
 from apps.core.permissions import ActionPermissions, StrictModelPermissions
@@ -22,23 +23,28 @@ from apps.orders.search import ORDER_SEARCH_FIELDS
 from apps.orders.serializers import AddStoneSerializer, OrderSerializer
 
 from .dev import simulate_payment
-from .models import Bill, BillItem, Payment, ServiceProvider
+from .models import Bill, BillItem, Payment, Reconciliation, ServiceProvider
 from .selectors import billing_attention_worklist, billing_worklist
 from .serializers import (
+    BillCancellationSerializer,
     BillItemSerializer,
     BillPreviewSerializer,
     BillSerializer,
     GenerateBillSerializer,
     IdentifiedStoneSerializer,
     PaymentSerializer,
+    ReconciliationRequestSerializer,
+    ReconciliationSerializer,
     RetryBillSerializer,
     ServiceProviderSerializer,
     SimulatePaymentSerializer,
 )
 from .services import (
+    cancel_bill,
     generate_bill_for_order,
     identify_stone,
     preview_bill_for_order,
+    request_reconciliation,
     retry_bill_for_order,
 )
 
@@ -112,6 +118,7 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
         "worklist": ["billing.generate_bill"],
         "attention": ["billing.generate_bill"],
         "retry": ["billing.generate_bill"],
+        "cancel": ["billing.generate_bill"],
     }
 
     @extend_schema(request=GenerateBillSerializer, responses=BillSerializer)
@@ -274,6 +281,46 @@ class BillViewSet(viewsets.ReadOnlyModelViewSet):
         payload.is_valid(raise_exception=True)
         bill = retry_bill_for_order(payload.validated_data["order"], user=request.user)
         return Response(self.get_serializer(bill).data)
+
+    @extend_schema(request=BillCancellationSerializer)
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """Ask GePG to cancel this bill and return the recorded result."""
+        payload = BillCancellationSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        record = cancel_bill(
+            self.get_object(), reason=payload.validated_data["reason"], user=request.user
+        )
+        return Response(
+            {
+                "id": record.id,
+                "status_code": record.status_code,
+                "status_desc": record.status_desc,
+            }
+        )
+
+
+class ReconciliationViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read reconciliation history and request a dated payment reconciliation."""
+
+    queryset = Reconciliation.objects.all()
+    serializer_class = ReconciliationSerializer
+    permission_classes = [ActionPermissions]
+    action_permissions = {"create_request": ["billing.generate_bill"]}
+
+    @extend_schema(
+        request=ReconciliationRequestSerializer, responses=ReconciliationSerializer
+    )
+    @action(detail=False, methods=["post"], url_path="request")
+    def create_request(self, request):
+        """Submit a reconciliation request for a day, defaulting to today."""
+        payload = ReconciliationRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        record = request_reconciliation(
+            payload.validated_data.get("trx_date") or timezone.localdate(),
+            user=request.user,
+        )
+        return Response(self.get_serializer(record).data, status=status.HTTP_201_CREATED)
 
 
 class BillItemViewSet(viewsets.ReadOnlyModelViewSet):

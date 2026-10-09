@@ -23,22 +23,22 @@ The system creates the **bill number**, which identifies the local charge. GePG 
 
 ```mermaid
 flowchart TD
-    A["Register customer order and identify stones"] --> B["Create one bill with one charge line per stone"]
-    B --> C["Submit billSubReq XML to GePG"]
+    A["Register customer order<br/>and identify stones"] --> B["Create one bill with<br/>one charge line per stone"]
+    B --> C["Submit billSubReq XML<br/>to GePG"]
     C --> D{"GePG response"}
-    D -->|"Control number returned immediately"| E["Save control number"]
-    D -->|"Accepted acknowledgement"| F["Wait for billSubRes callback"]
+    D -->|"Control number returned<br/>immediately"| E["Save control number"]
+    D -->|"Accepted acknowledgement"| F["Wait for billSubRes<br/>callback"]
     F --> E
-    D -->|"Rejection or handled error"| R["Keep local bill and error details; see retry flow"]
-    E --> G["Display control number to staff / customer"]
-    G --> H["Customer pays through an external payment provider"]
-    H --> I["GePG sends pmtSpNtfReq callback"]
-    I --> J["Match bill and record payment"]
+    D -->|"Rejection or handled error"| R["Keep local bill and error details;<br/>see retry flow"]
+    E --> G["Display control number<br/>to staff or customer"]
+    G --> H["Customer pays through an<br/>external payment provider"]
+    H --> I["GePG sends pmtSpNtfReq<br/>callback"]
+    I --> J["Match bill and<br/>record payment"]
     J --> K{"Total received covers bill?"}
-    K -->|No| L["Bill partially_paid; stones remain billed"]
+    K -->|No| L["Bill partially_paid;<br/>stones remain billed"]
     L --> H
-    K -->|Yes| M["Bill and stones paid; notify subscribers"]
-    M --> N["Payment gate for findings is satisfied"]
+    K -->|Yes| M["Bill and stones paid;<br/>notify subscribers"]
+    M --> N["Payment gate for findings<br/>is satisfied"]
 ```
 
 Customer payment through a bank/mobile provider is external context. This repository does not initiate that transaction. Payment does not itself create findings or issue a certificate.
@@ -49,20 +49,20 @@ Customer payment through a bank/mobile provider is external context. This reposi
 
 ```mermaid
 flowchart TD
-    A["POST /api/v1/orders/{id}/stones/"] --> B["identify_stone: save the identified stone"]
+    A["POST /api/v1/orders/{id}/stones/"] --> B["identify_stone:<br/>save the identified stone"]
     B --> C{"Automatic billing enabled?"}
     C -->|No| D["Return the stone; manual billing is available"]
-    C -->|Yes| E{"Registered count equals submitted count?"}
+    C -->|Yes| E{"Registered count equals<br/>submitted count?"}
     E -->|No| F["Return the stone; continue identification"]
     E -->|Yes| G{"Order held?"}
-    G -->|Yes| H["Return billing_attention message"]
+    G -->|Yes| H["Return billing_attention<br/>message"]
     G -->|No| I["generate_bill_for_order"]
     D --> J["GET /api/v1/bills/worklist/"]
-    J --> K["GET /api/v1/bills/preview/?order={id}"]
-    K --> L["Review category fees, total, and blockers"]
-    L --> M["POST /api/v1/bills/generate/ with order ID"]
+    J --> K["GET /api/v1/bills/preview/<br/>?order={id}"]
+    K --> L["Review category fees,<br/>total, and blockers"]
+    L --> M["POST /api/v1/bills/generate/<br/>with order ID"]
     M --> I
-    I --> N["Create local bill and submit to GePG"]
+    I --> N["Create local bill and<br/>submit to GePG"]
 ```
 
 - The manual worklist selects orders with every submitted stone registered and no bill. Preview is read-only and reports an existing bill, an empty order, or missing category prices as blockers.
@@ -78,18 +78,18 @@ The charge is a fixed fee from each stone's **category**, not its weight or indi
 
 ```mermaid
 flowchart TD
-    A["generate_bill_for_order"] --> B["Enter _create_local_bill atomic block"]
+    A["generate_bill_for_order"] --> B["Enter _create_local_bill<br/>atomic block"]
     B --> C{"Existing bill or no stones?"}
-    C -->|Yes| X["Raise ServiceError; roll back local bill work"]
-    C -->|No| D["Create pending Bill with order-based reference and expiry"]
+    C -->|Yes| X["Raise ServiceError;<br/>roll back local bill work"]
+    C -->|No| D["Create pending Bill with<br/>order reference and expiry"]
     D --> E["Read next stone category price"]
     E --> F{"Price configured?"}
     F -->|No| X
-    F -->|Yes| G["Create BillItem: fee, description, item reference; weight null"]
-    G --> H["Transition stone to billed; write status history"]
+    F -->|Yes| G["Create BillItem: fee, description,<br/>item reference; weight null"]
+    G --> H["Transition stone to billed;<br/>write status history"]
     H --> I{"More stones?"}
     I -->|Yes| E
-    I -->|No| J["Save total amount and leave local atomic block"]
+    I -->|No| J["Save total amount and leave<br/>local atomic block"]
     J --> K["_submit_existing_bill"]
 ```
 
@@ -107,12 +107,12 @@ sequenceDiagram
     participant A as GePG adapter
     participant G as GePG
     participant DB as Database
-    S->>A: submit_bill(bill, customer, username)
+    S->>A: submit_bill(bill, customer,<br/>username)
     alt GEPG_SIMULATE is true
-        A-->>S: Generated control number; code 7101
+        A-->>S: Generated control number (code 7101)
     else Real submission
-        A->>A: Build billSubReq; sign if enabled
-        A->>G: POST GEPG_BILL_CREATE_URL (30-second timeout)
+        A->>A: Build billSubReq and sign if enabled
+        A->>G: POST GEPG_BILL_CREATE_URL<br/>(30-second timeout)
         alt billSubRes contains a control number
             G-->>A: BillCntrNum and status fields
             A-->>S: Synchronous result with control number
@@ -124,11 +124,11 @@ sequenceDiagram
             A-->>S: Failure result with diagnostic code
         end
     end
-    S->>DB: Save attempt timestamp, status_code, status_desc
+    S->>DB: Save attempt timestamp,<br/>status_code, status_desc
     opt Successful result has a real control number
         S->>DB: Save control_number
     end
-    Note over S,DB: Bill payment status remains pending
+    Note over S,DB: Bill payment status<br/>remains pending
 ```
 
 Connection failures and timeouts also take the handled transport-error branch, even if GePG sends no response.
@@ -160,9 +160,9 @@ sequenceDiagram
     participant DB as Database
     participant UI as Manual generation dialog
     participant API as Bill read API
-    G->>W: POST /gepg/bill/response/ with billSubRes
+    G->>W: POST /gepg/bill/response/<br/>with billSubRes
     W->>S: Decode UTF-8 body and handle callback
-    S->>S: Parse ResId, BillId, BillCntrNum, status fields
+    S->>S: Parse ResId, BillId,<br/>BillCntrNum, status fields
     alt Caught parsing failure
         S-->>W: billSubResAck with ERROR and 7102
     else Parse succeeds
@@ -172,9 +172,9 @@ sequenceDiagram
         end
         S-->>W: billSubResAck with ResId and 7101
     end
-    W-->>G: HTTP 200; acknowledgement XML
+    W-->>G: HTTP 200 with<br/>acknowledgement XML
     loop While dialog query is active and number is missing
-        UI->>API: GET /api/v1/bills/{id}/ every 3 seconds
+        UI->>API: GET /api/v1/bills/{id}/<br/>every 3 seconds
         API->>DB: Read current bill
         DB-->>API: Bill fields
         API-->>UI: Serialized bill including control_number
@@ -193,18 +193,18 @@ Retry is an explicit staff action exposed in automatic mode. There is no schedul
 
 ```mermaid
 flowchart TD
-    A["GET /api/v1/bills/attention/"] --> B["Staff reviews failure and corrects its cause"]
-    B --> C["POST /api/v1/bills/retry/ with order ID"]
+    A["GET /api/v1/bills/attention/"] --> B["Staff reviews failure<br/>and corrects its cause"]
+    B --> C["POST /api/v1/bills/retry/<br/>with order ID"]
     C --> D{"Order held?"}
     D -->|Yes| E["Refuse: release order first"]
     D -->|No| F{"Local bill exists?"}
-    F -->|No| G{"Nonzero submitted count and all stones identified?"}
-    G -->|No| H["Refuse: identify every stone"]
+    F -->|No| G{"Nonzero submitted count<br/>and all stones identified?"}
+    G -->|No| H["Refuse: identify<br/>every stone"]
     G -->|Yes| I["Create bill, then submit"]
     F -->|Yes| J{"pending + no control number + code not 7101/7241?"}
-    J -->|Yes| K["Resubmit existing bill with same number and lines"]
-    J -->|No| L["Refuse retry: bill already submitted"]
-    K --> M["Process submission result as in section 4"]
+    J -->|Yes| K["Resubmit existing bill<br/>with same number and lines"]
+    J -->|No| L["Refuse retry:<br/>bill already submitted"]
+    K --> M["Process submission result<br/>as in section 4"]
     I --> M
 ```
 
@@ -220,25 +220,25 @@ An acknowledgement confirms callback handling. The bill's status separately indi
 
 ```mermaid
 flowchart TD
-    A["POST /gepg/payments/notification/ with pmtSpNtfReq"] --> B["Parse PmtHdr and all PmtTrxDtl entries"]
-    B -->|"Caught parse/value error"| X["Return pmtSpNtfReqAck: 7102"]
-    B -->|Success| C["Apply next transaction in its own atomic block"]
+    A["POST /gepg/payments/notification/<br/>with pmtSpNtfReq"] --> B["Parse PmtHdr and all<br/>PmtTrxDtl entries"]
+    B -->|"Caught parse/value error"| X["Return pmtSpNtfReqAck<br/>with code 7102"]
+    B -->|Success| C["Apply next transaction<br/>in its own atomic block"]
     C --> D["Find bill by BillId; fall back to BillCtrNum"]
     D --> E{"Bill found?"}
     E -->|No| X
-    E -->|Yes| F["get_or_create Payment by TrxId; retain parsed fields and raw XML"]
+    E -->|Yes| F["get_or_create Payment by TrxId;<br/>retain fields and raw XML"]
     F --> G{"New payment?"}
-    G -->|No| H["Update existing payment; skip settlement recalculation"]
+    G -->|No| H["Update existing payment;<br/>skip settlement recalculation"]
     G -->|Yes| I["Sum this bill's live payment amounts"]
     I --> J{"Sum at least bill total?"}
     J -->|No| K["Set bill partially_paid"]
-    J -->|Yes| L["Set bill paid; transition all order stones to paid; notify subscribers"]
+    J -->|Yes| L["Set bill paid; transition stones<br/>to paid; notify subscribers"]
     H --> M{"More transactions?"}
     K --> M
     L --> M
     M -->|Yes| C
-    M -->|No| N["Return pmtSpNtfReqAck: 7101"]
-    C -.->|"Caught application error; roll back this entry"| X
+    M -->|No| N["Return pmtSpNtfReqAck<br/>with code 7101"]
+    C -.->|"Caught application error;<br/>roll back this entry"| X
 ```
 
 **Identical redelivery:** the same `TrxId` updates the existing row and skips settlement, avoiding another payment and repeated settlement side effects. The database uniqueness constraint applies to nonempty transaction IDs on live rows. The parser does not require a nonempty ID, so this guarantee should not be generalized to malformed transactions.
@@ -258,10 +258,10 @@ stateDiagram-v2
     [*] --> pending: Local bill created; stones become billed
     pending --> pending: Submission result or control-number callback
     pending --> partially_paid: New payment; cumulative amount below total
-    partially_paid --> partially_paid: Another new payment; still below total
+    partially_paid --> partially_paid: Another payment; total still below bill
     pending --> paid: New payment; cumulative amount covers total
     partially_paid --> paid: New payment; cumulative amount covers total
-    paid --> paid: Additional new payment; cumulative amount still covers total
+    paid --> paid: Additional payment; cumulative amount still covers total
 ```
 
 This diagram assumes ordinary positive payments; inbound amount validation is limited. Duplicate transaction IDs do not take these settlement transitions.
@@ -275,7 +275,7 @@ This diagram assumes ordinary positive payments; inbound amount validation is li
 | New payment brings cumulative sum to or above total | `paid` | Transition all order stones to `paid`; notify bill-paid subscribers |
 | Same transaction redelivered | No recalculation | No transition |
 
-`transition_stone()` does nothing when the stone is already in the target state. New transactions reaching the full-payment branch can still invoke notifications again. `cancelled` and `expired` are defined bill choices, but this integration does not transition bills into them.
+`transition_stone()` does nothing when the stone is already in the target state. New transactions reaching the full-payment branch can still invoke notifications again. A cancellation callback transitions a bill to `cancelled` only when GePG returns `7283`; `expired` has no local worker or automatic state transition.
 
 Sources: [payment service](../../apps/billing/services/payment.py), [stone transitions](../../apps/orders/services/stone.py), [status definitions](../../apps/gems/enums.py).
 
@@ -285,16 +285,16 @@ There are two separate switches/paths: simulated **submission** bypasses GePG HT
 
 ```mermaid
 flowchart TD
-    A["Submit bill with GEPG_SIMULATE=True"] --> B["Skip XML signing and outbound HTTP"]
-    B --> C["Return generated 12-digit number beginning 99; code 7101"]
-    D["POST /api/v1/bills/{id}/simulate-payment/"] --> E{"DEBUG and GEPG_SIMULATE enabled?"}
+    A["Submit bill with<br/>GEPG_SIMULATE=True"] --> B["Skip XML signing<br/>and outbound HTTP"]
+    B --> C["Return generated 12-digit<br/>number beginning 99<br/>(code 7101)"]
+    D["POST /api/v1/bills/{id}/<br/>simulate-payment/"] --> E{"DEBUG and GEPG_SIMULATE<br/>enabled?"}
     E -->|No| F["404 for an otherwise authorized request"]
     E -->|Yes| G["Validate optional positive amount"]
-    G --> H["Assign fake control number if missing"]
-    H --> I["Use supplied amount or remaining balance"]
-    I --> J["Build fake pmtSpNtfReq with a fresh SIM transaction ID"]
-    J --> K["Call process_payment_notification directly"]
-    K --> L["Run normal recording and settlement flow"]
+    G --> H["Assign fake control number<br/>if missing"]
+    H --> I["Use supplied amount or<br/>remaining balance"]
+    I --> J["Build fake pmtSpNtfReq<br/>with fresh SIM transaction ID"]
+    J --> K["Call process_payment_notification<br/>directly"]
+    K --> L["Run normal recording<br/>and settlement flow"]
     L --> M["Refresh and return bill"]
 ```
 
@@ -308,20 +308,19 @@ Sources: [simulation helper](../../apps/billing/dev.py), [API action](../../apps
 
 ```mermaid
 flowchart TD
-    A["Outbound bill XML or callback acknowledgement XML"] --> B{"GEPG_USE_DIGITAL_SIGNATURE?"}
-    B -->|No| C["Return XML with signature placeholder unchanged"]
-    B -->|Yes| D["Load cached private key from PKCS#12 file"]
-    D --> E["Sign inner Gepg content excluding signature element"]
-    E --> F["RSA PKCS1v15 + SHA-256; Base64 encode"]
+    A["Outbound bill XML or<br/>callback acknowledgement XML"] --> B{"Digital signature<br/>enabled?"}
+    B -->|No| C["Return XML with signature<br/>placeholder unchanged"]
+    B -->|Yes| D["Load cached private key<br/>from PKCS#12 file"]
+    D --> E["Sign inner Gepg content<br/>excluding signature element"]
+    E --> F["RSA PKCS1v15 + SHA-256;<br/>Base64 encode"]
     F --> G["Replace signature placeholder"]
-    D -->|"Caught FileNotFoundError or ValueError"| H["Log error and return original XML"]
-    E -->|"Caught FileNotFoundError or ValueError"| H
-    I["Inbound GePG callback"] --> J["CSRF-exempt Django POST view; no JWT check"]
+    D -->|"PFX load or signing error"| H["Raise error and stop outbound request"]
+    I["Inbound GePG callback"] --> J["CSRF-exempt Django POST view;<br/>no JWT check"]
     J --> K["Parse XML with defusedxml"]
-    K --> L["Run bill or payment handler without signature verification"]
+    K --> L["Run bill or payment handler<br/>without signature verification"]
 ```
 
-The same optional signing helper serves submissions and both acknowledgement types. Other signing exceptions can propagate. `GEPG_PUBLIC_CERT_PATH` is configured but unused: safe XML parsing does not authenticate the sender, and a forged matching payment notification can affect settlement.
+The signing helper serves submissions and callback acknowledgements. When enabled, a PFX load or signing error stops the outbound request instead of returning placeholder XML. `GEPG_PUBLIC_CERT_PATH` is configured but unused: safe XML parsing does not authenticate the sender, and a forged matching payment notification can affect settlement.
 
 Sources: [signing](../../apps/billing/gateways/signing.py), [webhooks](../../apps/billing/webhooks.py).
 
@@ -341,9 +340,17 @@ Application endpoints are under `/api/v1/`; callbacks are deliberately outside t
 | `GET /api/v1/bills/workflow-feed/` | Existing unpaid bills and relevant pending orders |
 | `GET /api/v1/bill-items/` and `GET /api/v1/payments/` | Read charge lines and payment records |
 | `POST /api/v1/bills/{id}/simulate-payment/` | Development payment simulation |
+| `POST /api/v1/bills/{id}/cancel/` | Permission-checked bill cancellation request |
+| `POST /api/v1/reconciliations/request/` | Permission-checked reconciliation request for a transaction date |
 | `POST /gepg/bill/response/` | `billSubRes` in; `billSubResAck` out |
 | `POST /gepg/payments/notification/` | `pmtSpNtfReq` in; `pmtSpNtfReqAck` out |
+| `POST /billing/api/payments/notification/` | Legacy registered payment callback path |
+| `POST /billing/api/bill/response/` | Legacy registered bill-response callback path |
+| `POST /billing/api/bill/cancel-response/` | Legacy registered cancellation callback path |
+| `POST /billing/reconciliation/response/` | Legacy registered reconciliation callback path |
 | `POST <GEPG_BILL_CREATE_URL>` | Outbound submission from backend to GePG |
+
+A control-number SMS is attempted through Beem when a number is received synchronously or by callback. Successful sends are recorded on the bill to prevent repeat sends.
 
 Bill/item/payment CRUD is read-only to API clients; the named actions and callback services perform the writes. Service-provider CRUD exists separately at `/api/v1/service-providers/`, but outbound XML currently uses settings for its provider codes.
 
@@ -352,6 +359,7 @@ Bill/item/payment CRUD is read-only to API clients; the named actions and callba
 | [Root URLs](../../config/urls.py), [billing URLs](../../apps/billing/urls.py), [callback URLs](../../apps/billing/urls_webhooks.py) | Routing and callback isolation |
 | [Identification service](../../apps/billing/services/identification.py) | Automatic handoff after the last stone |
 | [Bill service](../../apps/billing/services/bill.py) | Preview, local creation, submission tracking, retries, control-number callback |
+| [GePG operations service](../../apps/billing/services/gepg_operations.py) | Bill cancellation and reconciliation requests/callbacks |
 | [Gateway adapter](../../apps/billing/gateways/gepg.py) | Exact XML fields, HTTP transport, parsing, acknowledgement codes |
 | [Payment service](../../apps/billing/services/payment.py) | Matching, duplicate handling, partial/full settlement |
 | [Models](../../apps/billing/models/bill.py), [serializers](../../apps/billing/serializers.py) | Stored records and exposed API fields |
@@ -362,13 +370,14 @@ Bill/item/payment CRUD is read-only to API clients; the named actions and callba
 
 These limits explain why a flow might stop or behave differently from a full GePG integration:
 
-- **Cancellation, refunds, reconciliation, and SMS:** there is no implemented GePG flow for these. Cancellation and reconciliation URLs exist in settings without callers. Cancelling/holding an order does not cancel its GePG bill or refund money.
+- **Cancellation and reconciliation verification:** cancellation and reconciliation request/callback handlers and API actions are implemented. The old cancellation code described its destination as a mock, and neither workflow has been verified against live GePG. Refunds are not implemented.
+- **SMS delivery:** Beem credentials are required. Failed or ambiguous provider delivery is not guaranteed to be exactly once.
 - **Expiry:** `expiry_at` is stored and sent, but there is no local expiry worker or automatic bill-state transition.
 - **Missing callbacks:** there is no scheduled retry/reconciliation process. Accepted asynchronous submissions remain waiting and cannot use the current retry action.
-- **Authentication:** inbound signatures are not verified. Outbound signing can return placeholder XML after caught key/signing failures.
+- **Authentication:** inbound signatures are not verified. With signing enabled, missing or invalid signing material stops the outbound request.
 - **Settlement validation:** payment amounts are summed without currency conversion or an `is_processed` filter. The callback does not verify currency agreement, positive payment amounts, or whether the order is held before settlement.
 - **Corrections and ordering:** changed duplicate transactions do not recalculate settlement. A fresh payment that reaches the full-payment branch transitions every order stone to `paid`, without a guard against a later workflow state.
 - **Concurrency and early callbacks:** submission can run before the request transaction commits, and settlement does not lock the bill while summing payments. The current flow should not be read as a guarantee against early-callback or simultaneous-payment races.
-- **Acknowledgement coverage:** unknown bill-response callbacks can receive success without a write; payment processing can partly succeed before a failure acknowledgement. Some parser, signing, and database exceptions remain uncaught.
+- **Acknowledgement coverage:** unknown bill and payment callbacks receive `7102`; payment processing can partly succeed before a failure acknowledgement. Parser, signing, and database failures still require operational monitoring.
 
-For configuration details, see the [adapter overview](00_GEPG_INTEGRATION_OVERVIEW.md). For focused prose explanations, see [bill submission](01_BILL_SUBMISSION.md) and [payment notifications](02_PAYMENT_NOTIFICATION.md).
+For VPS configuration and cutover steps, see the [production setup](04_GEPG_PRODUCTION_SETUP.md). For protocol configuration, see the [adapter overview](00_GEPG_INTEGRATION_OVERVIEW.md); focused explanations are in [bill submission](01_BILL_SUBMISSION.md) and [payment notifications](02_PAYMENT_NOTIFICATION.md).

@@ -290,3 +290,7 @@ GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)
 # False retains the review and manual billing steps.
 AUTO_BILL_AFTER_IDENTIFICATION = env.bool("AUTO_BILL_AFTER_IDENTIFICATION", default=False)
 GEPG_ACK_SUCCESS_CODES = frozenset({"7101", "7241"})
+
+# Control-number messages use the existing Beem account from the retired app.
+BEEM_AFRICA_API_KEY = env("BEEM_AFRICA_API_KEY", default="")
+BEEM_AFRICA_SECRET_KEY = env("BEEM_AFRICA_SECRET_KEY", default="")

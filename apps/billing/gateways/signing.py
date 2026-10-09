@@ -5,7 +5,6 @@ element) with the private key, matching GePG's expected scheme.
 """
 
 import base64
-import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,8 +13,6 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 from django.conf import settings
-
-logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -55,13 +52,10 @@ def sign_content(xml: str) -> str:
 def sign_payload(xml: str) -> str:
     """Replace the signature placeholder in an XML payload with a real signature.
 
-    Returns the original XML when key loading or signing fails.
+    Raises when the configured identity cannot sign; live requests must never
+    silently leave the placeholder in place.
     """
-    try:
-        signature = sign_content(xml)
-    except (FileNotFoundError, ValueError) as exc:
-        logger.error("GePG signing failed: %s", exc)
-        return xml
+    signature = sign_content(xml)
     placeholder = "<signature>SignatureGoesHere</signature>"
     if placeholder in xml:
         return xml.replace(placeholder, f"<signature>{signature}</signature>")

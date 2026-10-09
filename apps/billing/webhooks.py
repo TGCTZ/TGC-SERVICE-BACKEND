@@ -11,7 +11,12 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from .services import handle_bill_response_callback, process_payment_notification
+from .services import (
+    handle_bill_response_callback,
+    handle_cancel_response,
+    handle_reconciliation_response,
+    process_payment_notification,
+)
 
 XML_CONTENT_TYPE = "text/xml; charset=utf-8"
 
@@ -35,4 +40,26 @@ class BillResponseView(View):
         """Store the control number and answer with a signed acknowledgement."""
         body = request.body.decode("utf-8", errors="replace")
         ack = handle_bill_response_callback(body)
+        return HttpResponse(ack, content_type=XML_CONTENT_TYPE)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class BillCancelResponseView(View):
+    """Accept asynchronous bill cancellation responses from GePG."""
+
+    def post(self, request, *args, **kwargs):
+        """Persist a cancellation result and return its XML acknowledgement."""
+        ack = handle_cancel_response(request.body.decode("utf-8", errors="replace"))
+        return HttpResponse(ack, content_type=XML_CONTENT_TYPE)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ReconciliationResponseView(View):
+    """Accept payment batch responses from GePG reconciliation."""
+
+    def post(self, request, *args, **kwargs):
+        """Persist batch details and return the legacy response acknowledgement."""
+        ack = handle_reconciliation_response(
+            request.body.decode("utf-8", errors="replace")
+        )
         return HttpResponse(ack, content_type=XML_CONTENT_TYPE)

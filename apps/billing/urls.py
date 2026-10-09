@@ -9,6 +9,7 @@ from .views import (
     BillViewSet,
     IdentifyStoneView,
     PaymentViewSet,
+    ReconciliationViewSet,
     ServiceProviderViewSet,
 )
 
@@ -17,6 +18,7 @@ router.register("bills", BillViewSet, basename="bill")
 router.register("bill-items", BillItemViewSet, basename="billitem")
 router.register("payments", PaymentViewSet, basename="payment")
 router.register("service-providers", ServiceProviderViewSet, basename="serviceprovider")
+router.register("reconciliations", ReconciliationViewSet, basename="reconciliation")
 
 urlpatterns = [
     path("orders/<int:pk>/stones/", IdentifyStoneView.as_view(), name="identify-stone"),

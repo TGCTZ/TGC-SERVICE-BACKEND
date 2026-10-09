@@ -9,7 +9,14 @@ from apps.core.services import format_reference_number
 from apps.orders.models import Order
 from apps.orders.serializers import StoneSerializer
 
-from .models import Bill, BillItem, Payment, ServiceProvider
+from .models import (
+    Bill,
+    BillItem,
+    Payment,
+    Reconciliation,
+    ReconciliationTransaction,
+    ServiceProvider,
+)
 
 
 class ServiceProviderSerializer(AuditFieldsMixin):
@@ -133,6 +140,7 @@ class BillSerializer(AuditFieldsMixin):
             "status_desc",
             "is_gepg_submitted",
             "gepg_submitted_at",
+            "control_number_sms_sent_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         # A bill is created by the billing service and thereafter written only by
@@ -226,3 +234,33 @@ class SimulatePaymentSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=15, decimal_places=2, min_value=Decimal("0.01"), required=False
     )
+
+
+class BillCancellationSerializer(serializers.Serializer):
+    """Reason required to submit a cancellation request."""
+
+    reason = serializers.CharField(max_length=500)
+
+
+class ReconciliationRequestSerializer(serializers.Serializer):
+    """Date of payments to reconcile; defaults to the current local date."""
+
+    trx_date = serializers.DateField(required=False)
+
+
+class ReconciliationTransactionSerializer(serializers.ModelSerializer):
+    """Read-only transaction detail returned in a reconciliation batch."""
+
+    class Meta:
+        model = ReconciliationTransaction
+        fields = "__all__"
+
+
+class ReconciliationSerializer(serializers.ModelSerializer):
+    """Reconciliation request, status and returned transaction rows."""
+
+    transactions = ReconciliationTransactionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Reconciliation
+        fields = "__all__"
