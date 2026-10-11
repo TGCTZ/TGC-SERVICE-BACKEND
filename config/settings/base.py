@@ -179,7 +179,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "TGC Service API",
+    "TITLE": "TGPMIS API",
     "DESCRIPTION": (
         "Tanzania Gemmological Centre - stone identification, billing through "
         "the GePG gateway, and certification."

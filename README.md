@@ -1,4 +1,4 @@
-# TGC Service - API
+# TGPMIS API
 
 The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
