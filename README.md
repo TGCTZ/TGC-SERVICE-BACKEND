@@ -102,6 +102,10 @@ uv run python manage.py setup_roles --prune  # also drop roles the matrix no lon
 
 ## Production deployment
 
+For the VPS setup, GitHub environment values, and automatic release flow, see
+the [backend deployment guide](docs/deployment.md). The commands below are a
+manual deployment reference.
+
 The backend GitHub Actions workflow deploys a tested commit pushed to `main`.
 It checks out that commit on the production host, installs the locked runtime
 dependencies, applies migrations, collects static files, restarts the service,
