@@ -5,6 +5,9 @@ on:
     branches: [master, main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -99,6 +102,9 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.API_URL }}
     concurrency:
       group: backend-production
       cancel-in-progress: false
@@ -120,11 +126,19 @@ jobs:
 
       - name: Verify SSH connection
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_PORT: ${{ vars.SSH_PORT }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          API_URL: ${{ vars.API_URL }}
         run: |
+          test -n "$SSH_HOST"
+          test -n "$SSH_PORT"
+          test -n "$SSH_USER"
+          test -n "$API_URL"
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]]
           ssh \
             -i "$HOME/.ssh/tgc-actions" \
+            -p "$SSH_PORT" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
@@ -133,35 +147,46 @@ jobs:
 
       - name: Deploy backend
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_PORT: ${{ vars.SSH_PORT }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          API_URL: ${{ vars.API_URL }}
           DEPLOY_SHA: ${{ github.sha }}
         run: |
+          test -n "$SSH_HOST"
+          test -n "$SSH_PORT"
+          test -n "$SSH_USER"
+          test -n "$API_URL"
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]]
           ssh \
             -i "$HOME/.ssh/tgc-actions" \
+            -p "$SSH_PORT" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=15 \
             "$SSH_USER@$SSH_HOST" "bash -s -- '$DEPLOY_SHA'" <<'REMOTE'
           set -euo pipefail
-          cd /var/www/tgc/service/backend
+          cd /home/madini01/tgpmis-backend-production
           if [ -n "$(git status --porcelain)" ]; then
             echo "Backend working tree is not clean; stopping deployment." >&2
             exit 1
           fi
           git fetch origin "$1"
           git checkout --detach "$1"
-          /home/mtakatigs/.local/bin/uv sync --frozen --no-dev
-          /home/mtakatigs/.local/bin/uv run python manage.py migrate --noinput
-          /home/mtakatigs/.local/bin/uv run python manage.py collectstatic --noinput
+          /home/madini01/.local/bin/uv sync --frozen --no-dev
+          /home/madini01/.local/bin/uv run python manage.py migrate --noinput
+          /home/madini01/.local/bin/uv run python manage.py collectstatic --noinput
           sudo -n /usr/bin/systemctl restart tgpmis-gunicorn.service
           REMOTE
 
       - name: Check production health
+        env:
+          API_URL: ${{ vars.API_URL }}
         run: |
+          test -n "$API_URL"
           for attempt in {1..12}; do
-            if curl --fail --silent --show-error --output /dev/null https://tgc.mtakati.online/api/health/ready/; then
+            if curl --fail --silent --show-error --output /dev/null "${API_URL%/}/api/health/ready/"; then
               exit 0
             fi
             sleep 5
