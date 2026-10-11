@@ -1,7 +1,7 @@
 [project]
-name = "djangoapitemplate"
+name = "tgpmis-backend"
 version = "0.1.0"
-description = "Reusable Django REST API template."
+description = "REST API for the Tanzania Gemmological Centre's stone-certification system."
 requires-python = ">=3.13"
 dependencies = [
     "cryptography>=44.0",

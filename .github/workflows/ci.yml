@@ -20,7 +20,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: djangoapitemplate
+          POSTGRES_DB: tgpmis
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
@@ -30,7 +30,7 @@ jobs:
 
     env:
       SECRET_KEY: "ci-only-test-key-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/djangoapitemplate
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/tgpmis
       DEBUG: "False"
 
     steps:
