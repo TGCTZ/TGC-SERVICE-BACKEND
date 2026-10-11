@@ -155,7 +155,7 @@ jobs:
           /home/mtakatigs/.local/bin/uv sync --frozen --no-dev
           /home/mtakatigs/.local/bin/uv run python manage.py migrate --noinput
           /home/mtakatigs/.local/bin/uv run python manage.py collectstatic --noinput
-          sudo -n /usr/bin/systemctl restart tgc-backend.service
+          sudo -n /usr/bin/systemctl restart tgpmis-gunicorn.service
           REMOTE
 
       - name: Check production health

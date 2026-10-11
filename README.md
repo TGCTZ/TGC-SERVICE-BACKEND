@@ -100,6 +100,45 @@ uv run python manage.py setup_roles # re-apply the role matrix after editing rol
 uv run python manage.py setup_roles --prune  # also drop roles the matrix no longer declares
 ```
 
+## Production deployment
+
+The backend GitHub Actions workflow deploys a tested commit pushed to `main`.
+It checks out that commit on the production host, installs the locked runtime
+dependencies, applies migrations, collects static files, restarts the service,
+and checks readiness. To run those deployment steps manually, first check out
+the intended commit on the production host, then set these values for your
+server and domain:
+
+```bash
+TGC_BACKEND_DIR=/path/to/backend
+TGC_DJANGO_SERVICE=tgpmis-gunicorn.service
+TGC_API_BASE_URL=https://api.example.com
+
+cd "$TGC_BACKEND_DIR"
+export DJANGO_SETTINGS_MODULE=config.settings.production
+uv sync --frozen --no-dev
+uv run python manage.py migrate --noinput
+uv run python manage.py collectstatic --noinput
+sudo systemctl restart "$TGC_DJANGO_SERVICE"
+curl --fail --silent --show-error "${TGC_API_BASE_URL%/}/api/health/ready/"
+```
+
+For a new production database, run these once after configuring the production
+environment and applying migrations:
+
+```bash
+TGC_BACKEND_DIR=/path/to/backend
+cd "$TGC_BACKEND_DIR"
+export DJANGO_SETTINGS_MODULE=config.settings.production
+uv run python manage.py seed_reference_data
+uv run python manage.py createsuperuser
+```
+
+Do not run `seed` in production; it creates demo accounts and workflow records.
+`seed_reference_data` synchronizes declared roles as well as lookup data, so see
+the [operations guide](docs/engineering/operations.md#role-synchronization-resets-declared-roles)
+before rerunning it on an established system.
+
 ## Documentation
 
 New to the codebase? Read them in this order — what the system does first, then
