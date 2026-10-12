@@ -452,6 +452,7 @@ class SessionTokenRefreshSerializer(TokenRefreshSerializer):
     """Rotate tokens only while their login session remains active."""
 
     def validate(self, attrs):
+        """Reject refresh tokens whose associated login session has expired."""
         refresh = self.token_class(attrs["refresh"])
         active_session(
             refresh.payload.get(api_settings.USER_ID_CLAIM), refresh.payload.get("sid")
