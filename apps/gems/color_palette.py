@@ -51,9 +51,7 @@ def sync_color_palette():
         color = Color.objects.filter(name=name).first()
         if color is None:
             color = (
-                Color.all_objects.filter(name=name)
-                .order_by("-deleted_at", "-pk")
-                .first()
+                Color.all_objects.filter(name=name).order_by("-deleted_at", "-pk").first()
             )
             if color is not None:
                 color.restore()

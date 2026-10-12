@@ -357,9 +357,7 @@ def test_admin_correction_updates_snapshot_and_preserves_issuance(
         "Corrected finding."
     )
 
-    verification = auth_client(admin).get(
-        f"/verify/{certificate.certificate_number}/"
-    )
+    verification = auth_client(admin).get(f"/verify/{certificate.certificate_number}/")
     assert verification.status_code == 200
     verification_html = verification.content.decode()
     assert replacement_type.name in verification_html

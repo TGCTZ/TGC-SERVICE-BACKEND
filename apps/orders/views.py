@@ -214,9 +214,11 @@ class OrderViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     )
     def identification_count(self, request):
         """Pending identification count for every viewer of the main entry."""
-        count = identification_action_queryset().filter(
-            identified__lt=F("stone_count")
-        ).count()
+        count = (
+            identification_action_queryset()
+            .filter(identified__lt=F("stone_count"))
+            .count()
+        )
         return Response({"count": count})
 
 

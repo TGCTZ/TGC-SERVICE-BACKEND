@@ -47,12 +47,9 @@ def identification_action_queryset():
     bill exists, the identification is priced and the order leaves this page.
     Empty orders have no stone action to perform.
     """
-    return (
-        annotate_identified(
-            Order.objects.select_related("customer", "bill").prefetch_related("stones")
-        )
-        .filter(bill__isnull=True, stone_count__gt=0)
-    )
+    return annotate_identified(
+        Order.objects.select_related("customer", "bill").prefetch_related("stones")
+    ).filter(bill__isnull=True, stone_count__gt=0)
 
 
 def order_stage(order) -> str:
