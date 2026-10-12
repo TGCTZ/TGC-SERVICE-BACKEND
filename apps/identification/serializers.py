@@ -164,7 +164,7 @@ class IdentificationReportSerializer(AuditFieldsMixin):
         """The second gemmologist's display name, or None if only one signed."""
         return str(obj.verified_by) if obj.verified_by_id else None
 
-    def get_stone_reference(self, report):
+    def get_stone_reference(self, report) -> str:
         """Identify the report's stone with the order sequence and label."""
         return format_reference_number(
             reference_number_for_order(

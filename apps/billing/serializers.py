@@ -182,16 +182,16 @@ class IdentifiedStoneSerializer(StoneSerializer):
             "control_number",
         )
 
-    def get_billing_attention(self, obj):
+    def get_billing_attention(self, obj) -> str | None:
         """Explain why a saved identification needs a billing retry."""
         return self.context.get("billing_attention")
 
-    def get_bill_number(self, obj):
+    def get_bill_number(self, obj) -> str | None:
         """Return the bill created by this identification, if any."""
         bill = self.context.get("bill")
         return format_reference_number(bill.bill_number) if bill else None
 
-    def get_control_number(self, obj):
+    def get_control_number(self, obj) -> str | None:
         """Return a synchronous GePG number; an accepted callback may follow."""
         bill = self.context.get("bill")
         return bill.control_number or None if bill else None
