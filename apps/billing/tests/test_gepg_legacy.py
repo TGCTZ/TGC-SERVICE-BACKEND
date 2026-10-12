@@ -1,15 +1,21 @@
 """Compatibility checks for the old GePG contract, using mocked HTTP only."""
 
-from datetime import date
+import base64
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.x509.oid import NameOID
 
 from django.urls import resolve
 
 from apps.billing.gateways.gepg import send_control_number_sms
-from apps.billing.gateways.signing import sign_payload
+from apps.billing.gateways.signing import _load_private_key, sign_payload
 from apps.billing.models import (
     Bill,
 )
@@ -57,14 +63,53 @@ def test_legacy_callback_paths_resolve_to_new_handlers():
     )
 
 
-def test_new_private_pfx_produces_a_real_signature(settings):
-    """The copied identity signs a payload without leaving the placeholder."""
-    settings.GEPG_USE_DIGITAL_SIGNATURE = True
-    signed = sign_payload(
-        "<Gepg><billSubReq/><signature>SignatureGoesHere</signature></Gepg>"
+def test_new_private_pfx_produces_a_real_signature(settings, tmp_path):
+    """A test-only PKCS#12 identity produces a verifiable payload signature."""
+    password = "ci-test-certificate-password"
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "GePG CI signing test")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(private_key, hashes.SHA256())
     )
-    assert "SignatureGoesHere" not in signed
-    assert "<signature>" in signed
+    pfx_path = tmp_path / "ci-private.pfx"
+    pfx_path.write_bytes(
+        pkcs12.serialize_key_and_certificates(
+            name=b"gepg-ci-test",
+            key=private_key,
+            cert=certificate,
+            cas=None,
+            encryption_algorithm=serialization.BestAvailableEncryption(
+                password.encode("utf-8")
+            ),
+        )
+    )
+
+    settings.GEPG_PRIVATE_KEY_PATH = pfx_path
+    settings.GEPG_CERTIFICATE_PASSWORD = password
+    settings.GEPG_USE_DIGITAL_SIGNATURE = True
+    _load_private_key.cache_clear()
+    try:
+        signed = sign_payload(
+            "<Gepg><billSubReq/><signature>SignatureGoesHere</signature></Gepg>"
+        )
+        signature = signed.partition("<signature>")[2].partition("</signature>")[0]
+        assert signature != "SignatureGoesHere"
+        private_key.public_key().verify(
+            base64.b64decode(signature),
+            b"<billSubReq/>",
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    finally:
+        _load_private_key.cache_clear()
 
 
 def test_cancellation_uses_legacy_headers_xml_and_records_result(

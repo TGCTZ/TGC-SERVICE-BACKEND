@@ -188,9 +188,27 @@ def update_stone(
     partial update that did not mention it.
 
     Raises:
-        ServiceError: If a billed stone's category changes, if its type belongs
-            to another category, or if a finalized report's type changes.
+        ServiceError: If a billed stone's category changes, if automatic billing
+            locks an existing classification, if its type belongs to another
+            category, or if a finalized report's type changes.
     """
+    classification_changed = (
+        stone_category is not _UNSET
+        and (stone_category.pk if stone_category is not None else None)
+        != stone.stone_category_id
+    ) or (
+        stone_type is not _UNSET
+        and (stone_type.pk if stone_type is not None else None) != stone.stone_type_id
+    )
+    if (
+        settings.AUTO_BILL_AFTER_IDENTIFICATION
+        and stone.stone_type_id is not None
+        and classification_changed
+    ):
+        raise ServiceError(
+            "A saved identification cannot be changed while automatic billing is enabled."
+        )
+
     report = stone.report
     if report is not None and report.is_finalized:
         if user is None or not user.has_perm("identification.edit_finalized_report"):

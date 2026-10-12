@@ -185,7 +185,7 @@ Polling reads local state and does not ask GePG for a new number. The manual dia
 
 A parseable callback for an unknown bill, or one without a control number, still gets `7101` without updating a bill. A supplied number is saved without checking that `BillStsCode` indicates success. Only the first matching `BillDtl` is parsed. These are current implementation behaviors, not recommended protocol guarantees.
 
-Sources: [callback service](../../apps/billing/services/bill.py), [webhooks](../../apps/billing/webhooks.py), [frontend dialog](../../../frontend/src/features/orders/components/generate-bill-dialog.tsx).
+Sources: [callback service](../../apps/billing/services/bill.py), [webhooks](../../apps/billing/webhooks.py), [frontend dialog](https://github.com/TGCTZ/TGC-SERVICE-FRONTEND/blob/main/src/features/orders/components/generate-bill-dialog.tsx).
 
 ## 6. Failed billing and retries
 
