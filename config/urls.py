@@ -17,6 +17,12 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.billing.webhooks import (
+    BillCancelResponseView,
+    BillResponseView,
+    PaymentNotificationView,
+    ReconciliationResponseView,
+)
 from apps.core.views import ConfigView
 
 urlpatterns = [
@@ -35,6 +41,10 @@ urlpatterns = [
     # Gateway callbacks: server-to-server XML, registered with GePG out of band,
     # so deliberately outside the versioned API. See apps/billing/webhooks.py.
     path("gepg/", include("apps.billing.urls_webhooks")),
+    path("billing/api/payments/notification/", PaymentNotificationView.as_view()),
+    path("billing/api/bill/response/", BillResponseView.as_view()),
+    path("billing/api/bill/cancel-response/", BillCancelResponseView.as_view()),
+    path("billing/reconciliation/response/", ReconciliationResponseView.as_view()),
     # Printed on every certificate, so it is deliberately not under /api/v1/:
     # a document issued today may be scanned long after the API is versioned on.
     path("verify/", include("apps.certificates.urls_public")),

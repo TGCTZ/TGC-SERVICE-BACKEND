@@ -60,16 +60,14 @@ So there is no token to copy, and — on Windows — no shell quoting to get wro
 The file walks the whole pipeline in order, chaining ids as it goes: sign in →
 reference data → soft delete and restore → customer → order → register stones →
 transition → generate a bill → the GePG callbacks → findings and finalize →
-audit and health. Run it top to bottom and you have exercised the system end to
-end — 35 requests, all green.
+audit and health. Run the requests in order to exercise the API end to end. Negative cases marked `# @expect` intentionally return an error status.
 
 It is **re-runnable**, which took three fixes worth knowing about because each
 one is a trap the API itself sets:
 
 - Unique columns carry a `{{$timestamp}}`, so a second run does not collide with
   the first on `name` or `phone`.
-- Stones are identified against the stone type the collection created itself,
-  never a hardcoded id — ids drift as rows come and go.
+- Stones are registered against the stone category created in that run, never a hardcoded id — ids drift as rows come and go. An exact type is optional at registration.
 - The payment notification carries a **per-run transaction id**, captured once
   at sign-in as `{{run}}`. A fixed `trx_id` makes every run after the first look
   like a *redelivery* to the idempotency guard: the payment is quietly
@@ -169,9 +167,7 @@ A writable id and a read-only expanded object:
 
 Write the id; read the `_detail`. There is no `stone_type_id` field.
 
-Note that a stone type carries no price. The identification fee is on the
-**category** it belongs to, so a total cannot be computed client-side from the
-type alone — use `GET /api/v1/bills/preview/?order=` instead.
+The identification fee is on the stone **category**, not its exact type. Use `GET /api/v1/bills/preview/?order={id}` to see the bill calculated by the API.
 
 ---
 
@@ -235,20 +231,22 @@ Two server-to-server XML endpoints, mounted **outside** `/api/v1/` because their
 URLs are registered with the gateway and must survive an API version bump:
 
 ```
-POST /gepg/payments/notification/   pmtSpNtfReq  -> signed 7101 / 7102 ack
-POST /gepg/bill/response/           billSubRes   -> signed ack
+POST /gepg/payments/notification/   pmtSpNtfReq  -> 7101 / 7102 ack
+POST /gepg/bill/response/           billSubRes   -> acknowledgement
 ```
 
-They take **no authentication** — the gateway has no credentials — and they
-answer in XML on every path, including failure. `api.http` has ready-made
+They take **no authentication** — the gateway has no credentials. When handled,
+they answer in XML; unhandled exceptions and unsupported methods are not
+guaranteed to return acknowledgement XML. Responses are signed only when
+`GEPG_USE_DIGITAL_SIGNATURE` is enabled. `api.http` has ready-made
 payloads for all three cases worth checking:
 
 1. A valid notification settles the bill and moves every stone to `paid`.
 2. The **same notification sent twice** must leave exactly one `Payment` row and
    one history entry. GePG redelivers until acknowledged, so without the
    `trx_id` guard a retry would double-count.
-3. A malformed body must still return a well-formed `7102`. An error page here
-   would make the gateway retry forever.
+3. Ordinary malformed XML returns a `7102` acknowledgement. Exceptions outside
+   the service's handled error set may still escape the view.
 
 Set `GEPG_SIMULATE=True` in `.env` to work offline: bill submission skips the
 network and returns a fake control number.
@@ -261,10 +259,8 @@ produced too.
 The endpoint behind it is `POST /api/v1/bills/{id}/simulate-payment/`, which
 answers 404 unless the server has **both** `DEBUG` and `GEPG_SIMULATE` on.
 
-> **Known gap:** nothing verifies that a request actually came from GePG.
-> `GEPG_PUBLIC_CERT_PATH` is configured but never read, so a forged
-> `pmtSpNtfReq` posted to this URL will mark a bill paid. Carried over from the
-> system being ported; the first follow-up to close.
+Inbound signatures are not verified. `GEPG_PUBLIC_CERT_PATH` is configured but
+unused; see [GePG integration limitations](../gepg/README.md#current-limitations).
 
 ---
 

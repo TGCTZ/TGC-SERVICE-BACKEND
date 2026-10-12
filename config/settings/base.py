@@ -179,7 +179,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "TGC Service API",
+    "TITLE": "TGPMIS API",
     "DESCRIPTION": (
         "Tanzania Gemmological Centre - stone identification, billing through "
         "the GePG gateway, and certification."
@@ -272,8 +272,7 @@ GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
 GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
 
 GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=False)
-# No default: a signing passphrase is a secret, and a blank one would let an
-# unsigned payload reach the gateway without anyone noticing.
+# PKCS#12 password used when loading the optional outbound signing key.
 GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
 GEPG_PRIVATE_KEY_PATH = env(
     "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")
@@ -291,3 +290,7 @@ GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)
 # False retains the review and manual billing steps.
 AUTO_BILL_AFTER_IDENTIFICATION = env.bool("AUTO_BILL_AFTER_IDENTIFICATION", default=False)
 GEPG_ACK_SUCCESS_CODES = frozenset({"7101", "7241"})
+
+# Control-number messages use the existing Beem account from the retired app.
+BEEM_AFRICA_API_KEY = env("BEEM_AFRICA_API_KEY", default="")
+BEEM_AFRICA_SECRET_KEY = env("BEEM_AFRICA_SECRET_KEY", default="")

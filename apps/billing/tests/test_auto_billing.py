@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from apps.billing.models import Bill
+from apps.core.services import format_reference_number
 from apps.gems.enums import OrderStage, StoneStatus
 from apps.gems.tests.factories import StoneTypeFactory
 from apps.orders.selectors import order_stage, orders_at_stage
@@ -35,7 +36,7 @@ def test_last_identification_generates_bill_and_control_number(
     )
     assert last.status_code == 201, last.data
     bill = Bill.objects.get(order=order)
-    assert last.data["bill_number"] == bill.bill_number
+    assert last.data["bill_number"] == format_reference_number(bill.bill_number)
     assert last.data["control_number"] == bill.control_number
     assert bill.control_number
     assert set(order.stones.values_list("status", flat=True)) == {StoneStatus.BILLED}
@@ -115,7 +116,7 @@ def test_gateway_failure_retries_the_same_bill(
 
     retried = client.post("/api/v1/bills/retry/", {"order": order.pk})
     assert retried.status_code == 200
-    assert retried.data["bill_number"] == bill.bill_number
+    assert retried.data["bill_number"] == format_reference_number(bill.bill_number)
     assert retried.data["control_number"] == "991234567890"
     assert Bill.objects.filter(order=order).count() == 1
     order.refresh_from_db()

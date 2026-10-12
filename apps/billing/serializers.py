@@ -9,7 +9,14 @@ from apps.core.services import format_reference_number
 from apps.orders.models import Order
 from apps.orders.serializers import StoneSerializer
 
-from .models import Bill, BillItem, Payment, ServiceProvider
+from .models import (
+    Bill,
+    BillItem,
+    Payment,
+    Reconciliation,
+    ReconciliationTransaction,
+    ServiceProvider,
+)
 
 
 class ServiceProviderSerializer(AuditFieldsMixin):
@@ -133,6 +140,7 @@ class BillSerializer(AuditFieldsMixin):
             "status_desc",
             "is_gepg_submitted",
             "gepg_submitted_at",
+            "control_number_sms_sent_at",
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         # A bill is created by the billing service and thereafter written only by
@@ -174,16 +182,16 @@ class IdentifiedStoneSerializer(StoneSerializer):
             "control_number",
         )
 
-    def get_billing_attention(self, obj):
+    def get_billing_attention(self, obj) -> str | None:
         """Explain why a saved identification needs a billing retry."""
         return self.context.get("billing_attention")
 
-    def get_bill_number(self, obj):
+    def get_bill_number(self, obj) -> str | None:
         """Return the bill created by this identification, if any."""
         bill = self.context.get("bill")
         return format_reference_number(bill.bill_number) if bill else None
 
-    def get_control_number(self, obj):
+    def get_control_number(self, obj) -> str | None:
         """Return a synchronous GePG number; an accepted callback may follow."""
         bill = self.context.get("bill")
         return bill.control_number or None if bill else None
@@ -226,3 +234,33 @@ class SimulatePaymentSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=15, decimal_places=2, min_value=Decimal("0.01"), required=False
     )
+
+
+class BillCancellationSerializer(serializers.Serializer):
+    """Reason required to submit a cancellation request."""
+
+    reason = serializers.CharField(max_length=500)
+
+
+class ReconciliationRequestSerializer(serializers.Serializer):
+    """Date of payments to reconcile; defaults to the current local date."""
+
+    trx_date = serializers.DateField(required=False)
+
+
+class ReconciliationTransactionSerializer(serializers.ModelSerializer):
+    """Read-only transaction detail returned in a reconciliation batch."""
+
+    class Meta:
+        model = ReconciliationTransaction
+        fields = "__all__"
+
+
+class ReconciliationSerializer(serializers.ModelSerializer):
+    """Reconciliation request, status and returned transaction rows."""
+
+    transactions = ReconciliationTransactionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Reconciliation
+        fields = "__all__"

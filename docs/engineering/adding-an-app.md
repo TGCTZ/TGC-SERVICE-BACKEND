@@ -9,8 +9,10 @@ with its own services and its own permissions.
 
 ## 1. Pick the layer first
 
-Imports point downward only, never sideways, never up. Where the app sits
-decides what it may import, and that decision is hard to undo later.
+Prefer dependencies on lower layers. Keep same-layer apps independent where
+practical, but inspect the current import graph before treating the layer order
+as a strict rule. Identification currently calls certificate services when it
+finalizes a report and refreshes certificate findings.
 
 | Layer | App | Holds |
 |---|---|---|
@@ -23,12 +25,11 @@ decides what it may import, and that decision is hard to undo later.
 | L4 | `apps.identification` | Full gemmological identification |
 | L5 | `apps.certificates` | Certificates and their PDF documents |
 
-**If two apps at the same layer need each other, something is in the wrong
-place.** `identification` gates findings on the bill being paid without importing
-`billing`: the join is ORM traversal (`stone.order.bill`) and the enum comes from
-`gems` at L2. That is why every domain enum lives in `gems` rather than beside
-the model it describes - putting `BillStatus` in `billing` would force an
-upward import the first time another app needed it.
+`identification` gates findings on the bill being paid without importing
+`billing`: it uses ORM traversal (`stone.order.bill`) and the enum from `gems`.
+The report finalization flow does depend on certificate services. Treat the
+layer map as guidance for new dependencies, and update it when the import graph
+changes.
 
 ## 2. Scaffold
 

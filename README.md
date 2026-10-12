@@ -1,24 +1,25 @@
-# TGC Service - API
+# TGPMIS API
 
 The Tanzania Gemmological Centre's stone-certification system, as a REST API.
 
-A customer brings stones in; a gemmologist identifies each one's type, which
-prices it; the order is billed through the GePG government payment gateway;
-once settled the gemmologist records the findings; and the stone is
-finally certified with a printable PDF certificate.
+A customer brings stones in; a gemmologist registers each stone's pricing
+category; the order is billed through the GePG payment gateway; once settled,
+the gemmologist records findings and finalizes a report that issues a printable
+PDF certificate.
 
 ```
 received -> under identification -> billed -> paid -> certified
          -> ready for collection -> collected
 ```
 
-Identification comes *before* billing, because typing the stone is what
-determines the fee. Each arrow is a service with its own guard, and each stage
-has a worklist that is the queue someone actually works from.
+Category registration comes *before* billing because the category determines
+the flat fee. Findings and certificate issuance follow payment. Pending work is
+shown in the relevant frontend resource pages; stone transitions do not follow
+an enforced status graph.
 
 Set `AUTO_BILL_AFTER_IDENTIFICATION=True` in `.env` to submit the bill to GePG
-as soon as the last preliminary stone type is saved. The default `False` keeps
-the edit and manual Generate bill steps. In automatic mode, missing prices or
+as soon as the last submitted stone is registered. The default `False` keeps
+bill generation as a separate action. In automatic mode, missing prices or
 failed submissions appear in **Billing needs attention**; retrying resubmits the
 same bill when one already exists. An accepted asynchronous GePG response may
 deliver its control number later through the callback.
@@ -99,6 +100,49 @@ uv run python manage.py setup_roles # re-apply the role matrix after editing rol
 uv run python manage.py setup_roles --prune  # also drop roles the matrix no longer declares
 ```
 
+## Production deployment
+
+For the VPS setup, GitHub environment values, and automatic release flow, see
+the [backend deployment guide](docs/deployment.md). The commands below are a
+manual deployment reference.
+
+The backend GitHub Actions workflow deploys a tested commit pushed to `main`.
+It checks out that commit on the production host, installs the locked runtime
+dependencies, applies migrations, collects static files, restarts the service,
+and checks readiness. To run those deployment steps manually, first check out
+the intended commit on the production host, then set these values for your
+server and domain:
+
+```bash
+TGC_BACKEND_DIR=/path/to/backend
+TGC_DJANGO_SERVICE=tgpmis-gunicorn.service
+TGC_API_BASE_URL=https://api.example.com
+
+cd "$TGC_BACKEND_DIR"
+export DJANGO_SETTINGS_MODULE=config.settings.production
+uv sync --frozen --no-dev
+uv run python manage.py migrate --noinput
+uv run python manage.py collectstatic --noinput
+sudo systemctl restart "$TGC_DJANGO_SERVICE"
+curl --fail --silent --show-error "${TGC_API_BASE_URL%/}/api/health/ready/"
+```
+
+For a new production database, run these once after configuring the production
+environment and applying migrations:
+
+```bash
+TGC_BACKEND_DIR=/path/to/backend
+cd "$TGC_BACKEND_DIR"
+export DJANGO_SETTINGS_MODULE=config.settings.production
+uv run python manage.py seed_reference_data
+uv run python manage.py createsuperuser
+```
+
+Do not run `seed` in production; it creates demo accounts and workflow records.
+`seed_reference_data` synchronizes declared roles as well as lookup data, so see
+the [operations guide](docs/engineering/operations.md#role-synchronization-resets-declared-roles)
+before rerunning it on an established system.
+
 ## Documentation
 
 New to the codebase? Read them in this order — what the system does first, then
@@ -142,5 +186,6 @@ docs/              engineering, domain and GePG documentation
 api.http           a runnable request collection for the whole pipeline
 ```
 
-Apps are listed in dependency-layer order. Imports point downward only: an app
-may import from a lower layer, never from the same layer or a higher one.
+Apps are grouped by dependency layer. Prefer dependencies on lower layers and
+keep same-layer apps independent where practical. Existing code has exceptions,
+including identification using certificate services.

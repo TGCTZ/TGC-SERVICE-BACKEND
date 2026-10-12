@@ -31,7 +31,7 @@ setting reads a variable that file does not mention.
 | `TIME_ZONE` | `UTC` | Storage and API timestamps. Leave at UTC. |
 | `LAB_TIME_ZONE` | `Africa/Dar_es_Salaam` | The lab's calendar: which day a statistic counts an event on. |
 | `LOG_LEVEL` | `INFO` | For `logs/app.log`, which the System Logs screen reads. |
-| `JWT_ACCESS_MINUTES` | `60` | How long a revoked session can keep working - a security setting. |
+| `JWT_ACCESS_MINUTES` | `60` | Access-token lifetime; logout or session inactivity can revoke access sooner. |
 | `JWT_REFRESH_DAYS` | `14` | How long a user stays signed in without re-entering a password. |
 | `FRONTEND_URL` | `http://localhost:5173` | The sign-in link in the new-account email. |
 | `EMAIL_URL` | `consolemail://` | Outgoing mail, e.g. `smtp+tls://user:password@host:587`. The default prints mail to the log instead of sending it. |

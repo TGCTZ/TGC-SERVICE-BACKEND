@@ -18,10 +18,7 @@ def transition_stone(stone: Stone, to_status: str, *, user=None, note: str = "")
     No-ops if the stone is already in ``to_status``, so a redelivered payment
     notification does not write a duplicate history row.
 
-    There is deliberately no table of allowed transitions: any status may follow
-    any other. What actually orders the pipeline is which service calls this -
-    billing sets ``billed``, a settled payment sets ``paid``, issuing a
-    certificate sets ``certified``. See the follow-ups in the port plan.
+    The service accepts any target status; callers determine the usual sequence.
 
     Args:
         stone: The stone to move.
@@ -191,9 +188,27 @@ def update_stone(
     partial update that did not mention it.
 
     Raises:
-        ServiceError: If a billed stone's category changes, if its type belongs
-            to another category, or if a finalized report's type changes.
+        ServiceError: If a billed stone's category changes, if automatic billing
+            locks an existing classification, if its type belongs to another
+            category, or if a finalized report's type changes.
     """
+    classification_changed = (
+        stone_category is not _UNSET
+        and (stone_category.pk if stone_category is not None else None)
+        != stone.stone_category_id
+    ) or (
+        stone_type is not _UNSET
+        and (stone_type.pk if stone_type is not None else None) != stone.stone_type_id
+    )
+    if (
+        settings.AUTO_BILL_AFTER_IDENTIFICATION
+        and stone.stone_type_id is not None
+        and classification_changed
+    ):
+        raise ServiceError(
+            "A saved identification cannot be changed while automatic billing is enabled."
+        )
+
     report = stone.report
     if report is not None and report.is_finalized:
         if user is None or not user.has_perm("identification.edit_finalized_report"):
@@ -217,12 +232,16 @@ def update_stone(
         if stone_type is not None:
             if stone_type.category_id != stone.stone_category_id:
                 raise ServiceError("Choose a type belonging to this category.")
-            if report is not None and report.is_finalized and not user.has_perm(
-                "identification.edit_finalized_report"
+            if (
+                report is not None
+                and report.is_finalized
+                and not user.has_perm("identification.edit_finalized_report")
             ):
                 raise ServiceError("A finalized report's stone type cannot change.")
-        elif report is not None and report.is_finalized and not user.has_perm(
-            "identification.edit_finalized_report"
+        elif (
+            report is not None
+            and report.is_finalized
+            and not user.has_perm("identification.edit_finalized_report")
         ):
             raise ServiceError("A finalized report's stone type cannot change.")
         stone.stone_type = stone_type

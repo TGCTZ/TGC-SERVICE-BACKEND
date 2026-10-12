@@ -51,8 +51,7 @@ and `urls.py` are load-bearing for a simple CRUD app.
 `INSTALLED_APPS` lists local apps in dependency order, annotated with their
 layer. The rule is one line long and worth enforcing in review:
 
-> Imports point downward only. Never sideways, never up. Data shared by two apps
-> in the same layer belongs one layer down, in `core`.
+> Prefer dependencies on lower layers. Keep same-layer apps independent where practical; shared behavior belongs in a lower-level module. Check existing imports before applying this as a strict rule.
 
 | Layer | App | Holds |
 |---|---|---|
@@ -67,9 +66,4 @@ layer. The rule is one line long and worth enforcing in review:
 | L5 | `apps.certificates` | Certificates and their public verification. |
 | L6 | `apps.reports` | Read-only financial and operational reports and exports. |
 
-`apps.billing` and `apps.identification` sit at the same layer and must not
-import one another. Where one needs the other's state - the findings queue is
-gated on the bill being paid - it is reached by ORM traversal
-(`stone.order.bill`) with the enum coming from `apps.gems` at L2. That is the
-reason every domain enum lives in `gems` rather than beside the model it
-describes.
+`apps.billing` and `apps.identification` share L4. Identification currently imports certificate services to issue and refresh snapshots; this is an existing cross-layer dependency to consider during future refactors. Billing and identification use ORM traversal (for example `stone.order.bill`) and shared enums in `apps.gems` to read each other’s state without importing each other.

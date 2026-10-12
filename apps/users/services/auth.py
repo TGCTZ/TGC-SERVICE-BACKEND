@@ -16,10 +16,10 @@ User = get_user_model()
 
 @transaction.atomic
 def change_password(*, user, current_password: str, new_password: str) -> None:
-    """Replace a user's password and invalidate their other sessions.
+    """Replace a user's password and blacklist their outstanding refresh tokens.
 
-    Blacklisting every outstanding refresh token except the current one means a
-    stolen session cannot outlive the password change that was meant to end it.
+    Outstanding refresh tokens are invalidated; existing access tokens remain
+    valid until their session is revoked, expires, or reaches its idle timeout.
 
     Raises:
         ServiceError: If the current password is wrong or the new one matches it.
@@ -38,7 +38,7 @@ def revoke_all_tokens(user) -> int:
     """Blacklist every outstanding refresh token for ``user``.
 
     Returns:
-        The number of tokens newly blacklisted.
+        The number of refresh tokens newly blacklisted.
     """
     count = 0
     for token in OutstandingToken.objects.filter(user=user):

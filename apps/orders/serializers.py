@@ -169,7 +169,7 @@ class StoneSerializer(AuditFieldsMixin):
         report = getattr(stone, "report", None)
         return StoneReportSerializer(report).data if report else None
 
-    def get_stone_reference(self, stone):
+    def get_stone_reference(self, stone) -> str:
         """Identify this stone under its order's shared sequence."""
         return format_reference_number(
             reference_number_for_order(stone.order, "ORD", stone_label=stone.label)

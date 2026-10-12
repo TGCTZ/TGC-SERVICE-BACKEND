@@ -170,14 +170,29 @@ def refresh_certificate_snapshot(report, *, user=None) -> Certificate | None:
     certificate.photo_snapshot = stone.photo or None
     if user is not None:
         certificate.updated_by = user
-    certificate.save(update_fields=[
-        "stone_type_snapshot", "weight_snapshot", "weight_unit_snapshot",
-        "color_snapshot", "origin_snapshot", "species_snapshot", "variety_snapshot",
-        "shape_cut_snapshot", "transparency_snapshot", "optic_character_snapshot",
-        "treatment_snapshot", "nature_type_snapshot", "refractive_index_snapshot",
-        "specific_gravity_snapshot", "comments_snapshot", "instruments_snapshot",
-        "photo_snapshot", "updated_at", "updated_by",
-    ])
+    certificate.save(
+        update_fields=[
+            "stone_type_snapshot",
+            "weight_snapshot",
+            "weight_unit_snapshot",
+            "color_snapshot",
+            "origin_snapshot",
+            "species_snapshot",
+            "variety_snapshot",
+            "shape_cut_snapshot",
+            "transparency_snapshot",
+            "optic_character_snapshot",
+            "treatment_snapshot",
+            "nature_type_snapshot",
+            "refractive_index_snapshot",
+            "specific_gravity_snapshot",
+            "comments_snapshot",
+            "instruments_snapshot",
+            "photo_snapshot",
+            "updated_at",
+            "updated_by",
+        ]
+    )
     return certificate
 
 

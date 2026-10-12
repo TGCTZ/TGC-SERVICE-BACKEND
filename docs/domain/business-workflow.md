@@ -1,277 +1,78 @@
-# Business Workflow
+# Business workflow
 
-> How a customer's stones move through TGC-SYSTEM, end to end — the stages, who
-> acts at each one, and how a stone's status changes along the way.
->
-> This describes the **business process**, not the code. For the data model and
-> the decisions behind this flow - settled, provisional and still open - see
-> [Business decisions](decisions.md).
->
-> Items marked **(assumption)** depend on a question not yet answered by the
-> team — treat them as provisional.
+This describes the implemented workflow. API paths below are relative to
+`/api/v1/`. See [business rules](decisions.md) for the model constraints and
+[permissions](../engineering/permissions.md) for access control.
 
----
+## Intake, billing, findings, and collection
 
-## 1. The process at a glance
+1. **Reception creates an order** with a customer, received date, and submitted
+   stone count. A customer can be selected, created with the order, or managed
+   separately through the Customers API. Order creation does not create stones.
+2. **Preliminary identification registers each stone's pricing category** through
+   `POST /orders/{id}/stones/`. An optional exact type must belong to that
+   category; older callers can supply a type alone to derive the category.
+   The endpoint requires `orders.add_stone`; the receptionist role does not have it.
+3. **Billing prices the registered stones** at the flat `StoneCategory.price`.
+   There is one bill per order and one line per stone. Missing prices prevent
+   bill creation. Line amounts are copied at creation, so later catalogue edits
+   do not reprice an existing bill. Weight and exact type are not needed to price it.
+4. **GePG confirms payment.** Partial payments set the bill to `partially_paid`.
+   Once the recorded payments cover the total, the bill becomes `paid` and its
+   stones move to `paid`. Findings services require a fully paid bill.
+5. **The bench records findings** against each stone: exact type, weight, lookup
+   selections, measurements, comments, and instruments. Drafts may be incomplete.
+   Finalization requires species, exact type, colour, nonzero weight, and comments.
+   The finalize API accepts an optional second signatory from the active gemmologist list; when supplied, that person must differ from the finalizing user.
+6. **Finalizing through the API also issues the certificate**, in one transaction.
+   If issuance fails, finalization rolls back. The standalone certificate API
+   remains available for a finalized, paid stone without a certificate.
+7. **Certificates can be viewed, verified publicly, and downloaded as PDFs.**
+   When the issuance service finds no stones outside `certified` or `cancelled`,
+   it notifies collection subscribers. Handover uses the stone transition action.
 
-```
- ┌────────────┐   ┌──────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────────┐
- │ RECEPTION  │──▶│ IDENTIFY     │──▶│ BILLING  │──▶│ FINDINGS     │──▶│ CERTIFICATE  │
- │            │   │ (type→price) │   │ & PAYMENT│   │ (examine)    │   │  & HANDOVER  │
- └────────────┘   └──────────────┘   └──────────┘   └──────────────┘   └──────────────┘
-   receptionist     gemmologist        accountant      gemmologist       receptionist
-```
+## Manual and automatic billing
 
-- An **Order** groups one or many **Stones** brought by one **Customer**.
-- Each **Stone** flows through the pipeline **independently** — one stone may be
-  certified while another in the same order is still awaiting identification.
-- **The bench works in two stages, split by payment.** *Identification* assigns
-  only the stone's **type**, which fixes the price; the customer pays; then the
-  *findings* record the complete gemmological observations and the report is
-  finalized. Both stages are the gemmologist's.
-- Billing happens once **per order**; certificates are issued **per stone**.
+With `AUTO_BILL_AFTER_IDENTIFICATION=False`, billing is a separate action:
+`GET /bills/preview/?order={id}` then `POST /bills/generate/` with an order ID.
+The billing worklist selects active orders with all submitted stones registered.
 
----
+With the flag enabled, registering the final stone triggers bill submission.
+Handled pricing/submission failures are exposed through Billing needs attention.
+`POST /bills/retry/` accepts an order ID and either creates its missing bill or
+resubmits the existing failed bill. Accepted asynchronous submissions wait for a
+control-number callback. See [bill submission](../gepg/01_BILL_SUBMISSION.md).
 
-## 2. Roles (actors)
+## Corrections
 
-The four seeded roles (C5 ✅ resolved — see [permissions.md](../engineering/permissions.md)):
+Category changes are allowed only in `received`, `on_hold`, or `cancelled` stone
+states and never when its report is finalized. Exact type is a finding and must
+match the category. Normal edits to a finalized report or its stone are refused.
 
-| Role | Responsible for |
-| --- | --- |
-| **Receptionist** | Registers customers, creates orders, hands over finished certificates. Does **not** identify stones. |
-| **Gemmologist** | Identification (the type, which fixes the price), then after payment the findings, and finalizes the report. |
-| **Accountant** | Generates bills, handles GePG, confirms payment. |
-| **Administrator** | Manages reference data (lookups, prices) and users. |
+`identification.edit_finalized_report` permits corrections. Updating a finalized
+report refreshes the existing certificate's findings snapshot while retaining
+its number, issuance date, issuer, and signatory names. See
+[certificates](../engineering/certificates.md) for the rendering contract.
 
----
+## Stone statuses and order stages
 
-## 3. Stage by stage
+The usual service-driven path is:
 
-### Stage 1 — Reception
-**Who:** Receptionist
-
-1. Create an **Order** for the visit, recording only **how many stones** the
-   customer submitted (`stone_count`).
-2. The **Customer** is chosen or registered *within* that same step: the
-   receptionist searches by name or phone, picks the record if the customer has
-   been here before, and fills in their details only if they have not. A
-   customer is never registered on their own — they exist because an order is
-   being received.
-
-The receptionist does **not** examine or measure stones — no type, weight, or
-other property is recorded here. Individual stone records are created later, at
-identification.
-
-**Result:** an Order with a `stone_count`; no `Stone` records yet.
-
----
-
-### Stage 2 — Identification
-**Who:** Gemmologist
-
-1. Take a physical stone and **identify its type**
-   (`POST /orders/{id}/stones/`). This creates the `Stone` record (`received`)
-   and, via the type, **fixes the price**. The system caps this at the order's
-   `stone_count`.
-2. A type can be **corrected** (`PUT /stones/{id}/`) until the order is
-   billed. Billing is what freezes the price onto the bill, so from then on the
-   type is locked (`RETYPEABLE_STATUSES` in `apps/orders/services/stone.py`).
-3. The **findings** is **not** recorded yet — it comes after payment
-   (Stage 4).
-
-**Result:** each submitted stone becomes a `Stone` record with a known type (and
-therefore a known price); weight and the full findings are still blank.
-
----
-
-### Stage 3 — Billing & Payment
-**Who:** Accountant
-
-1. Once an order's stones are typed, generate **one Bill for the Order**.
-2. The bill has a **line item per stone**, priced by a **flat fee per stone
-   category** — reached through the stone's type, since the fee is a property of
-   the class of work rather than the species (weight does not change it). The
-   charge is **frozen onto the line item** at billing time, so later price-list
-   changes never alter an issued bill.
-
-   Because the fee is not on the stone type, a total cannot be worked out from a
-   stone's type alone. `preview_bill_for_order()` exists so the screen that asks
-   for a bill shows the same figure the bill will carry.
-3. Submit the bill to **GePG**, which returns a **control number**.
-4. The customer pays; payment is confirmed via the GePG callback (a dev
-   "simulate payment" path exists for local testing).
-
-> **(assumption)** Partial payments and bill cancellation/reissue are open
-> question C2.
-
-**Result:** the order is billed and, once settled, marked paid — which unlocks
-findings.
-
----
-
-### Stage 4 — Findings
-**Who:** Gemmologist
-
-1. For each **paid** stone, record the full findings on its **Identification
-   Report** — weight, color (grouped GIA-style list), nature, species, variety,
-   origin, treatment, shape/cut, transparency, optic character, refractive
-   index, specific gravity, and which instruments were used (all chosen from
-   admin-managed reference lists).
-2. **Finalize** the report, which locks it against further edits.
-
-> Settled: a finalized report is locked for good, because the certificate is
-> printed from it.
-
-**Result:** each paid stone has one finalized identification report; status
-advances toward certification.
-
----
-
-### Stage 5 — Certificate & Handover
-**Who:** Receptionist (issue/handover)
-
-1. A **Certificate is issued per stone**, carrying its identification results.
-2. Each certificate **downloads as a PDF** for printing and handover. A revoked
-   certificate still downloads, watermarked REVOKED.
-3. Every certificate carries a **QR code** pointing at a public verification
-   page, so anyone holding the paper can confirm it is genuine and has not been
-   withdrawn. That page is deliberately anonymous — it describes the stone and
-   names nobody. See
-   [certificates.md](../engineering/certificates.md).
-4. The customer collects the certified stones; handover is recorded.
-
-> **(provisional)** A certificate is issued only once the bill is fully paid.
-> Revocation is settled; re-issuing is still an open question - see
-> [Business decisions](decisions.md).
-
-**Result:** each stone is certified and, once collected, closed out.
-
----
-
-## 4. Stone status lifecycle
-
-Each stone carries its **own status** (a fixed set defined in code), and every
-change is written to a **status-history audit trail** recording *who* moved it,
-*from* which status, *to* which status, *when*, and an optional note.
-
-The status list (B5 ✅ resolved):
-
-```
-received
-   │
-   ▼
-under_identification
-   │
-   ▼
-billed
-   │
-   ▼
-paid
-   │
-   ▼
-certified
-   │
-   ▼
-ready_for_collection
-   │
-   ▼
-collected
-
-  side states:  on_hold   ·   cancelled
+```text
+received -> billed -> paid -> certified -> ready_for_collection -> collected
 ```
 
-**Audit trail — every transition records:**
+`under_identification`, `on_hold`, and `cancelled` also exist. This is not an
+enforced transition graph: `transition_stone()` accepts any target status,
+skips a no-op, and records a `StatusHistory` row for a change. The API validates
+the status choice and requires `orders.transition_stone`; it does not validate
+the previous-to-next pair.
 
-| Field | Example |
-| --- | --- |
-| Stone | `ORD-26/27-00042-A` |
-| From status | `under_identification` |
-| To status | `billed` |
-| Changed by | gemmologist J. Doe |
-| Changed at | 2026-08-27 14:05 |
-| Note | "Preliminarily identified: Ruby" |
+An order has no stored pipeline stage. `order_stage()` derives it from the
+submitted count, registered stones, bill, and stone statuses. `orders_at_stage()`
+expresses corresponding list filters in SQL; tests compare the two.
 
----
-
-## 4b. Where a whole order has got to
-
-A stone has a status. An **order does not** — and that is a deliberate choice
-worth understanding before anyone adds the column.
-
-### The stage is derived, never stored
-
-Progress is per stone, and two stones from one visit can genuinely sit at
-different stages. But a list of orders still has to answer "where is this one?",
-so `OrderStage` gives the honest summary: **the stage the least advanced stone
-has reached**. An order is not ready to collect while one of its stones is still
-on the bench.
-
-```
-identifying → ready_to_bill → awaiting_payment → part_paid
-            → in_findings → certified → ready_for_collection → collected
-```
-
-plus `empty` for an order whose stones have not been entered yet.
-
-It is computed by `order_stage()` in `apps/orders/selectors.py` from the stone
-statuses and the bill, every time it is asked for. Nothing can drift, because
-there is nothing to drift *from* — no second copy of the truth to fall out of
-step when a stone moves.
-
-The cost is that a derived value cannot be filtered in SQL. So the same rule is
-expressed twice: `order_stage()` for one order in Python, and
-`orders_at_stage()` as a queryset filter for the Orders screen. A test asserts
-the two agree across every stage, which is what keeps the duplication safe.
-
-**If you are tempted to store the stage:** the reason not to is that every stone
-transition would then have to remember to recompute it, and the one code path
-that forgets produces an order whose badge disagrees with its own stones.
-
-### The hold is stored
-
-One part of an order's state genuinely cannot be derived: `OrderHold`, which is
-`active`, `on_hold` or `cancelled`.
-
-"The customer asked us to pause" and "the customer withdrew" are facts about the
-*visit*, not about any stone — no combination of stone statuses implies them, so
-they are a real column, with a reason, who set it and when. A hold outranks
-everything else: a held order reads as `on_hold` whatever its stones are doing.
-
-Holding or releasing an order needs the `orders.hold_order` permission, and a
-**paid order cannot be cancelled** — money has changed hands, so the withdrawal
-is a refund question rather than a status change.
-
----
-
-## 5. Key business rules (confirmed)
-
-1. **Reception records only a stone count** (`stone_count`); stones are created
-   later, at identification, one record per physical stone.
-2. A **report is produced per stone**, and **findings happens after
-   payment** (identify → pay → findings → finalize).
-3. Reference data (colors, species, treatments, prices, …) is **admin-managed**;
-   staff select from fixed lists, not free text.
-4. **One Bill per Order** — the customer pays once for the whole batch.
-5. Pricing is a **flat fee per stone category** — weight does not change it.
-6. A **certificate is issued per stone**.
-7. Each **stone moves independently** through the pipeline.
-8. Workflow **stages are fixed** (defined in code, not staff-editable).
-9. A **status audit trail is mandatory** — every transition is logged.
-
-*(The full list, with where each rule lives in code, is in
-[Business decisions](decisions.md).)*
-
----
-
-## 6. Open points that change this workflow
-
-Two rules are built on defaults the lab has not confirmed, and a few questions
-are still open; each would change a stage above. They are tracked in
-[Business decisions](decisions.md#provisional):
-
-| Point | Affects |
-| --- | --- |
-| Certificate only after the bill is fully paid (provisional) | Stages 3 → 5 |
-| Partial payments; cancelling or reissuing a bill | Stage 3 |
-| Re-issuing a certificate | Stage 5 |
+The separate `hold_status` is stored. Holding or cancelling an order overrides
+its displayed stage without changing its stones or bill. `orders.hold_order`
+allows hold/release; cancelling a fully paid order is refused. Releasing clears
+the hold metadata. This does not implement a payment refund or GePG cancellation.

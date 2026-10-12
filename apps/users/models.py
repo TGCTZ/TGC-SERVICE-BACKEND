@@ -114,11 +114,12 @@ class AuthSession(models.Model):
     """One login's server-side idle deadline, shared by its rotating JWTs."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="auth_sessions"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_sessions")
     last_interaction_at = models.DateTimeField(default=timezone.now)
     revoked_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Auth session {self.id} for user {self.user_id}"
 
 
 class IdentityDetail(BaseModel):

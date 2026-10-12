@@ -45,6 +45,8 @@ class Bill(BaseModel):
     status_desc = models.CharField(max_length=255, blank=True, default="")
     is_gepg_submitted = models.BooleanField(default=False)
     gepg_submitted_at = models.DateTimeField(null=True, blank=True)
+    control_number_sms_sent_at = models.DateTimeField(null=True, blank=True)
+    control_number_sms_sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

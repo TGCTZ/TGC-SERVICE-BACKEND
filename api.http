@@ -1,7 +1,7 @@
 @host = http://localhost:8000
 @api = {{host}}/api/v1
 
-### TGC Service API — request collection
+### TGPMIS API — request collection
 #
 # Runs in PyCharm/IntelliJ out of the box (click the green arrow beside a
 # request), and in VS Code with the "REST Client" extension.

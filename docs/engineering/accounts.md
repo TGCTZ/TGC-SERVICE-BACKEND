@@ -84,8 +84,9 @@ The steps, in order:
 
 1. `POST /auth/first-login/password/` `{password, password_confirm}` - Django's
    password validators apply, and the temporary password is refused. Clears
-   `must_change_password`, revokes every older token and **returns a fresh
-   token pair** (revoking also kills the token the request came in on).
+   `must_change_password`, blacklists outstanding refresh tokens and **returns
+   a fresh token pair**. Existing `AuthSession` rows are not revoked, so an
+   already-issued access token can remain usable until expiry or idle timeout.
 2. `POST /auth/first-login/profile/` `{first_name, last_name, phone_number,
    gender, middle_name?}` - refused while step 1 is due, so a leaked temporary
    password cannot finish the setup. Clears `must_complete_profile`.
@@ -103,10 +104,12 @@ user can reach before finishing is reachable with only the emailed password.
 ## Resetting a password
 
 `POST /api/v1/users/{id}/reset-password/` issues a new temporary password, emails
-it, returns it once, sets `must_change_password` and revokes every session. It
-requires `users.change_user` and follows the hierarchy (a peer is refused, a
-superior is not even visible). It refuses your own account - that is changed from
-Settings, where the current password is checked. The profile is left as it was.
+it, returns it once, sets `must_change_password`, and blacklists outstanding
+refresh tokens. It requires `users.change_user` and follows the hierarchy (a
+peer is refused, a superior is not even visible). It refuses your own account -
+that is changed from Settings, where the current password is checked. The profile
+is left as it was. Active `AuthSession` rows are not revoked, so existing access
+tokens remain usable until expiry or the session idle timeout.
 
 It is also the system's answer to a forgotten password: there is no self-service
 reset.

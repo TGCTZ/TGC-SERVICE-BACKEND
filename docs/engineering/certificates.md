@@ -75,9 +75,7 @@ uses the order's year and five-digit sequence plus the stone label. For example,
 stored `CERT-2627-00042-A` is displayed as `CERT-26/27-00042-A`. Verification
 URLs keep the slash-free stored identifier.
 
-Certificates are permanent once issued. There is no revoke endpoint or UI action.
-Historical records already marked revoked keep their status and watermark when
-viewed, downloaded, or checked through the public verification page.
+There is no certificate revoke action. Existing records with status `revoked` remain readable and retain their watermark on PDFs and the public verification page. A correction authorized by `identification.edit_finalized_report` updates the findings snapshot on the existing certificate; its number, issuance date, issuer, and signatory names remain unchanged.
 
 ## The PDF
 
@@ -285,7 +283,7 @@ issue time, like everything else on the page.
 | File | Holds |
 | --- | --- |
 | `models/certificate.py` | The snapshot columns, and why each one is separate |
-| `services/certificate.py` | Issuing and revoking, with the guards |
+| `services/certificate.py` | Issuing certificates and refreshing findings snapshots |
 | `services/pdf.py` | The template context and the render |
 | `services/assets.py` | Data URIs, the photo pipeline, the QR code |
 | `verify.py` / `urls_public.py` | The public page, and why it sits outside the API |

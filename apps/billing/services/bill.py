@@ -20,6 +20,7 @@ from ..gateways.gepg import (
     ACK_SUCCESS,
     build_bill_response_ack,
     parse_bill_response,
+    send_control_number_sms,
     submit_bill,
 )
 from ..models import Bill, BillItem
@@ -183,6 +184,11 @@ def _submit_existing_bill(bill: Bill, *, user=None) -> Bill:
             "updated_at",
         ]
     )
+    if bill.control_number and bill.control_number != "PENDING":
+        try:
+            send_control_number_sms(bill)
+        except Exception:
+            logger.exception("Could not send control-number SMS for %s", bill.bill_number)
     return bill
 
 
@@ -228,11 +234,17 @@ def handle_bill_response_callback(xml_content: str) -> str:
         return build_bill_response_ack("ERROR", "7102")
 
     bill = Bill.objects.filter(bill_number=data["bill_id"]).first()
-    if bill is not None and data["control_number"]:
+    if bill is None:
+        return build_bill_response_ack(data["res_id"] or "ERROR", "7102")
+    if data["control_number"]:
         bill.control_number = data["control_number"]
         bill.status_code = data["status_code"]
         bill.status_desc = data["status_desc"]
         bill.save(
             update_fields=["control_number", "status_code", "status_desc", "updated_at"]
         )
+        try:
+            send_control_number_sms(bill)
+        except Exception:
+            logger.exception("Could not send control-number SMS for %s", bill.bill_number)
     return build_bill_response_ack(data["res_id"], "7101")
