@@ -165,7 +165,7 @@ how it is built.
 | [Operations](docs/engineering/operations.md) | Configuration, email, and what to run after a deploy |
 | [Conventions](docs/engineering/conventions.md) | The numbered rules this project holds itself to |
 | [Adding an app](docs/engineering/adding-an-app.md) | The shape every domain app follows |
-| [Tech stack](docs/engineering/tech-stack.md) | Every dependency, and the alternatives rejected |
+| [Tech stack](docs/engineering/tech-stack.md) | Runtime components, project-specific choices, and engineering tools |
 
 ## Layout
 

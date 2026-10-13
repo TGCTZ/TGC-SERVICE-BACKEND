@@ -8,9 +8,12 @@ import base64
 from functools import lru_cache
 from pathlib import Path
 
+from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import pkcs12
+from defusedxml.ElementTree import fromstring as parse_xml
 
 from django.conf import settings
 
@@ -63,5 +66,48 @@ def sign_payload(xml: str) -> str:
 
 
 def sign_if_enabled(xml: str) -> str:
-    """Sign the payload when GEPG_USE_DIGITAL_SIGNATURE is on; otherwise pass through."""
-    return sign_payload(xml) if settings.GEPG_USE_DIGITAL_SIGNATURE else xml
+    """Sign XML or fail closed when a live gateway request would be unsigned."""
+    if settings.GEPG_USE_DIGITAL_SIGNATURE:
+        return sign_payload(xml)
+    if not settings.DEBUG and not settings.GEPG_SIMULATE:
+        raise RuntimeError("GePG digital signing is required outside development.")
+    return xml
+
+
+@lru_cache(maxsize=1)
+def _load_gateway_public_key():
+    """Load the registered GePG public certificate from PFX, PEM, or DER."""
+    path = Path(settings.GEPG_PUBLIC_CERT_PATH)
+    if not path.is_file():
+        raise FileNotFoundError(f"GePG public certificate not found: {path}")
+    data = path.read_bytes()
+    password = (settings.GEPG_PUBLIC_CERTIFICATE_PASSWORD or "").encode("utf-8")
+    try:
+        _key, certificate, _chain = pkcs12.load_key_and_certificates(data, password)
+    except ValueError:
+        try:
+            certificate = x509.load_pem_x509_certificate(data)
+        except ValueError:
+            certificate = x509.load_der_x509_certificate(data)
+    if certificate is None:
+        raise ValueError("GePG public certificate file contains no certificate.")
+    return certificate.public_key()
+
+
+def verify_payload(xml: str) -> bool:
+    """Verify a GePG signature over the exact inner XML payload."""
+    try:
+        root = parse_xml(xml)
+        signature_text = root.findtext("signature")
+        if not signature_text:
+            return False
+        signature = base64.b64decode(signature_text, validate=True)
+        _load_gateway_public_key().verify(
+            signature,
+            _inner_content(xml).encode("utf-8"),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    except (ValueError, InvalidSignature, TypeError):
+        return False
+    return True

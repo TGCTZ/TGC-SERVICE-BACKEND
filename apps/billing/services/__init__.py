@@ -4,6 +4,7 @@ from .bill import (
     generate_bill_for_order,
     handle_bill_response_callback,
     preview_bill_for_order,
+    record_bill_submission_result,
     retry_bill_for_order,
 )
 from .gepg_operations import (
@@ -24,6 +25,7 @@ __all__ = [
     "identify_stone",
     "preview_bill_for_order",
     "process_payment_notification",
+    "record_bill_submission_result",
     "request_reconciliation",
     "retry_bill_for_order",
 ]

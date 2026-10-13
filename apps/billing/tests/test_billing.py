@@ -163,7 +163,7 @@ def test_an_unparseable_notification_returns_a_failure_ack():
 
     ack = process_payment_notification("not xml at all")
 
-    assert "7102" in ack
+    assert "7242" in ack
     assert ack.strip().startswith("<")
 
 
@@ -203,7 +203,7 @@ def test_a_notification_for_an_unknown_bill_returns_a_failure_ack(billable_order
 
     ack = process_payment_notification(xml)
 
-    assert "7102" in ack
+    assert "7204" in ack
     assert not Payment.objects.filter(trx_id="TRX-GHOST-1").exists()
 
 
@@ -258,7 +258,7 @@ def test_bills_are_not_client_writable(billable_order, admin_user, auth_client):
     assert bill.status == BillStatus.PENDING
 
 
-def test_payment_webhook_needs_no_authentication(billable_order, client):
+def test_payment_webhook_needs_no_authentication(billable_order, client, settings):
     """The gateway has no credentials; the callback must not 401.
 
     This is the URL GePG posts to, so a 401 here would silently strand every
@@ -266,6 +266,10 @@ def test_payment_webhook_needs_no_authentication(billable_order, client):
     """
     from apps.billing.dev import _payment_xml
 
+    # Callback signature behavior is covered independently; this test focuses
+    # on the registered endpoint using the local development payload.
+    settings.DEBUG = True
+    settings.GEPG_USE_DIGITAL_SIGNATURE = False
     bill = generate_bill_for_order(billable_order)
     bill.control_number = "991234567892"
     bill.save(update_fields=["control_number"])

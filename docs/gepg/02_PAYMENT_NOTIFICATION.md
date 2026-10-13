@@ -1,8 +1,8 @@
 # Payment notifications
 
-`POST /gepg/payments/notification/` passes its decoded request body to
-`process_payment_notification()`. The response is acknowledgement XML, with
-optional signing controlled by `GEPG_USE_DIGITAL_SIGNATURE`.
+`POST /gepg/payments/notification/` verifies the request signature, stores the
+callback in the PostgreSQL inbox, and queues `process_payment_notification()`.
+The endpoint acknowledges only after persistence and queue submission succeed.
 
 ## Parsing and settlement
 
@@ -29,18 +29,19 @@ Settlement sums payment amounts without currency conversion or an
 
 ## Acknowledgements and transactions
 
-Successful handling returns `pmtSpNtfReqAck` with code `7101`. Caught XML/value
-parsing errors and caught application errors return `7102`. The parser can also
-raise errors outside its caught exception set, so callers must not assume that
-every malformed payload receives XML.
+Successful processing returns `pmtSpNtfReqAck` with code `7101`. Invalid
+request data uses `7242`, an unknown bill uses `7204`, and an internal processing
+failure uses `7321`. The callback endpoint rejects invalid signatures with
+`7303`; broker/database outages return HTTP 503 for redelivery.
 
-Each `_apply_payment()` call is atomic. The notification loop can return a
-failure acknowledgement after an earlier transaction has succeeded; it does not
-guarantee all-or-nothing processing of a multi-transaction notification.
+Each `_apply_payment()` call is atomic and idempotent on GePG transaction ID.
+Reconciliation responses use the same path, so a transaction missed by a
+notification can still settle its bill without creating a duplicate payment.
 
 Request examples are in [`api.http`](../../api.http). Use the same transaction ID
 to exercise redelivery, a new ID for another payment, and a smaller amount to
 exercise partial settlement. Use the [simulation helper](README.md#working-offline)
 when the real gateway is unavailable.
 
-Inbound signatures are not verified; see the [integration limitations](README.md#current-limitations).
+See the [production setup](04_GEPG_PRODUCTION_SETUP.md) for callback signing
+certificates, Redis workers, and retry monitoring.

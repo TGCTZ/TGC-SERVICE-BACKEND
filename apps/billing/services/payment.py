@@ -25,22 +25,25 @@ def process_payment_notification(xml_content: str) -> str:
     """Handle a GePG payment notification callback; return a signed ack XML.
 
     Every exit path returns well-formed XML, because the gateway is not a
-    browser: an unparseable body or a failure mid-way still has to answer with a
-    ``7102`` ack rather than an error page, or GePG will keep redelivering.
+    browser: an unparseable body or a failure mid-way must return a protocol
+    acknowledgement code rather than an HTML error page.
     """
     try:
         header, transactions = parse_payment_notification(xml_content)
     except (ValueError, ParseError, DefusedXmlException) as exc:
         logger.error("Invalid GePG payment notification: %s", exc)
-        return build_payment_ack("ERROR", "7102")
+        return build_payment_ack("ERROR", "7242")
 
     req_id = header["req_id"]
     try:
         for txn in transactions:
             _apply_payment(header, txn, xml_content)
+    except ServiceError as exc:
+        logger.info("GePG payment notification needs bill reconciliation: %s", exc)
+        return build_payment_ack(req_id or "ERROR", "7204")
     except Exception:
         logger.exception("Failed to process GePG payment notification")
-        return build_payment_ack(req_id or "ERROR", "7102")
+        return build_payment_ack(req_id or "ERROR", "7321")
     return build_payment_ack(req_id, "7101")
 
 
