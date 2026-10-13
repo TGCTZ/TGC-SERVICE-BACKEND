@@ -9,6 +9,7 @@ import re
 import secrets
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
+from uuid import uuid4
 
 import requests
 from defusedxml.common import DefusedXmlException
@@ -19,6 +20,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from ..gepg_transport import finish_gepg_request, send_gepg_request
+from ..models import GePGRequest
 from .signing import sign_if_enabled
 
 logger = logging.getLogger(__name__)
@@ -66,8 +69,9 @@ def normalize_msisdn(phone) -> str:
 
 
 def generate_req_id() -> str:
-    """Unique request id: SP group code + timestamp."""
-    return f"{settings.GEPG_SP_GRP_CODE}{timezone.now():%Y%m%d%H%M%S}"
+    """Create a collision-resistant ID while retaining the provider prefix."""
+    prefix = settings.GEPG_SP_GRP_CODE[:20]
+    return f"{prefix}{uuid4().hex}"
 
 
 def parse_datetime(value: str) -> datetime:
@@ -166,24 +170,31 @@ def submit_bill(bill, customer, username: str = "System") -> dict:
         return _result(True, control_number, "7101", "Simulated (dev)", True, None)
 
     xml_payload = sign_if_enabled(build_bill_xml(bill, customer, username))
-    try:
-        response = requests.post(
-            settings.GEPG_BILL_CREATE_URL,
-            data=xml_payload.encode("utf-8"),
-            headers={
-                "Content-Type": "application/xml",
-                "Gepg-Com": "default.sp.in",
-                "Gepg-Code": settings.GEPG_SP_CODE,
-            },
-            timeout=30,
+    request_record, raw = send_gepg_request(
+        GePGRequest.Operation.BILL,
+        settings.GEPG_BILL_CREATE_URL,
+        xml_payload,
+        bill=bill,
+    )
+    if raw is None:
+        logger.error("GePG bill request %s will be retried", request_record.req_id)
+        return _result(
+            False,
+            None,
+            "CONNECTION_ERROR",
+            request_record.last_error,
+            False,
+            None,
         )
-        response.raise_for_status()
-        raw = response.text
-    except requests.exceptions.RequestException as exc:
-        logger.error("GePG bill submission failed: %s", exc)
-        return _result(False, None, "CONNECTION_ERROR", str(exc), False, None)
-
-    return _parse_bill_response(raw)
+    result = _parse_bill_response(raw)
+    finish_gepg_request(
+        request_record,
+        accepted=result["success"],
+        status_code=result["status_code"],
+        status_desc=result["status_desc"],
+        response_xml=raw,
+    )
+    return result
 
 
 @transaction.atomic
@@ -245,10 +256,15 @@ def _parse_bill_response(raw: str) -> dict:
     bill_dtl = root.find("billSubRes//BillDtl")
     if bill_dtl is not None:
         control_number = bill_dtl.findtext("BillCntrNum")
+        status_code = bill_dtl.findtext("BillStsCode") or root.findtext(
+            "billSubRes/BillHdr/ResStsCode", ""
+        )
+        if control_number in (None, "", "0") or status_code != "7101":
+            control_number = None
         return _result(
             bool(control_number),
             control_number,
-            bill_dtl.findtext("BillStsCode", ""),
+            status_code,
             bill_dtl.findtext("BillStsDesc", ""),
             True,
             raw,
@@ -299,29 +315,58 @@ def parse_payment_notification(xml_content: str) -> tuple[dict, list[dict]]:
         "cust_cntr_num": pmt_hdr.findtext("CustCntrNum", ""),
         "entry_count": int(pmt_hdr.findtext("EntryCnt", "1")),
     }
-    transactions = [
-        {
-            "sp_code": d.findtext("SpCode", ""),
-            "gepg_bill_id": d.findtext("BillId", ""),
-            "bill_ctr_num": d.findtext("BillCtrNum", ""),
-            "psp_code": d.findtext("PspCode", ""),
-            "psp_name": d.findtext("PspName", ""),
-            "trx_id": d.findtext("TrxId", ""),
-            "pay_ref_id": d.findtext("PayRefId", ""),
-            "bill_amount": Decimal(d.findtext("BillAmt", "0")),
-            "paid_amount": Decimal(d.findtext("PaidAmt", "0")),
-            "bill_pay_opt": d.findtext("BillPayOpt", ""),
-            "currency": d.findtext("Ccy", ""),
-            "coll_acc_num": d.findtext("CollAccNum", ""),
-            "trx_dt_tm": parse_datetime(d.findtext("TrxDtTm", "")),
-            "usd_pay_chnl": d.findtext("UsdPayChnl", ""),
-            "pyr_cell_num": d.findtext("PyrCellNum", ""),
-            "pyr_email": d.findtext("PyrEmail", ""),
-            "pyr_name": d.findtext("PyrName", ""),
-        }
-        for d in details
-    ]
+    if (
+        not header["req_id"]
+        or not header["grp_bill_id"]
+        or not header["sp_grp_code"]
+        or not header["cust_cntr_num"]
+        or header["entry_count"] != len(details)
+    ):
+        raise ValueError("Payment notification header or EntryCnt is invalid")
+    transactions = [parse_payment_detail(detail) for detail in details]
     return header, transactions
+
+
+def parse_payment_detail(detail) -> dict:
+    """Translate a payment detail into the shared payment persistence shape."""
+    required = (
+        "SpCode",
+        "BillId",
+        "BillCtrNum",
+        "PspCode",
+        "PspName",
+        "TrxId",
+        "PayRefId",
+        "BillAmt",
+        "PaidAmt",
+        "BillPayOpt",
+        "Ccy",
+        "CollAccNum",
+        "TrxDtTm",
+        "UsdPayChnl",
+    )
+    if any(not detail.findtext(name) for name in required):
+        raise ValueError("Payment transaction is missing a required field")
+    return {
+        "cust_cntr_num": detail.findtext("CustCntrNum", ""),
+        "sp_code": detail.findtext("SpCode", ""),
+        "gepg_bill_id": detail.findtext("BillId", ""),
+        "bill_ctr_num": detail.findtext("BillCtrNum", ""),
+        "psp_code": detail.findtext("PspCode", ""),
+        "psp_name": detail.findtext("PspName", ""),
+        "trx_id": detail.findtext("TrxId", ""),
+        "pay_ref_id": detail.findtext("PayRefId", ""),
+        "bill_amount": Decimal(detail.findtext("BillAmt", "0")),
+        "paid_amount": Decimal(detail.findtext("PaidAmt", "0")),
+        "bill_pay_opt": detail.findtext("BillPayOpt", ""),
+        "currency": detail.findtext("Ccy", ""),
+        "coll_acc_num": detail.findtext("CollAccNum", ""),
+        "trx_dt_tm": parse_datetime(detail.findtext("TrxDtTm", "")),
+        "usd_pay_chnl": detail.findtext("UsdPayChnl", ""),
+        "pyr_cell_num": detail.findtext("PyrCellNum", ""),
+        "pyr_email": detail.findtext("PyrEmail", ""),
+        "pyr_name": detail.findtext("PyrName", ""),
+    }
 
 
 def build_payment_ack(req_id: str, status_code: str = "7101") -> str:
@@ -329,8 +374,8 @@ def build_payment_ack(req_id: str, status_code: str = "7101") -> str:
     ack = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Gepg>
     <pmtSpNtfReqAck>
-        <AckId>SP{timezone.now():%Y%m%d%H%M%S}</AckId>
-        <ReqId>{req_id}</ReqId>
+        <AckId>{generate_req_id()}</AckId>
+        <ReqId>{escape_xml(req_id)}</ReqId>
         <AckStsCode>{status_code}</AckStsCode>
     </pmtSpNtfReqAck>
     <signature>SignatureGoesHere</signature>
@@ -363,9 +408,19 @@ def build_bill_response_ack(res_id: str, status_code: str = "7101") -> str:
     ack = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Gepg>
     <billSubResAck>
-        <ResId>{res_id}</ResId>
+        <AckId>{generate_req_id()}</AckId>
+        <ResId>{escape_xml(res_id)}</ResId>
         <AckStsCode>{status_code}</AckStsCode>
     </billSubResAck>
     <signature>SignatureGoesHere</signature>
 </Gepg>"""
+    return sign_if_enabled(ack)
+
+
+def build_reconciliation_ack(res_id: str, status_code: str = "7101") -> str:
+    """Build the acknowledgement for a ``sucSpPmtRes`` callback."""
+    ack = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Gepg><sucSpPmtResAck><AckId>{generate_req_id()}</AckId>
+<ResId>{escape_xml(res_id)}</ResId><AckStsCode>{status_code}</AckStsCode>
+</sucSpPmtResAck><signature>SignatureGoesHere</signature></Gepg>"""
     return sign_if_enabled(ack)

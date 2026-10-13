@@ -14,7 +14,9 @@ There are three different kinds of values:
 | GePG signing key and certificate | Old private PFX | Copy the same identity and re-encrypt the new copy with a new local password. Do not create a replacement key pair unless GePG registers it. |
 | Django secret, PFX copy password, Beem credentials | Django / local secret manager / existing Beem account | Generate a new Django secret and PFX password; copy the Beem API credentials from the old production configuration. |
 
-`GEPG_BILL_UPDATE_URL` is not used by this backend and should not be configured. `GEPG_PUBLIC_CERT_PATH` is currently not used to verify inbound callback signatures.
+`GEPG_BILL_UPDATE_URL` is not used by this backend and should not be configured.
+The GePG public certificate is required to verify callbacks and must be provisioned
+separately from the service provider's private signing PFX.
 
 ## 1. Collect the existing GePG values
 
@@ -27,6 +29,8 @@ GEPG_RECONCILIATION_URL
 GEPG_SP_GRP_CODE
 GEPG_SYS_CODE
 GEPG_SP_CODE
+GEPG_COM
+GEPG_ALG
 GEPG_SUB_SP_CODE
 GEPG_COLL_CENT_CODE
 GEPG_GFS_CODE
@@ -115,9 +119,14 @@ Configure these values in the VPS service environment or secret manager. Prefer 
 | `GEPG_BILL_CANCEL_URL` | Exact old production cancellation URL. |
 | `GEPG_RECONCILIATION_URL` | Exact old production reconciliation URL. |
 | `GEPG_SP_GRP_CODE`, `GEPG_SYS_CODE`, `GEPG_SP_CODE`, `GEPG_SUB_SP_CODE`, `GEPG_COLL_CENT_CODE`, `GEPG_GFS_CODE` | Exact old production service codes. |
+| `GEPG_COM`, `GEPG_ALG` | Exact HTTP header values supplied for the existing GePG registration. |
 | `GEPG_USE_DIGITAL_SIGNATURE` | `True` |
 | `GEPG_CERTIFICATE_PASSWORD` | Password used to re-encrypt the new PFX copy. |
 | `GEPG_PRIVATE_KEY_PATH` | Absolute VPS path to the mounted private PFX, e.g. `/run/secrets/gepg/private.pfx`. |
+| `GEPG_PUBLIC_CERT_PATH` | Absolute path to the GePG public certificate used to verify callbacks. |
+| `GEPG_PUBLIC_CERTIFICATE_PASSWORD` | Password for the GePG public certificate PFX, or blank for an unencrypted PEM/DER certificate. |
+| `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | Private Redis URLs used by the GePG worker and scheduler. |
+| `GEPG_RETRY_INITIAL_SECONDS`, `GEPG_RETRY_MAX_SECONDS`, `GEPG_RETRY_MAX_AGE_SECONDS` | Defaults are 60 seconds, 1800 seconds, and 86400 seconds. |
 | `BEEM_AFRICA_API_KEY`, `BEEM_AFRICA_SECRET_KEY` | Existing Beem production credentials. |
 | `AUTO_BILL_AFTER_IDENTIFICATION` | Set `True` only if production should automatically bill after the final stone is identified; otherwise `False`. |
 
@@ -164,8 +173,15 @@ Only after these checks pass should the public host/IP route to the new service 
 
 ## Production limits to account for
 
-- No old bills, payments, or reconciliation records are migrated. A callback for an old bill absent from the new database receives `7102` and may be retried by GePG.
-- Callback requests are CSRF-exempt and do not verify inbound signatures. `GEPG_PUBLIC_CERT_PATH` is not currently used for callback verification; protect the routes at the network edge and account for this limitation.
-- Cancellation and reconciliation were ported from the old implementation, but the old cancellation code described its destination as a mock. Without a live gateway check, neither flow is verified against GePG production.
+- No old bills, payments, or reconciliation records are migrated. A callback for an old bill absent from the new database is retained for staff review and is not applied to another bill.
+- Callback signatures are verified using the configured GePG public certificate. Confirm the certificate, registered `Gepg-Com`/`Gepg-Alg` values, and callback rejection codes with GePG during UAT.
+- Cancellation and reconciliation still require GePG UAT/SIT validation against the registered endpoints and current protocol examples.
 - A successful control-number SMS is recorded to prevent repeat sends. Beem delivery still depends on the credentials, customer phone number, and provider availability.
 - The old system's unused bill-update URL is intentionally omitted because there is no caller in either configured workflow.
+
+The Celery worker and beat services must be enabled alongside the web process.
+The PostgreSQL inbox/outbox is the recovery source when Redis is unavailable;
+the callback endpoint returns HTTP 503 rather than acknowledging work that was
+not queued. Monitor pending callback age, failed callbacks, exhausted outbound
+requests, invalid signature counts, and Redis/worker availability in staging
+before production cutover.

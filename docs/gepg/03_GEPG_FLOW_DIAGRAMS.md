@@ -1,6 +1,6 @@
 # GePG flows in the current system
 
-This guide traces the workspace implementation reviewed on 2026-10-08. It describes application behavior, including its current gaps; it is not a specification of the complete GePG protocol. Open it in a Markdown viewer with Mermaid support to see the diagrams.
+This guide is a **historical snapshot of the implementation reviewed on 2026-10-08**. Its gap descriptions and old acknowledgement/signing behavior were superseded by the protocol-alignment work. For current behavior, read [the adapter overview](00_GEPG_INTEGRATION_OVERVIEW.md), [bill submission](01_BILL_SUBMISSION.md), [payment notifications](02_PAYMENT_NOTIFICATION.md), and [production setup](04_GEPG_PRODUCTION_SETUP.md). Open the historical diagrams in a Markdown viewer with Mermaid support.
 
 ## Reading map
 

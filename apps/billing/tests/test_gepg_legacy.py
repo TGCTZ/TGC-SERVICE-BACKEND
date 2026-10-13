@@ -14,10 +14,19 @@ from cryptography.x509.oid import NameOID
 
 from django.urls import resolve
 
-from apps.billing.gateways.gepg import send_control_number_sms
-from apps.billing.gateways.signing import _load_private_key, sign_payload
+from apps.billing.gateways.gepg import _parse_bill_response, send_control_number_sms
+from apps.billing.gateways.signing import (
+    _load_gateway_public_key,
+    _load_private_key,
+    sign_if_enabled,
+    sign_payload,
+    verify_payload,
+)
+from apps.billing.gepg_transport import retry_gepg_request, send_gepg_request
 from apps.billing.models import (
     Bill,
+    GePGCallback,
+    GePGRequest,
 )
 from apps.billing.services import (
     cancel_bill,
@@ -112,17 +121,176 @@ def test_new_private_pfx_produces_a_real_signature(settings, tmp_path):
         _load_private_key.cache_clear()
 
 
+def test_inbound_signature_verifies_and_rejects_tampering(settings, tmp_path):
+    """Verify GePG signatures with the registered certificate and reject edits."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "GePG callback test")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(private_key, hashes.SHA256())
+    )
+    cert_path = tmp_path / "gepg-public.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    settings.GEPG_PUBLIC_CERT_PATH = cert_path
+    _load_gateway_public_key.cache_clear()
+    body = "<Gepg><sample>accepted</sample></Gepg>"
+    signature = private_key.sign(
+        b"<sample>accepted</sample>", padding.PKCS1v15(), hashes.SHA256()
+    )
+    signed = body.replace(
+        "</Gepg>",
+        f"<signature>{base64.b64encode(signature).decode()}</signature></Gepg>",
+    )
+    try:
+        assert verify_payload(signed)
+        assert not verify_payload(signed.replace("accepted", "tampered"))
+    finally:
+        _load_gateway_public_key.cache_clear()
+
+
+def test_unsigned_payload_fails_closed_outside_development(settings):
+    """Production-mode signing cannot silently send an unsigned request."""
+    settings.DEBUG = False
+    settings.GEPG_SIMULATE = False
+    settings.GEPG_USE_DIGITAL_SIGNATURE = False
+
+    with pytest.raises(RuntimeError, match="required outside development"):
+        sign_if_enabled("<Gepg><request /></Gepg>")
+
+
+@pytest.mark.parametrize(
+    ("status_code", "control_number", "accepted"),
+    [
+        ("7101", "991234567890", True),
+        ("7101", "0", False),
+        ("7241", "991234567890", False),
+    ],
+)
+def test_bill_submission_requires_success_code_and_real_control_number(
+    status_code, control_number, accepted
+):
+    """A business rejection or zero sentinel can never become a control number."""
+    response = (
+        "<Gepg><billSubRes><BillHdr><ResStsCode>7101</ResStsCode></BillHdr>"
+        f"<BillDtls><BillDtl><BillCntrNum>{control_number}</BillCntrNum>"
+        f"<BillStsCode>{status_code}</BillStsCode></BillDtl></BillDtls>"
+        "</billSubRes></Gepg>"
+    )
+    assert _parse_bill_response(response)["success"] is accepted
+
+
+def test_callback_is_persisted_before_success_ack(settings, client, monkeypatch):
+    """A callback response follows durable inbox storage and successful enqueue."""
+    settings.DEBUG = True
+    settings.GEPG_USE_DIGITAL_SIGNATURE = False
+    queued = []
+    monkeypatch.setattr(
+        "apps.billing.webhooks.process_gepg_callback.delay",
+        lambda callback_id: queued.append(callback_id),
+    )
+    payload = (
+        "<Gepg><billSubRes><BillHdr><ResId>RES-DURABLE-1</ResId></BillHdr>"
+        "<BillDtls><BillDtl><BillId>BILL-1</BillId></BillDtl></BillDtls>"
+        "</billSubRes></Gepg>"
+    )
+
+    response = client.post(
+        "/billing/api/bill/response/", data=payload, content_type="application/xml"
+    )
+
+    callback = GePGCallback.objects.get(kind=GePGCallback.Kind.BILL)
+    assert response.status_code == 200
+    assert "7101" in response.content.decode()
+    assert callback.payload == payload
+    assert queued == [callback.pk]
+
+
+def test_callback_returns_retryable_failure_when_broker_unavailable(
+    settings, client, monkeypatch
+):
+    """A broker outage leaves the verified event durable and asks GePG to retry."""
+    settings.DEBUG = True
+    settings.GEPG_USE_DIGITAL_SIGNATURE = False
+
+    def unavailable(_callback_id):
+        raise ConnectionError("Redis unavailable")
+
+    monkeypatch.setattr("apps.billing.webhooks.process_gepg_callback.delay", unavailable)
+    payload = (
+        "<Gepg><billSubRes><BillHdr><ResId>RES-DURABLE-2</ResId></BillHdr>"
+        "<BillDtls><BillDtl><BillId>BILL-1</BillId></BillDtl></BillDtls>"
+        "</billSubRes></Gepg>"
+    )
+
+    response = client.post(
+        "/billing/api/bill/response/", data=payload, content_type="application/xml"
+    )
+
+    assert response.status_code == 503
+    assert GePGCallback.objects.get(event_id="RES-DURABLE-2").status == "pending"
+
+
+def test_outbound_retry_reuses_persisted_payload_and_headers(settings, monkeypatch):
+    """A retry sends the exact stored XML and registered communication headers."""
+    settings.GEPG_COM = "registered.com"
+    settings.GEPG_ALG = "RSA-SHA256"
+    settings.GEPG_SP_CODE = "SP"
+    settings.GEPG_RETRY_INITIAL_SECONDS = 60
+    settings.GEPG_RETRY_MAX_SECONDS = 1800
+    payload = "<Gepg><billSubReq><ReqId>RETRY-1</ReqId></billSubReq></Gepg>"
+    captured = {}
+
+    class SuccessResponse(FakeResponse):
+        status_code = 200
+
+    def fail_once(url, **kwargs):
+        captured.update(kwargs)
+        raise __import__("requests").ConnectionError("network timeout")
+
+    monkeypatch.setattr("apps.billing.gepg_transport.requests.post", fail_once)
+    outbound, response = send_gepg_request(
+        GePGRequest.Operation.BILL,
+        "https://local.test/bill",
+        payload,
+    )
+    outbound.refresh_from_db()
+    assert response is None
+    assert outbound.status == GePGRequest.Status.RETRY
+    assert outbound.payload == payload
+
+    def succeed(url, **kwargs):
+        captured.update(kwargs)
+        return SuccessResponse("<Gepg><billSubReqAck /></Gepg>")
+
+    monkeypatch.setattr("apps.billing.gepg_transport.requests.post", succeed)
+    response = retry_gepg_request(outbound)
+
+    assert response == "<Gepg><billSubReqAck /></Gepg>"
+    assert captured["data"] == payload.encode()
+    assert captured["headers"]["Gepg-Com"] == "registered.com"
+    assert captured["headers"]["Gepg-Alg"] == "RSA-SHA256"
+
+
 def test_cancellation_uses_legacy_headers_xml_and_records_result(
     settings, monkeypatch, admin_user
 ):
     """Cancellation preserves the old request headers and persists its result."""
     settings.GEPG_SIMULATE = False
+    settings.DEBUG = True
     settings.GEPG_USE_DIGITAL_SIGNATURE = False
     settings.GEPG_SP_GRP_CODE, settings.GEPG_SYS_CODE, settings.GEPG_SP_CODE = (
         "GRP",
         "SYS",
         "SP",
     )
+    settings.GEPG_COM, settings.GEPG_ALG = "registered.com", "RSA-SHA256"
     bill = _bill()
     captured = {}
 
@@ -132,13 +300,14 @@ def test_cancellation_uses_legacy_headers_xml_and_records_result(
             "<Gepg><billCanclRes><CanclStsCode>7283</CanclStsCode><CanclStsDesc>Cancelled</CanclStsDesc></billCanclRes></Gepg>"
         )
 
-    monkeypatch.setattr("apps.billing.services.gepg_operations.requests.post", post)
+    monkeypatch.setattr("apps.billing.gepg_transport.requests.post", post)
     record = cancel_bill(bill, reason="retire & replace", user=admin_user)
 
     assert captured["headers"] == {
         "Content-Type": "application/xml",
-        "Gepg-Com": "changebill.sp.in",
+        "Gepg-Com": "registered.com",
         "Gepg-Code": "SP",
+        "Gepg-Alg": "RSA-SHA256",
     }
     assert "<CanclReasn>retire &amp; replace</CanclReasn>" in captured["data"].decode()
     bill.refresh_from_db()
@@ -158,7 +327,7 @@ def test_async_cancellation_callback_updates_bill_and_acknowledges(settings):
     assert "7283" in ack
 
 
-def test_unknown_bill_response_callback_returns_7102(settings):
+def test_unknown_bill_response_callback_returns_7204(settings):
     """Do not claim a callback was applied when its bill is not in this DB."""
     settings.GEPG_USE_DIGITAL_SIGNATURE = False
     from apps.billing.services import handle_bill_response_callback
@@ -169,7 +338,8 @@ def test_unknown_bill_response_callback_returns_7102(settings):
         "<BillCntrNum>991234567890</BillCntrNum></BillDtl></BillDtls></billSubRes></Gepg>"
     )
 
-    assert "7102" in ack
+    assert "7204" in ack
+    assert "<AckId>" in ack
 
 
 def test_reconciliation_request_and_callback_are_persisted(
@@ -182,6 +352,7 @@ def test_reconciliation_request_and_callback_are_persisted(
         "SYS",
         "SP",
     )
+    settings.GEPG_COM, settings.GEPG_ALG = "registered.com", "RSA-SHA256"
     settings.GEPG_RECONCILIATION_URL = "https://local.test/recon"
     captured = {}
 
@@ -191,20 +362,29 @@ def test_reconciliation_request_and_callback_are_persisted(
             "<Gepg><sucSpPmtReqAck><AckId>A1</AckId><ReqId>R1</ReqId><AckStsCode>7101</AckStsCode><AckStsDesc>Accepted</AckStsDesc></sucSpPmtReqAck></Gepg>"
         )
 
-    monkeypatch.setattr("apps.billing.services.gepg_operations.requests.post", post)
+    monkeypatch.setattr("apps.billing.gepg_transport.requests.post", post)
     record = request_reconciliation(date(2026, 10, 8), user=admin_user)
     assert "<sucSpPmtReq>" in captured["data"].decode()
-    assert captured["headers"]["Gepg-Com"] == "default.sp.in"
+    assert captured["headers"]["Gepg-Com"] == "registered.com"
+    assert captured["headers"]["Gepg-Alg"] == "RSA-SHA256"
     assert record.status == "acknowledged"
 
+    bill = _bill(total_amount=Decimal("10.00"))
     body = f"""<Gepg><sucSpPmtRes><BatchHdr><ResId>RES-1</ResId>
 <ReqId>{record.req_id}</ReqId><PayStsCode>7101</PayStsCode><PayStsDesc>OK</PayStsDesc>
-</BatchHdr><PmtDtls><PmtTrxDtl><TrxId>TX-1</TrxId><BillId>BILL-1</BillId>
-<PaidAmt>10.00</PaidAmt><BillAmt>10.00</BillAmt></PmtTrxDtl></PmtDtls></sucSpPmtRes></Gepg>"""
+</BatchHdr><PmtDtls><PmtTrxDtl><SpCode>SP</SpCode><BillId>{bill.bill_number}</BillId>
+<BillCtrNum>991234567890</BillCtrNum><PspCode>PSP</PspCode><PspName>Bank</PspName>
+<TrxId>TX-1</TrxId><PayRefId>REF-1</PayRefId><BillAmt>10.00</BillAmt>
+<PaidAmt>10.00</PaidAmt><BillPayOpt>3</BillPayOpt><Ccy>TZS</Ccy>
+<CollAccNum>ACC-1</CollAccNum><TrxDtTm>2026-10-08T10:00:00</TrxDtTm>
+<UsdPayChnl>Bank</UsdPayChnl></PmtTrxDtl></PmtDtls></sucSpPmtRes></Gepg>"""
     ack = handle_reconciliation_response(body)
     record.refresh_from_db()
     assert record.status == "completed"
     assert record.transactions.get().trx_id == "TX-1"
+    assert bill.payments.get().trx_id == "TX-1"
+    bill.refresh_from_db()
+    assert bill.status == "paid"
     assert "sucSpPmtResAck" in ack
 
 

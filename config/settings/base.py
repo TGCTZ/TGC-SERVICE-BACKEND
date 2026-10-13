@@ -267,13 +267,20 @@ GEPG_RECONCILIATION_URL = env("GEPG_RECONCILIATION_URL", default="")
 GEPG_SP_GRP_CODE = env("GEPG_SP_GRP_CODE", default="")
 GEPG_SYS_CODE = env("GEPG_SYS_CODE", default="")
 GEPG_SP_CODE = env("GEPG_SP_CODE", default="")
+GEPG_COM = env("GEPG_COM", default="")
+GEPG_ALG = env("GEPG_ALG", default="")
 GEPG_SUB_SP_CODE = env("GEPG_SUB_SP_CODE", default="")
 GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
 GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
 
-GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=False)
-# PKCS#12 password used when loading the optional outbound signing key.
+GEPG_USE_DIGITAL_SIGNATURE = env.bool(
+    "GEPG_USE_DIGITAL_SIGNATURE", default=not DEBUG
+)
+# PKCS#12 password used when loading the outbound signing key.
 GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
+GEPG_PUBLIC_CERTIFICATE_PASSWORD = env(
+    "GEPG_PUBLIC_CERTIFICATE_PASSWORD", default=""
+)
 GEPG_PRIVATE_KEY_PATH = env(
     "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")
 )
@@ -289,7 +296,28 @@ GEPG_SIMULATE = env.bool("GEPG_SIMULATE", default=False)
 
 # False retains the review and manual billing steps.
 AUTO_BILL_AFTER_IDENTIFICATION = env.bool("AUTO_BILL_AFTER_IDENTIFICATION", default=False)
-GEPG_ACK_SUCCESS_CODES = frozenset({"7101", "7241"})
+GEPG_ACK_SUCCESS_CODES = frozenset({"7101"})
+
+# Celery uses Redis for delivery; PostgreSQL inbox/outbox rows remain the source
+# of truth so an unavailable broker cannot make an acknowledged callback vanish.
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/1")
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = {
+    "recover-gepg-messages": {
+        "task": "apps.billing.tasks.recover_pending_gepg_messages",
+        "schedule": 60.0,
+    },
+}
+
+GEPG_RETRY_INITIAL_SECONDS = env.int("GEPG_RETRY_INITIAL_SECONDS", default=60)
+GEPG_RETRY_MAX_SECONDS = env.int("GEPG_RETRY_MAX_SECONDS", default=1800)
+GEPG_RETRY_MAX_AGE_SECONDS = env.int(
+    "GEPG_RETRY_MAX_AGE_SECONDS", default=86400
+)
 
 # Control-number messages use the existing Beem account from the retired app.
 BEEM_AFRICA_API_KEY = env("BEEM_AFRICA_API_KEY", default="")

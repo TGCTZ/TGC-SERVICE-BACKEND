@@ -23,7 +23,7 @@ from ..gateways.gepg import (
     send_control_number_sms,
     submit_bill,
 )
-from ..models import Bill, BillItem
+from ..models import Bill, BillItem, GePGRequest
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +167,11 @@ def _submit_existing_bill(bill: Bill, *, user=None) -> Bill:
     username = user.get_username() if user is not None else "System"
     result = submit_bill(bill, order.customer, username)
 
+    return record_bill_submission_result(bill, result)
+
+
+def record_bill_submission_result(bill: Bill, result: dict) -> Bill:
+    """Persist a synchronous or retried GePG submission result consistently."""
     bill.is_gepg_submitted = True
     bill.gepg_submitted_at = timezone.now()
     # Truncate to the columns' limits - gateway and connection errors are verbose.
@@ -198,6 +203,9 @@ def bill_needs_attention(bill: Bill) -> bool:
         bill.status == BillStatus.PENDING
         and not bill.control_number
         and bill.status_code not in ACK_SUCCESS
+        and not bill.gepg_requests.filter(
+            status__in=[GePGRequest.Status.SENDING, GePGRequest.Status.RETRY]
+        ).exists()
     )
 
 
@@ -231,12 +239,12 @@ def handle_bill_response_callback(xml_content: str) -> str:
         data = parse_bill_response(xml_content)
     except (ValueError, ParseError, DefusedXmlException) as exc:
         logger.error("Invalid GePG bill response: %s", exc)
-        return build_bill_response_ack("ERROR", "7102")
+        return build_bill_response_ack("ERROR", "7242")
 
     bill = Bill.objects.filter(bill_number=data["bill_id"]).first()
     if bill is None:
-        return build_bill_response_ack(data["res_id"] or "ERROR", "7102")
-    if data["control_number"]:
+        return build_bill_response_ack(data["res_id"] or "ERROR", "7204")
+    if data["status_code"] == "7101" and data["control_number"] not in ("", "0"):
         bill.control_number = data["control_number"]
         bill.status_code = data["status_code"]
         bill.status_desc = data["status_desc"]

@@ -18,17 +18,19 @@ two-decimal strings; bill identifiers remain slash-free. Customer text is
 escaped, phone numbers are normalized, and the customer ID is zero-padded.
 `BillPayOpt` is `3`; `MinPayAmt` is the full bill amount.
 
-`submit_bill()` optionally signs this XML and POSTs it with `Content-Type:
-application/xml`, `Gepg-Com: default.sp.in`, and `Gepg-Code` from settings.
-Connection/HTTP errors return `CONNECTION_ERROR`; malformed XML returns
-`XML_PARSE_ERROR`; an unknown response shape returns `UNKNOWN_RESPONSE`.
+`submit_bill()` signs and persists this exact XML before POSTing it with
+`Content-Type: application/xml`, configured `Gepg-Com` and `Gepg-Alg`, and
+`Gepg-Code` from settings. Transport failures retry the stored payload with
+bounded exponential backoff for up to 24 hours. Business rejections are not
+retried.
 
 ## Control numbers
 
 | Response | Stored behavior |
 | --- | --- |
-| `billSubRes` with a control number | Save the number and status fields |
-| Accepted `billSubReqAck` (`7101` or `7241`) | Keep control number empty pending callback |
+| `billSubRes` with `BillStsCode=7101` and a nonzero control number | Save the number and status fields |
+| Accepted `billSubReqAck` (`7101`) | Keep control number empty pending callback |
+| `billSubReqAck` with `7241` | Treat as invalid session; do not mark accepted |
 | Rejection or handled connection/parsing error | Keep the local bill and failure details |
 
 `PENDING` is an internal result marker and is not stored as a control number
@@ -36,10 +38,10 @@ by the submission service. `is_gepg_submitted` records an attempted submission,
 including a failed one; it does not prove acceptance.
 
 `POST /gepg/bill/response/` extracts `ResId`, `BillId`, `BillCntrNum`, and status
-fields. A matching bill with a nonempty number is updated. A parseable callback
-for an unknown bill is still acknowledged with `7101`; malformed XML handled
-by the service returns `7102`. The callback does not check success status before
-saving a supplied number.
+fields. The callback is verified and stored before it is queued. A matching
+bill receives a control number only when its bill-level status is `7101` and
+the number is neither empty nor `0`. Unknown bills are recorded as failures for
+staff review.
 
 ## Automatic billing and retries
 
@@ -55,4 +57,5 @@ without replacing lines, number, or stone statuses. Held orders are refused.
 
 An existing bill needs attention only when it is `pending`, has no control
 number, and has no accepted acknowledgement code. Accepted asynchronous bills
-are therefore not eligible for retry. There is no background retry worker.
+wait for their callback. Celery workers retry persisted transport failures;
+exhausted requests remain visible to staff in the GePG outbound-request admin.

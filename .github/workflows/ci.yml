@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [master, main]
-  pull_request:
+pull_request:
 
 permissions:
   contents: read
@@ -179,6 +179,8 @@ jobs:
           /home/madini01/.local/bin/uv run python manage.py migrate --noinput
           /home/madini01/.local/bin/uv run python manage.py collectstatic --noinput
           sudo -n /usr/bin/systemctl restart tgpmis-gunicorn.service
+          sudo -n /usr/bin/systemctl restart tgpmis-celery-worker.service
+          sudo -n /usr/bin/systemctl restart tgpmis-celery-beat.service
           REMOTE
 
       - name: Check production health

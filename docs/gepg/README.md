@@ -25,13 +25,14 @@ See [`apps/billing/dev.py`](../../apps/billing/dev.py).
 
 ## Current limitations
 
-- Inbound callbacks do not verify signatures. `GEPG_PUBLIC_CERT_PATH` is read
-  into settings but not used for verification. A forged matching notification
-  can affect payment state.
-- When signing is enabled, a missing or invalid PFX fails the outbound operation;
-  the adapter does not send placeholder signatures after signing errors.
-- Retries are explicit API actions, not a scheduled queue. Accepted submissions
-  without a control number wait for the callback and are not retry candidates.
+- Inbound callback signatures are verified against the configured GePG public
+  certificate before callbacks enter the durable inbox. Production settings
+  require signing and the registered `GEPG_COM` and `GEPG_ALG` values.
+- Callback processing and outbound retries run through Celery and Redis. The
+  PostgreSQL inbox/outbox records support recovery after worker or broker
+  interruptions; application rejections are not automatically retried.
+- Accepted asynchronous submissions without a control number wait for the
+  callback and are not outbound retry candidates.
 - Cancellation and reconciliation API actions are implemented, but the old
   cancellation endpoint was described as a mock and neither flow is live-verified.
 - Beem SMS is sent when a control number is available; delivery depends on
