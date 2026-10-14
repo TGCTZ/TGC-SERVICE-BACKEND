@@ -7,7 +7,7 @@ not the full GePG protocol.
 | Guide | Purpose |
 | --- | --- |
 | [Overview](00_GEPG_INTEGRATION_OVERVIEW.md) | Modules, configuration, and current limitations |
-| [Flow diagrams](03_GEPG_FLOW_DIAGRAMS.md) | End-to-end visual guide to billing, callbacks, settlement, retries, and simulation |
+| [Historical flow diagrams](03_GEPG_FLOW_DIAGRAMS.md) | October 8 implementation snapshot; use the current guides below for present behavior |
 | [Bill submission](01_BILL_SUBMISSION.md) | Local billing, submission, retries, and control-number callbacks |
 | [Payment notifications](02_PAYMENT_NOTIFICATION.md) | Parsing, settlement, acknowledgements, and duplicate handling |
 | [Production setup](04_GEPG_PRODUCTION_SETUP.md) | VPS secrets, PFX provisioning, callback routing, and pre-cutover checks |
@@ -25,16 +25,21 @@ See [`apps/billing/dev.py`](../../apps/billing/dev.py).
 
 ## Current limitations
 
-- Inbound callback signatures are verified against the configured GePG public
-  certificate before callbacks enter the durable inbox. Production settings
-  require signing and the registered `GEPG_COM` and `GEPG_ALG` values.
+- Outbound signing is required in production. Inbound callback verification is
+  controlled by `GEPG_VERIFY_CALLBACK_SIGNATURE` and defaults to `False` to
+  match the legacy integration; a public certificate is required only when
+  verification is enabled. `GEPG_COM` is required and `GEPG_ALG` is optional.
 - Callback processing and outbound retries run through Celery and Redis. The
   PostgreSQL inbox/outbox records support recovery after worker or broker
   interruptions; application rejections are not automatically retried.
 - Accepted asynchronous submissions without a control number wait for the
   callback and are not outbound retry candidates.
-- Cancellation and reconciliation API actions are implemented, but the old
-  cancellation endpoint was described as a mock and neither flow is live-verified.
+- A non-simulated control-number request received a GePG reply on 2026-10-14.
+  A bill is issued a number only after a successful `billSubRes` with
+  `BillStsCode=7101` and a nonzero `BillCntrNum`; an accepted `billSubReqAck`
+  (`7101`) remains pending until its callback arrives.
+- Cancellation and reconciliation API actions are implemented, but their live
+  GePG flows have not yet been confirmed.
 - Beem SMS is sent when a control number is available; delivery depends on
   provider availability and configured credentials.
 

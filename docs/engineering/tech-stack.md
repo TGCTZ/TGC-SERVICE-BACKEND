@@ -13,7 +13,7 @@ version numbers into this guide.
 | Authentication | Simple JWT | Access and refresh tokens, refresh-token rotation and blacklisting, plus project session checks. |
 | Filtering and schema | django-filter, drf-spectacular | Request filtering and generated OpenAPI documentation. |
 | Audit and configuration | django-auditlog, django-environ | Model-change history and typed environment settings. |
-| Gateway | requests, defusedxml, cryptography | GePG HTTP calls, safe XML parsing, outbound signing, and inbound signature verification. |
+| Gateway | requests, defusedxml, cryptography | GePG HTTP calls, safe XML parsing, outbound signing, and optional inbound signature verification. |
 | Background work | Celery, Redis | Asynchronous callback processing, outbound retry scheduling, and periodic recovery. |
 | Durable message state | Django ORM, PostgreSQL | Callback inbox and outbound request records; the database remains the recovery source if Redis or a worker restarts. |
 | Certificate output | WeasyPrint, qrcode, Pillow | PDF rendering, verification QR codes, and image support. |
@@ -23,13 +23,16 @@ dependencies are needed for PDF rendering; other API endpoints can start without
 them. The [operations guide](operations.md#what-to-back-up) describes the
 runtime assets used by deployments.
 
-The GePG adapter requires outbound signing and callback verification in
-production. Production settings fail to start when the signing key, GePG public
-certificate, or registered `GEPG_COM`/`GEPG_ALG` header values are missing. The
-callback endpoints persist verified messages before acknowledging them, and
-Celery workers process the inbox and retry exact persisted outbound requests.
-See the [GePG integration guide](../gepg/README.md) for protocol behavior and
-the [deployment guide](../deployment.md) for worker and Redis setup.
+The GePG adapter requires outbound signing in production. Production settings
+require the private signing key and registered `GEPG_COM` value; `GEPG_ALG` is
+optional and its header is omitted when unset. Callback signature verification
+defaults to off for legacy compatibility and can be enabled with
+`GEPG_VERIFY_CALLBACK_SIGNATURE` when the GePG public certificate is configured.
+Payment, bill-response, and reconciliation callbacks are persisted before they
+are queued. Celery workers process the inbox and retry exact persisted outbound
+requests. See the [GePG integration guide](../gepg/README.md) for protocol
+behavior and the [deployment guide](../deployment.md) for worker and Redis
+setup.
 
 ## Development and checks
 

@@ -42,9 +42,13 @@ setting reads a variable that file does not mention.
 | `CERTIFICATE_VERIFY_BASE_URL` | `http://localhost:8000` | Absolute base of the QR link on every certificate. Must be publicly reachable. |
 | `GEPG_SIMULATE` | `False` | Fake control numbers and payments, to walk the pipeline offline. Needs `DEBUG` too. |
 | `GEPG_*_URL`, `GEPG_*_CODE` | empty | Gateway endpoints and the lab's codes - see [GePG integration](../gepg/README.md). |
-| `GEPG_USE_DIGITAL_SIGNATURE` | `False` | Sign payloads with the PKCS#12 key below. |
+| `GEPG_COM` | empty | Required registered `Gepg-Com` header in production. |
+| `GEPG_ALG` | empty | Optional `Gepg-Alg` header; omitted when unset. |
+| `GEPG_USE_DIGITAL_SIGNATURE` | `False` | Sign payloads with the PKCS#12 key below; required in production. |
+| `GEPG_VERIFY_CALLBACK_SIGNATURE` | `False` | Match legacy callback handling; public-certificate verification is opt-in. |
 | `GEPG_CERTIFICATE_PASSWORD` | empty | The key's passphrase. |
-| `GEPG_PRIVATE_KEY_PATH`, `GEPG_PUBLIC_CERT_PATH` | `certificates/private.pfx`, `certificates/public.pfx` | The signing key and the gateway's certificate. |
+| `GEPG_PRIVATE_KEY_PATH` | `certificates/private.pfx` | Required production signing key. |
+| `GEPG_PUBLIC_CERT_PATH`, `GEPG_PUBLIC_CERTIFICATE_PASSWORD` | `certificates/public.pfx`, empty | Used only when callback signature verification is enabled. |
 | `GEPG_BILL_EXPIRY_DAYS` | `365` | How long a control number stays payable. |
 
 ## Before the first deploy
