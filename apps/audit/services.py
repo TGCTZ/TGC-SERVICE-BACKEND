@@ -1,7 +1,10 @@
 """Reading and redacting the application log file."""
 
 import re
+from datetime import datetime
 from pathlib import Path
+
+from django.utils import timezone
 
 # Matches the "standard" formatter configured in settings.LOGGING.
 LINE = re.compile(
@@ -85,6 +88,21 @@ def read_log(
         if not match:
             continue
         entry = match.groupdict()
+        # Python's default ``asctime`` uses a space and comma-separated
+        # milliseconds, which JavaScript's Date parser does not accept. Return
+        # an ISO timestamp with the configured timezone so the UI can format it.
+        try:
+            timestamp = datetime.fromisoformat(entry["timestamp"])
+        except ValueError:
+            # Keep an unexpected legacy timestamp readable instead of making
+            # one malformed line fail the entire log response.
+            pass
+        else:
+            if timezone.is_naive(timestamp):
+                timestamp = timezone.make_aware(
+                    timestamp, timezone.get_default_timezone()
+                )
+            entry["timestamp"] = timestamp.isoformat()
         if level and entry["level"].upper() != level.upper():
             continue
         entry["message"] = redact(entry["message"])
