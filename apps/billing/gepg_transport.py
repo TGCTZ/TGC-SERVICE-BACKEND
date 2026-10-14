@@ -65,15 +65,18 @@ def _attempt(request_record: GePGRequest) -> str | None:
         ]
     )
     try:
+        headers = {
+            "Content-Type": "application/xml",
+            "Gepg-Com": request_record.gepg_com,
+            "Gepg-Code": request_record.gepg_code,
+        }
+        if request_record.gepg_alg:
+            headers["Gepg-Alg"] = request_record.gepg_alg
+
         response = requests.post(
             request_record.endpoint,
             data=request_record.payload.encode("utf-8"),
-            headers={
-                "Content-Type": "application/xml",
-                "Gepg-Com": request_record.gepg_com,
-                "Gepg-Code": request_record.gepg_code,
-                "Gepg-Alg": request_record.gepg_alg,
-            },
+            headers=headers,
             timeout=30,
         )
         response.raise_for_status()

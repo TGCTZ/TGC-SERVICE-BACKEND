@@ -29,7 +29,6 @@ if not GEPG_SIMULATE:
     required_gepg_settings = {
         "GEPG_USE_DIGITAL_SIGNATURE": GEPG_USE_DIGITAL_SIGNATURE,
         "GEPG_COM": GEPG_COM,
-        "GEPG_ALG": GEPG_ALG,
         "GEPG_PRIVATE_KEY_PATH": Path(GEPG_PRIVATE_KEY_PATH).is_file(),
         "GEPG_PUBLIC_CERT_PATH": Path(GEPG_PUBLIC_CERT_PATH).is_file(),
     }
