@@ -224,6 +224,7 @@ def test_production_callback_uses_legacy_signature_behavior(
         "apps.billing.webhooks.verify_payload",
         lambda _payload: pytest.fail("Callback signature verification was enabled"),
     )
+    monkeypatch.setattr("apps.billing.gateways.gepg.sign_if_enabled", lambda xml: xml)
     monkeypatch.setattr(
         "apps.billing.webhooks.process_gepg_callback.delay",
         lambda callback_id: queued.append(callback_id),
