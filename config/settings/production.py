@@ -30,8 +30,11 @@ if not GEPG_SIMULATE:
         "GEPG_USE_DIGITAL_SIGNATURE": GEPG_USE_DIGITAL_SIGNATURE,
         "GEPG_COM": GEPG_COM,
         "GEPG_PRIVATE_KEY_PATH": Path(GEPG_PRIVATE_KEY_PATH).is_file(),
-        "GEPG_PUBLIC_CERT_PATH": Path(GEPG_PUBLIC_CERT_PATH).is_file(),
     }
+    if GEPG_VERIFY_CALLBACK_SIGNATURE:
+        required_gepg_settings["GEPG_PUBLIC_CERT_PATH"] = Path(
+            GEPG_PUBLIC_CERT_PATH
+        ).is_file()
     missing_gepg_settings = [
         name for name, configured in required_gepg_settings.items() if not configured
     ]

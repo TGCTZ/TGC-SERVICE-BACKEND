@@ -212,6 +212,37 @@ def test_callback_is_persisted_before_success_ack(settings, client, monkeypatch)
     assert queued == [callback.pk]
 
 
+def test_production_callback_uses_legacy_signature_behavior(
+    settings, client, monkeypatch
+):
+    """Production callbacks are accepted without verification by default."""
+    settings.DEBUG = False
+    settings.GEPG_USE_DIGITAL_SIGNATURE = True
+    settings.GEPG_VERIFY_CALLBACK_SIGNATURE = False
+    queued = []
+    monkeypatch.setattr(
+        "apps.billing.webhooks.verify_payload",
+        lambda _payload: pytest.fail("Callback signature verification was enabled"),
+    )
+    monkeypatch.setattr(
+        "apps.billing.webhooks.process_gepg_callback.delay",
+        lambda callback_id: queued.append(callback_id),
+    )
+    payload = (
+        "<Gepg><billSubRes><BillHdr><ResId>RES-LEGACY-UNSIGNED</ResId></BillHdr>"
+        "</billSubRes></Gepg>"
+    )
+
+    response = client.post(
+        "/billing/api/bill/response/", data=payload, content_type="application/xml"
+    )
+
+    callback = GePGCallback.objects.get(event_id="RES-LEGACY-UNSIGNED")
+    assert response.status_code == 200
+    assert callback.payload == payload
+    assert queued == [callback.pk]
+
+
 def test_callback_returns_retryable_failure_when_broker_unavailable(
     settings, client, monkeypatch
 ):

@@ -1,4 +1,4 @@
-"""GePG callback endpoints with signature validation and durable inboxing."""
+"""GePG callback endpoints with optional signature validation and durable inboxing."""
 
 import logging
 
@@ -49,7 +49,7 @@ def _event_id(kind: str, payload: str) -> str:
 
 
 def _queue_callback(request, kind: str) -> HttpResponse:
-    """Verify, persist, enqueue, and acknowledge one asynchronous callback."""
+    """Optionally verify, persist, enqueue, and acknowledge one callback."""
     try:
         payload = request.body.decode("utf-8")
         event_id = _event_id(kind, payload)
@@ -58,7 +58,7 @@ def _queue_callback(request, kind: str) -> HttpResponse:
     except (UnicodeDecodeError, ValueError, ParseError, DefusedXmlException):
         return HttpResponse(_ack(kind, "ERROR", "7242"), content_type=XML_CONTENT_TYPE)
 
-    if not settings.DEBUG or settings.GEPG_USE_DIGITAL_SIGNATURE:
+    if settings.GEPG_VERIFY_CALLBACK_SIGNATURE:
         try:
             is_valid = verify_payload(payload)
         except (OSError, ValueError):
@@ -101,7 +101,7 @@ class PaymentNotificationView(View):
     """Receive and durably queue a ``pmtSpNtfReq`` payment notification."""
 
     def post(self, request, *args, **kwargs):
-        """Verify and enqueue one payment event."""
+        """Enqueue one payment event."""
         return _queue_callback(request, GePGCallback.Kind.PAYMENT)
 
 
@@ -111,21 +111,21 @@ class BillResponseView(View):
     """Receive and durably queue an asynchronous ``billSubRes`` callback."""
 
     def post(self, request, *args, **kwargs):
-        """Verify and enqueue one bill response event."""
+        """Enqueue one bill response event."""
         return _queue_callback(request, GePGCallback.Kind.BILL)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 class BillCancelResponseView(View):
-    """Verify and handle the legacy cancellation response endpoint."""
+    """Handle the legacy cancellation response endpoint."""
 
     def post(self, request, *args, **kwargs):
-        """Verify and process one cancellation response."""
+        """Process one cancellation response."""
         try:
             payload = request.body.decode("utf-8")
         except UnicodeDecodeError:
             return HttpResponse(status=400)
-        if not settings.DEBUG or settings.GEPG_USE_DIGITAL_SIGNATURE:
+        if settings.GEPG_VERIFY_CALLBACK_SIGNATURE:
             try:
                 if not verify_payload(payload):
                     return HttpResponse(status=400)
@@ -143,5 +143,5 @@ class ReconciliationResponseView(View):
     """Receive and durably queue a ``sucSpPmtRes`` callback."""
 
     def post(self, request, *args, **kwargs):
-        """Verify and enqueue one reconciliation response event."""
+        """Enqueue one reconciliation response event."""
         return _queue_callback(request, GePGCallback.Kind.RECONCILIATION)
