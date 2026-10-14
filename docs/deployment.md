@@ -32,6 +32,13 @@ The deploy job uses the GitHub `production` environment and a concurrency group
 so production deployments do not run simultaneously. It checks out the exact
 commit that passed CI.
 
+## Verifying a production deployment
+
+After merging a pull request, open **Actions** and select the `CI` run whose
+event is `push` and branch is `main`. Confirm the `test`, `Deploy backend`, and
+`Check production health` jobs succeed. Pull request runs validate CI but do not
+deploy to production.
+
 ## 1. VPS prerequisites
 
 The workflow expects the existing backend checkout and tools at these paths:
