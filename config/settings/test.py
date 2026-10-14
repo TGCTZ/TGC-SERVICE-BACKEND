@@ -4,6 +4,10 @@ from .base import *
 
 DEBUG = False
 
+# Tests use the offline GePG path; live signing stays covered by generated-key tests.
+GEPG_USE_DIGITAL_SIGNATURE = False
+GEPG_SIMULATE = True
+
 # SQLite in memory: the suite needs no external database service.
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 

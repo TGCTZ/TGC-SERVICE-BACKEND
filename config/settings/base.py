@@ -273,14 +273,10 @@ GEPG_SUB_SP_CODE = env("GEPG_SUB_SP_CODE", default="")
 GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
 GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
 
-GEPG_USE_DIGITAL_SIGNATURE = env.bool(
-    "GEPG_USE_DIGITAL_SIGNATURE", default=not DEBUG
-)
+GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=not DEBUG)
 # PKCS#12 password used when loading the outbound signing key.
 GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
-GEPG_PUBLIC_CERTIFICATE_PASSWORD = env(
-    "GEPG_PUBLIC_CERTIFICATE_PASSWORD", default=""
-)
+GEPG_PUBLIC_CERTIFICATE_PASSWORD = env("GEPG_PUBLIC_CERTIFICATE_PASSWORD", default="")
 GEPG_PRIVATE_KEY_PATH = env(
     "GEPG_PRIVATE_KEY_PATH", default=str(BASE_DIR / "certificates" / "private.pfx")
 )
@@ -315,9 +311,7 @@ CELERY_BEAT_SCHEDULE = {
 
 GEPG_RETRY_INITIAL_SECONDS = env.int("GEPG_RETRY_INITIAL_SECONDS", default=60)
 GEPG_RETRY_MAX_SECONDS = env.int("GEPG_RETRY_MAX_SECONDS", default=1800)
-GEPG_RETRY_MAX_AGE_SECONDS = env.int(
-    "GEPG_RETRY_MAX_AGE_SECONDS", default=86400
-)
+GEPG_RETRY_MAX_AGE_SECONDS = env.int("GEPG_RETRY_MAX_AGE_SECONDS", default=86400)
 
 # Control-number messages use the existing Beem account from the retired app.
 BEEM_AFRICA_API_KEY = env("BEEM_AFRICA_API_KEY", default="")
