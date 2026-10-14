@@ -274,6 +274,8 @@ GEPG_COLL_CENT_CODE = env("GEPG_COLL_CENT_CODE", default="")
 GEPG_GFS_CODE = env("GEPG_GFS_CODE", default="")
 
 GEPG_USE_DIGITAL_SIGNATURE = env.bool("GEPG_USE_DIGITAL_SIGNATURE", default=not DEBUG)
+# The legacy integration accepted callbacks without checking their signature.
+GEPG_VERIFY_CALLBACK_SIGNATURE = env.bool("GEPG_VERIFY_CALLBACK_SIGNATURE", default=False)
 # PKCS#12 password used when loading the outbound signing key.
 GEPG_CERTIFICATE_PASSWORD = env("GEPG_CERTIFICATE_PASSWORD", default="")
 GEPG_PUBLIC_CERTIFICATE_PASSWORD = env("GEPG_PUBLIC_CERTIFICATE_PASSWORD", default="")
