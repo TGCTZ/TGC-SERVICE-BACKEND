@@ -53,10 +53,18 @@ jobs:
       - name: Prepare log directory
         run: mkdir -p logs
 
+      - name: Prepare CI-only GePG placeholder files
+        run: touch "$RUNNER_TEMP/ci-gepg-private.pfx" "$RUNNER_TEMP/ci-gepg-public.pfx"
+
       - name: Verify auth schema registration
         env:
           DJANGO_SETTINGS_MODULE: config.settings.production
           ALLOWED_HOSTS: example.com
+          GEPG_SIMULATE: "False"
+          GEPG_COM: ci-only-placeholder
+          GEPG_ALG: ci-only-placeholder
+          GEPG_PRIVATE_KEY_PATH: ${{ runner.temp }}/ci-gepg-private.pfx
+          GEPG_PUBLIC_CERT_PATH: ${{ runner.temp }}/ci-gepg-public.pfx
         run: |
           uv run python - <<'PY'
           import sys
@@ -85,6 +93,11 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: config.settings.production
           ALLOWED_HOSTS: example.com
+          GEPG_SIMULATE: "False"
+          GEPG_COM: ci-only-placeholder
+          GEPG_ALG: ci-only-placeholder
+          GEPG_PRIVATE_KEY_PATH: ${{ runner.temp }}/ci-gepg-private.pfx
+          GEPG_PUBLIC_CERT_PATH: ${{ runner.temp }}/ci-gepg-public.pfx
 
       - name: Check for missing migrations
         run: uv run python manage.py makemigrations --check --dry-run
