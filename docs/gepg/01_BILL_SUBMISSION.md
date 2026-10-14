@@ -38,9 +38,11 @@ by the submission service. `is_gepg_submitted` records an attempted submission,
 including a failed one; it does not prove acceptance.
 
 `POST /gepg/bill/response/` extracts `ResId`, `BillId`, `BillCntrNum`, and status
-fields. The callback is verified and stored before it is queued. A matching
-bill receives a control number only when its bill-level status is `7101` and
-the number is neither empty nor `0`. Unknown bills are recorded as failures for
+fields. Inbound signature verification is controlled by
+`GEPG_VERIFY_CALLBACK_SIGNATURE` and defaults to `False` for legacy
+compatibility. The callback is stored before it is queued. A matching bill
+receives a control number only when its bill-level status is `7101` and the
+number is neither empty nor `0`. Unknown bills are recorded as failures for
 staff review.
 
 ## Automatic billing and retries

@@ -231,8 +231,8 @@ Two server-to-server XML endpoints, mounted **outside** `/api/v1/` because their
 URLs are registered with the gateway and must survive an API version bump:
 
 ```
-POST /gepg/payments/notification/   pmtSpNtfReq  -> 7101 / 7102 ack
-POST /gepg/bill/response/           billSubRes   -> acknowledgement
+POST /gepg/payments/notification/   pmtSpNtfReq  -> durable inbox, then 7101 ack
+POST /gepg/bill/response/           billSubRes   -> durable inbox, then 7101 ack
 ```
 
 They take **no authentication** — the gateway has no credentials. When handled,
@@ -241,12 +241,15 @@ guaranteed to return acknowledgement XML. Responses are signed only when
 `GEPG_USE_DIGITAL_SIGNATURE` is enabled. `api.http` has ready-made
 payloads for all three cases worth checking:
 
-1. A valid notification settles the bill and moves every stone to `paid`.
+1. A valid notification is acknowledged after it is persisted and queued; the
+   worker then settles the bill and moves every stone to `paid`.
 2. The **same notification sent twice** must leave exactly one `Payment` row and
    one history entry. GePG redelivers until acknowledged, so without the
    `trx_id` guard a retry would double-count.
-3. Ordinary malformed XML returns a `7102` acknowledgement. Exceptions outside
-   the service's handled error set may still escape the view.
+3. Invalid XML or a missing callback correlation ID returns `7242`. If the
+   envelope has a correlation ID but transaction details are invalid, the
+   endpoint can acknowledge the durable event with `7101` before the worker
+   marks it failed for staff review.
 
 Set `GEPG_SIMULATE=True` in `.env` to work offline: bill submission skips the
 network and returns a fake control number.
@@ -259,8 +262,11 @@ produced too.
 The endpoint behind it is `POST /api/v1/bills/{id}/simulate-payment/`, which
 answers 404 unless the server has **both** `DEBUG` and `GEPG_SIMULATE` on.
 
-Inbound signatures are not verified. `GEPG_PUBLIC_CERT_PATH` is configured but
-unused; see [GePG integration limitations](../gepg/README.md#current-limitations).
+Inbound callback signature verification is controlled by
+`GEPG_VERIFY_CALLBACK_SIGNATURE`, which defaults to `False` for compatibility
+with the legacy integration. When enabled, `GEPG_PUBLIC_CERT_PATH` supplies the
+GePG certificate used before payment, bill, cancellation, and reconciliation
+callbacks are accepted. See the [GePG integration guide](../gepg/README.md).
 
 ---
 

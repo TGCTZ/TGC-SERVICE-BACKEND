@@ -15,8 +15,11 @@ There are three different kinds of values:
 | Django secret, PFX copy password, Beem credentials | Django / local secret manager / existing Beem account | Generate a new Django secret and PFX password; copy the Beem API credentials from the old production configuration. |
 
 `GEPG_BILL_UPDATE_URL` is not used by this backend and should not be configured.
-The GePG public certificate is required to verify callbacks and must be provisioned
-separately from the service provider's private signing PFX.
+The service provider's private PFX is required for outbound signing. Callback
+signature verification defaults to off to match the legacy integration; the
+GePG public certificate is needed only if `GEPG_VERIFY_CALLBACK_SIGNATURE=True`.
+The public certificate and private signing PFX are separate files and serve
+different purposes.
 
 ## 1. Collect the existing GePG values
 
@@ -30,7 +33,6 @@ GEPG_SP_GRP_CODE
 GEPG_SYS_CODE
 GEPG_SP_CODE
 GEPG_COM
-GEPG_ALG
 GEPG_SUB_SP_CODE
 GEPG_COLL_CENT_CODE
 GEPG_GFS_CODE
@@ -119,12 +121,14 @@ Configure these values in the VPS service environment or secret manager. Prefer 
 | `GEPG_BILL_CANCEL_URL` | Exact old production cancellation URL. |
 | `GEPG_RECONCILIATION_URL` | Exact old production reconciliation URL. |
 | `GEPG_SP_GRP_CODE`, `GEPG_SYS_CODE`, `GEPG_SP_CODE`, `GEPG_SUB_SP_CODE`, `GEPG_COLL_CENT_CODE`, `GEPG_GFS_CODE` | Exact old production service codes. |
-| `GEPG_COM`, `GEPG_ALG` | Exact HTTP header values supplied for the existing GePG registration. |
+| `GEPG_COM` | Exact registered value for the required `Gepg-Com` HTTP header. |
+| `GEPG_ALG` | Optional `Gepg-Alg` HTTP header. Leave unset when the existing registration does not use it; the backend omits the header when blank. |
 | `GEPG_USE_DIGITAL_SIGNATURE` | `True` |
 | `GEPG_CERTIFICATE_PASSWORD` | Password used to re-encrypt the new PFX copy. |
 | `GEPG_PRIVATE_KEY_PATH` | Absolute VPS path to the mounted private PFX, e.g. `/run/secrets/gepg/private.pfx`. |
-| `GEPG_PUBLIC_CERT_PATH` | Absolute path to the GePG public certificate used to verify callbacks. |
-| `GEPG_PUBLIC_CERTIFICATE_PASSWORD` | Password for the GePG public certificate PFX, or blank for an unencrypted PEM/DER certificate. |
+| `GEPG_VERIFY_CALLBACK_SIGNATURE` | `False` to preserve the legacy callback behavior. Enable only when GePG callback signatures are to be verified. |
+| `GEPG_PUBLIC_CERT_PATH` | Required only when callback verification is enabled; absolute path to the GePG public certificate. |
+| `GEPG_PUBLIC_CERTIFICATE_PASSWORD` | Used only for a password-protected GePG public certificate PFX; blank for an unencrypted PEM/DER certificate. |
 | `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | Private Redis URLs used by the GePG worker and scheduler. |
 | `GEPG_RETRY_INITIAL_SECONDS`, `GEPG_RETRY_MAX_SECONDS`, `GEPG_RETRY_MAX_AGE_SECONDS` | Defaults are 60 seconds, 1800 seconds, and 86400 seconds. |
 | `BEEM_AFRICA_API_KEY`, `BEEM_AFRICA_SECRET_KEY` | Existing Beem production credentials. |
@@ -151,7 +155,7 @@ POST /billing/reconciliation/response/
 
 Use the existing public IP/domain expected by GePG. The TLS certificate and reverse-proxy rules must serve that host and preserve the paths exactly; do not add `/api/v1/`, rewrite them under `/gepg/`, or redirect them to the retired app. Permit GePG callback traffic to reach the new routes and permit the backend to make outbound connections to the copied GePG URLs and the Beem SMS endpoint.
 
-## 5. Deploy and validate without live gateway calls
+## 5. Validate and deploy
 
 From the backend directory on the VPS, install the locked dependencies, check the production settings, and apply the new database migrations:
 
@@ -169,12 +173,35 @@ uv run pytest apps/billing/tests/test_gepg_legacy.py -q
 
 Confirm that `GEPG_SIMULATE` is false, signing is enabled, the configured PFX path exists and is readable by the service account, and the app can sign with the configured password. Do not verify credentials by printing environment values. Do not send a test bill, cancellation, or reconciliation to a live GePG URL as part of this checklist.
 
-Only after these checks pass should the public host/IP route to the new service and the old application be stopped. Watch application logs and the new bill/payment records after cutover. Successful bill issuance should be confirmed through the normal registered GePG callback flow, not by a fabricated production notification.
+Only after these checks pass should the public host/IP route to the new service and the old application be stopped. Watch application logs and the new bill/payment records after cutover.
+
+### Confirming a control-number request
+
+A non-simulated control-number request received a GePG reply on 2026-10-14.
+The reply format determines whether a control number is already available:
+
+- A synchronous `billSubRes` is accepted only when `BillStsCode=7101` and
+  `BillCntrNum` is neither empty nor `0`; the backend then stores the number.
+- A `billSubReqAck` with `AckStsCode=7101` means GePG accepted the request, but
+  the bill remains without a control number until the registered asynchronous
+  `/billing/api/bill/response/` callback arrives. The callback is applied only
+  to a matching bill and only for bill-level status `7101` with a nonzero
+  control number.
+- `7241` is an invalid-session response. Explicit business rejections are not
+  transport-retried; transport failures retry the persisted request.
+
+Confirm the bill's stored `status_code`, `status_desc`, and `control_number` in
+the application or staff admin. The mere fact that an HTTP response arrived is
+not proof that GePG issued a control number. Do not copy customer data or a live
+control number into this guide.
 
 ## Production limits to account for
 
 - No old bills, payments, or reconciliation records are migrated. A callback for an old bill absent from the new database is retained for staff review and is not applied to another bill.
-- Callback signatures are verified using the configured GePG public certificate. Confirm the certificate, registered `Gepg-Com`/`Gepg-Alg` values, and callback rejection codes with GePG during UAT.
+- Callback signatures are not checked by default, matching the legacy
+  integration. When `GEPG_VERIFY_CALLBACK_SIGNATURE=True`, provide a valid
+  GePG public certificate and confirm signature and rejection behavior with
+  GePG. `GEPG_COM` is required; `GEPG_ALG` is optional and omitted when unset.
 - Cancellation and reconciliation still require GePG UAT/SIT validation against the registered endpoints and current protocol examples.
 - A successful control-number SMS is recorded to prevent repeat sends. Beem delivery still depends on the credentials, customer phone number, and provider availability.
 - The old system's unused bill-update URL is intentionally omitted because there is no caller in either configured workflow.
@@ -183,5 +210,5 @@ The Celery worker and beat services must be enabled alongside the web process.
 The PostgreSQL inbox/outbox is the recovery source when Redis is unavailable;
 the callback endpoint returns HTTP 503 rather than acknowledging work that was
 not queued. Monitor pending callback age, failed callbacks, exhausted outbound
-requests, invalid signature counts, and Redis/worker availability in staging
-before production cutover.
+requests, invalid signature counts (when verification is enabled), and
+Redis/worker availability in staging before production cutover.
