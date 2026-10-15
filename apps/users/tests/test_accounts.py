@@ -125,6 +125,8 @@ def test_a_reset_issues_a_new_password_and_ends_every_session(
 ):
     """For credentials that never arrived, or a forgotten password."""
     colleague = _holding("receptionist")
+    colleague.must_complete_profile = True
+    colleague.save(update_fields=["must_complete_profile"])
     old_session = RefreshToken.for_user(colleague)
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -136,8 +138,11 @@ def test_a_reset_issues_a_new_password_and_ends_every_session(
     colleague.refresh_from_db()
     assert colleague.check_password(response.data["temporary_password"])
     assert colleague.must_change_password
+    assert not colleague.must_complete_profile
     assert BlacklistedToken.objects.filter(token__jti=old_session["jti"]).exists()
     assert len(mail.outbox) == 1
+    assert "choose a new password" in mail.outbox[0].body
+    assert "Profile setup is not required." in mail.outbox[0].body
 
 
 def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
