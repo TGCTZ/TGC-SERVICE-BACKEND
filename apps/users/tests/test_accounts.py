@@ -140,9 +140,7 @@ def test_a_reset_issues_a_new_password_and_ends_every_session(
     assert colleague.must_change_password
     assert not colleague.must_complete_profile
     assert BlacklistedToken.objects.filter(token__jti=old_session["jti"]).exists()
-    assert len(mail.outbox) == 1
-    assert "choose a new password" in mail.outbox[0].body
-    assert "Profile setup is not required." in mail.outbox[0].body
+    assert mail.outbox == []
 
 
 def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
@@ -154,3 +152,16 @@ def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
     superior = client.post(f"/api/v1/users/{_holding('admin').pk}/reset-password/")
 
     assert (own.status_code, peer.status_code, superior.status_code) == (400, 403, 404)
+
+
+def test_a_manager_cannot_reset_passwords(auth_client):
+    manager = _holding("manager")
+    colleague = _holding("receptionist")
+
+    response = auth_client(manager).post(
+        f"/api/v1/users/{colleague.pk}/reset-password/"
+    )
+
+    assert response.status_code == 403
+    assert "Only admins" in response.data["detail"]
+    assert mail.outbox == []

@@ -8,8 +8,9 @@ them; ``apps/users/authentication.py`` holds them to that.
 
 The temporary password is random per account rather than one shared default: a
 default everyone knows lets anyone who knows a new colleague's email sign in
-first and take the account. It is shown once to whoever created or reset it,
-and emailed - never stored in a form that can be read back.
+first and take the account. It is shown once to whoever created the account and
+emailed - never stored in a form that can be read back. Resets are admin-only
+and their generated password is handed to the user manually.
 """
 
 import logging
@@ -94,13 +95,13 @@ def create_user_account(*, email: str, role, actor) -> tuple:
 
 @transaction.atomic
 def reset_temporary_password(*, user) -> str:
-    """Give an account a new temporary password and send it again.
+    """Give an account a new temporary password for manual handoff.
 
-    For a colleague whose credentials email never came, or who has forgotten
-    their password. The user must choose a new password at sign-in, but profile
-    setup is skipped because this flow is for an existing account. Outstanding
-    refresh tokens are blacklisted; existing access sessions expire through
-    their normal expiry and idle-timeout checks.
+    For a colleague whose temporary password was lost or forgotten. The user
+    must choose a new password at sign-in, but profile setup is skipped because
+    this flow is for an existing account. Outstanding refresh tokens are
+    blacklisted; existing access sessions expire through their normal expiry
+    and idle-timeout checks.
 
     Returns:
         The new temporary password, so it can be shown once.
@@ -118,13 +119,10 @@ def reset_temporary_password(*, user) -> str:
         ]
     )
     revoke_all_tokens(user)
-    _email_credentials_on_commit(user, password, is_password_reset=True)
     return password
 
 
-def _email_credentials_on_commit(
-    user, password: str, *, is_password_reset: bool = False
-) -> None:
+def _email_credentials_on_commit(user, password: str) -> None:
     """Send the credentials once the account is really saved.
 
     Requests run in a transaction, so sending straight away could mail someone
@@ -138,7 +136,6 @@ def _email_credentials_on_commit(
             "password": password,
             "login_url": f"{settings.FRONTEND_URL.rstrip('/')}/sign-in",
             "lab_name": settings.CERTIFICATE_LAB_NAME,
-            "is_password_reset": is_password_reset,
         }
         try:
             send_mail(
