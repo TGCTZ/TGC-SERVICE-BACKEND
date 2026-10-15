@@ -159,9 +159,7 @@ def test_a_manager_cannot_reset_passwords(auth_client):
     manager = _holding("manager")
     colleague = _holding("receptionist")
 
-    response = auth_client(manager).post(
-        f"/api/v1/users/{colleague.pk}/reset-password/"
-    )
+    response = auth_client(manager).post(f"/api/v1/users/{colleague.pk}/reset-password/")
 
     assert response.status_code == 403
     assert "Only admins" in response.data["detail"]
