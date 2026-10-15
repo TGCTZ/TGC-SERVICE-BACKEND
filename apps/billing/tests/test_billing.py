@@ -4,8 +4,10 @@ from decimal import Decimal
 
 import pytest
 
+from django.core.management import call_command
+
 from apps.billing.dev import simulate_payment
-from apps.billing.models import Bill, BillItem, Payment
+from apps.billing.models import Bill, BillItem, GePGCallback, Payment
 from apps.billing.selectors import billing_worklist
 from apps.billing.services import generate_bill_for_order
 from apps.core.exceptions import ServiceError
@@ -268,7 +270,6 @@ def test_payment_webhook_needs_no_authentication(billable_order, client, setting
 
     # Callback signature behavior is covered independently; this test focuses
     # on the registered endpoint using the local development payload.
-    settings.DEBUG = True
     settings.GEPG_USE_DIGITAL_SIGNATURE = False
     bill = generate_bill_for_order(billable_order)
     bill.control_number = "991234567892"
@@ -278,12 +279,26 @@ def test_payment_webhook_needs_no_authentication(billable_order, client, setting
     response = client.post(
         "/gepg/payments/notification/", data=xml, content_type="application/xml"
     )
+    duplicate_response = client.post(
+        "/gepg/payments/notification/", data=xml, content_type="application/xml"
+    )
 
     assert response.status_code == 200
     assert b"7101" in response.content
+    assert duplicate_response.status_code == 200
+    assert b"7101" in duplicate_response.content
+
+    bill.refresh_from_db()
+    assert bill.status == BillStatus.PENDING
+    callback = GePGCallback.objects.get(kind=GePGCallback.Kind.PAYMENT)
+    assert GePGCallback.objects.filter(kind=GePGCallback.Kind.PAYMENT).count() == 1
+    assert callback.status == GePGCallback.Status.PENDING
+
+    call_command("process_gepg_queue")
 
     bill.refresh_from_db()
     assert bill.status == BillStatus.PAID
+    assert Payment.objects.filter(bill=bill).count() == 1
 
 
 def test_listing_bills_does_not_n_plus_one(

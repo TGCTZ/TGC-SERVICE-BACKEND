@@ -7,7 +7,8 @@
 | [`gateways/gepg.py`](../../apps/billing/gateways/gepg.py) | XML construction/parsing and outbound HTTP |
 | [`gateways/signing.py`](../../apps/billing/gateways/signing.py) | Outbound signing and optional inbound signature verification |
 | [`gepg_transport.py`](../../apps/billing/gepg_transport.py) | Persisted outbound requests and bounded transport retries |
-| [`tasks.py`](../../apps/billing/tasks.py) | Celery callback processing and inbox/outbox recovery |
+| [`processing.py`](../../apps/billing/processing.py) | PostgreSQL inbox/outbox processing and retry recovery |
+| [`process_gepg_queue`](../../apps/billing/management/commands/process_gepg_queue.py) | One bounded processing pass, run by systemd timer |
 | [`services/bill.py`](../../apps/billing/services/bill.py) | Local bill creation, submission, retries, callbacks |
 | [`services/identification.py`](../../apps/billing/services/identification.py) | Stone registration and automatic billing handoff |
 | [`services/payment.py`](../../apps/billing/services/payment.py) | Payment persistence and settlement |
@@ -39,11 +40,12 @@ API versions. They are CSRF-exempt and do not require JWT authentication.
 `GEPG_VERIFY_CALLBACK_SIGNATURE` controls inbound signature checks and defaults
 to `False` to match the legacy integration. When enabled, a callback must pass
 verification before it is accepted. Payment, bill-response, and reconciliation
-callbacks are persisted in the PostgreSQL inbox and queued before the endpoint
-returns `7101`; the cancellation response is handled synchronously. Invalid
+callbacks are persisted in the PostgreSQL inbox before the endpoint returns
+`7101`; a systemd timer processes them from PostgreSQL. The cancellation
+response is handled synchronously. Invalid
 request data receives `7242`; an invalid signature receives `7303` when checks
-are enabled. A database or broker failure returns HTTP 503 so GePG can
-redeliver. XML replies use `text/xml; charset=utf-8`.
+are enabled. A database failure returns HTTP 503 so GePG can redeliver. XML
+replies use `text/xml; charset=utf-8`.
 
 ## Configuration
 
@@ -64,7 +66,6 @@ Values and defaults live in `config/settings/base.py` and `.env.example`:
   `False` for legacy compatibility.
 - `GEPG_PUBLIC_CERT_PATH`, `GEPG_PUBLIC_CERTIFICATE_PASSWORD`: GePG public
   certificate settings, required only when callback verification is enabled.
-- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`: Redis broker and result backend.
 - `GEPG_RETRY_INITIAL_SECONDS`, `GEPG_RETRY_MAX_SECONDS`,
   `GEPG_RETRY_MAX_AGE_SECONDS`: outbound retry bounds; defaults are 60, 1800,
   and 86400 seconds.

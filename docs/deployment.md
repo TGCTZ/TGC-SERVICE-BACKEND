@@ -13,8 +13,8 @@ flowchart TD
     SHA --> DEPS[Install locked production dependencies with uv]
     DEPS --> MIGRATE[Apply Django migrations]
     MIGRATE --> STATIC[Collect Django static files]
-    STATIC --> RESTART[Restart Gunicorn, Celery worker, and Celery Beat]
-    RESTART --> READY[Check API and queue readiness]
+    STATIC --> RESTART[Restart Gunicorn]
+    RESTART --> READY[Check API and GePG timer health]
 ```
 
 ## What the workflow does
@@ -25,8 +25,8 @@ Pull requests run CI only. A push to `main` deploys only after CI succeeds.
 | Stage | Checks or actions |
 | --- | --- |
 | CI | Install dependencies; Ruff lint and format checks; auth schema registration; Django production deployment check; missing-migration check; PostgreSQL 16 migrations; pytest with coverage. |
-| Deploy | Connect with SSH; reject a dirty VPS checkout; fetch and check out the pushed commit; install locked production dependencies; migrate; collect static files; restart Gunicorn, Celery worker, and Celery Beat. |
-| Health check | Retry `GET /api/health/ready/` for up to 60 seconds; fail if the API is not ready. Check queue and worker health with systemd and Celery logs. |
+| Deploy | Connect with SSH; reject a dirty VPS checkout; fetch and check out the pushed commit; install locked production dependencies; migrate; collect static files; restart Gunicorn. |
+| Health check | Retry `GET /api/health/ready/` for up to 60 seconds; fail if the API is not ready. Confirm the GePG timer is active and inspect its recent service logs. |
 
 The deploy job uses the GitHub `production` environment and a concurrency group
 so production deployments do not run simultaneously. It checks out the exact
@@ -50,9 +50,8 @@ The workflow expects the existing backend checkout and tools at these paths:
 | Backend checkout | `/home/madini01/tgpmis-backend-production` |
 | `uv` executable | `/home/madini01/.local/bin/uv` |
 | systemd service | `tgpmis-gunicorn.service` |
-| Celery worker | `tgpmis-celery-worker.service` |
-| Celery Beat scheduler | `tgpmis-celery-beat.service` |
-| Redis broker | `redis-server.service` with AOF persistence enabled |
+| GePG processor service | `tgpmis-gepg-processor.service` |
+| GePG processor timer | `tgpmis-gepg-processor.timer` (every minute) |
 | Gunicorn listener | `127.0.0.1:8000` |
 | Public API base URL | `https://api.tgpmis.tgc.ac.tz` |
 
@@ -77,28 +76,28 @@ The service must load the production environment and bind Gunicorn to
 files, and required environment values are covered in the
 [operations guide](engineering/operations.md).
 
-Install and enable Redis plus the two Celery systemd units in
-[`deploy/systemd/`](../deploy/systemd/). Configure `CELERY_BROKER_URL` and
-`CELERY_RESULT_BACKEND` in the backend environment file. Keep Redis bound to
-localhost or a private socket, enable append-only persistence, and do not expose
-its port publicly. PostgreSQL inbox and outbound-request rows remain the recovery
-source if Redis or a worker is restarted.
+The processor runs as a short-lived systemd service every minute. It reads due
+callbacks and outbound retries from PostgreSQL, which remains the durable inbox
+and outbox. Each run has a 45-second budget; unfinished records stay in
+PostgreSQL for the next run. No Redis broker or Celery environment settings are
+required.
 
-On the VPS, install the unit files and start the services before deploying code
-that imports the GePG task handlers:
+Install the PostgreSQL processor units once on the VPS. Disable the old worker
+services and remove their unit files if they were installed:
 
 ```bash
-sudo install -o root -g root -m 0644 deploy/systemd/tgpmis-celery-worker.service /etc/systemd/system/
-sudo install -o root -g root -m 0644 deploy/systemd/tgpmis-celery-beat.service /etc/systemd/system/
+sudo systemctl disable --now tgpmis-celery-worker.service tgpmis-celery-beat.service
+sudo rm -f /etc/systemd/system/tgpmis-celery-worker.service /etc/systemd/system/tgpmis-celery-beat.service
+sudo install -o root -g root -m 0644 deploy/systemd/tgpmis-gepg-processor.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 deploy/systemd/tgpmis-gepg-processor.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now redis-server.service
-sudo systemctl enable --now tgpmis-celery-worker.service tgpmis-celery-beat.service
-systemctl is-active redis-server.service tgpmis-celery-worker.service tgpmis-celery-beat.service
+sudo systemctl enable --now tgpmis-gepg-processor.timer
+systemctl is-active tgpmis-gepg-processor.timer
+systemctl list-timers tgpmis-gepg-processor.timer
 ```
 
-Set `appendonly yes` and `bind 127.0.0.1` in the Redis service configuration,
-then restart Redis. Keep the broker URL local unless the infrastructure uses a
-private authenticated Redis endpoint.
+If Redis is still installed, it can be removed separately after confirming no
+other service uses it. The backend no longer connects to Redis.
 
 ### Allow only the required service restart
 
@@ -112,7 +111,7 @@ sudo visudo -f /etc/sudoers.d/tgpmis-deploy
 Add this rule:
 
 ```sudoers
-madini01 ALL=(root) NOPASSWD: /usr/bin/systemctl restart tgpmis-gunicorn.service, /usr/bin/systemctl restart tgpmis-celery-worker.service, /usr/bin/systemctl restart tgpmis-celery-beat.service
+madini01 ALL=(root) NOPASSWD: /usr/bin/systemctl restart tgpmis-gunicorn.service
 ```
 
 Validate the file and confirm the command is allowed without a password:
@@ -121,8 +120,6 @@ Validate the file and confirm the command is allowed without a password:
 sudo visudo -cf /etc/sudoers.d/tgpmis-deploy
 sudo chmod 0440 /etc/sudoers.d/tgpmis-deploy
 sudo -n -l /usr/bin/systemctl restart tgpmis-gunicorn.service
-sudo -n -l /usr/bin/systemctl restart tgpmis-celery-worker.service
-sudo -n -l /usr/bin/systemctl restart tgpmis-celery-beat.service
 ```
 
 The last command should list the restart command as permitted. It does not

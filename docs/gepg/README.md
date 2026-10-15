@@ -29,9 +29,10 @@ See [`apps/billing/dev.py`](../../apps/billing/dev.py).
   controlled by `GEPG_VERIFY_CALLBACK_SIGNATURE` and defaults to `False` to
   match the legacy integration; a public certificate is required only when
   verification is enabled. `GEPG_COM` is required and `GEPG_ALG` is optional.
-- Callback processing and outbound retries run through Celery and Redis. The
-  PostgreSQL inbox/outbox records support recovery after worker or broker
-  interruptions; application rejections are not automatically retried.
+- Callback processing and outbound retries run from PostgreSQL inbox/outbox
+  records through a once-per-minute systemd timer. Each pass is capped at 45
+  seconds; remaining records wait in PostgreSQL for the next pass. Application
+  rejections are not automatically retried.
 - Accepted asynchronous submissions without a control number wait for the
   callback and are not outbound retry candidates.
 - A non-simulated control-number request received a GePG reply on 2026-10-14.

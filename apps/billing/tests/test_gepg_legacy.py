@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
+from django.db import OperationalError
 from django.urls import resolve
 
 from apps.billing.gateways.gepg import _parse_bill_response, send_control_number_sms
@@ -187,14 +188,9 @@ def test_bill_submission_requires_success_code_and_real_control_number(
 
 
 def test_callback_is_persisted_before_success_ack(settings, client, monkeypatch):
-    """A callback response follows durable inbox storage and successful enqueue."""
+    """The endpoint acknowledges only after durable inbox storage."""
     settings.DEBUG = True
     settings.GEPG_USE_DIGITAL_SIGNATURE = False
-    queued = []
-    monkeypatch.setattr(
-        "apps.billing.webhooks.process_gepg_callback.delay",
-        lambda callback_id: queued.append(callback_id),
-    )
     payload = (
         "<Gepg><billSubRes><BillHdr><ResId>RES-DURABLE-1</ResId></BillHdr>"
         "<BillDtls><BillDtl><BillId>BILL-1</BillId></BillDtl></BillDtls>"
@@ -209,7 +205,8 @@ def test_callback_is_persisted_before_success_ack(settings, client, monkeypatch)
     assert response.status_code == 200
     assert "7101" in response.content.decode()
     assert callback.payload == payload
-    assert queued == [callback.pk]
+    assert callback.status == GePGCallback.Status.PENDING
+    assert callback.attempts == 0
 
 
 def test_production_callback_uses_legacy_signature_behavior(
@@ -219,16 +216,11 @@ def test_production_callback_uses_legacy_signature_behavior(
     settings.DEBUG = False
     settings.GEPG_USE_DIGITAL_SIGNATURE = True
     settings.GEPG_VERIFY_CALLBACK_SIGNATURE = False
-    queued = []
     monkeypatch.setattr(
         "apps.billing.webhooks.verify_payload",
         lambda _payload: pytest.fail("Callback signature verification was enabled"),
     )
     monkeypatch.setattr("apps.billing.gateways.gepg.sign_if_enabled", lambda xml: xml)
-    monkeypatch.setattr(
-        "apps.billing.webhooks.process_gepg_callback.delay",
-        lambda callback_id: queued.append(callback_id),
-    )
     payload = (
         "<Gepg><billSubRes><BillHdr><ResId>RES-LEGACY-UNSIGNED</ResId></BillHdr>"
         "</billSubRes></Gepg>"
@@ -241,20 +233,20 @@ def test_production_callback_uses_legacy_signature_behavior(
     callback = GePGCallback.objects.get(event_id="RES-LEGACY-UNSIGNED")
     assert response.status_code == 200
     assert callback.payload == payload
-    assert queued == [callback.pk]
+    assert callback.status == GePGCallback.Status.PENDING
 
 
-def test_callback_returns_retryable_failure_when_broker_unavailable(
+def test_callback_returns_retryable_failure_when_inbox_cannot_be_saved(
     settings, client, monkeypatch
 ):
-    """A broker outage leaves the verified event durable and asks GePG to retry."""
+    """The endpoint never acknowledges a callback that failed persistence."""
     settings.DEBUG = True
     settings.GEPG_USE_DIGITAL_SIGNATURE = False
 
-    def unavailable(_callback_id):
-        raise ConnectionError("Redis unavailable")
+    def unavailable(*args, **kwargs):
+        raise OperationalError("database unavailable")
 
-    monkeypatch.setattr("apps.billing.webhooks.process_gepg_callback.delay", unavailable)
+    monkeypatch.setattr(GePGCallback.objects, "get_or_create", unavailable)
     payload = (
         "<Gepg><billSubRes><BillHdr><ResId>RES-DURABLE-2</ResId></BillHdr>"
         "<BillDtls><BillDtl><BillId>BILL-1</BillId></BillDtl></BillDtls>"
@@ -266,7 +258,7 @@ def test_callback_returns_retryable_failure_when_broker_unavailable(
     )
 
     assert response.status_code == 503
-    assert GePGCallback.objects.get(event_id="RES-DURABLE-2").status == "pending"
+    assert not GePGCallback.objects.filter(event_id="RES-DURABLE-2").exists()
 
 
 def test_outbound_retry_reuses_persisted_payload_and_headers(settings, monkeypatch):

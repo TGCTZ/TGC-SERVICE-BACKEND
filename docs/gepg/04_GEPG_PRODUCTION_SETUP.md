@@ -129,7 +129,6 @@ Configure these values in the VPS service environment or secret manager. Prefer 
 | `GEPG_VERIFY_CALLBACK_SIGNATURE` | `False` to preserve the legacy callback behavior. Enable only when GePG callback signatures are to be verified. |
 | `GEPG_PUBLIC_CERT_PATH` | Required only when callback verification is enabled; absolute path to the GePG public certificate. |
 | `GEPG_PUBLIC_CERTIFICATE_PASSWORD` | Used only for a password-protected GePG public certificate PFX; blank for an unencrypted PEM/DER certificate. |
-| `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | Private Redis URLs used by the GePG worker and scheduler. |
 | `GEPG_RETRY_INITIAL_SECONDS`, `GEPG_RETRY_MAX_SECONDS`, `GEPG_RETRY_MAX_AGE_SECONDS` | Defaults are 60 seconds, 1800 seconds, and 86400 seconds. |
 | `BEEM_AFRICA_API_KEY`, `BEEM_AFRICA_SECRET_KEY` | Existing Beem production credentials. |
 | `AUTO_BILL_AFTER_IDENTIFICATION` | Set `True` only if production should automatically bill after the final stone is identified; otherwise `False`. |
@@ -168,7 +167,7 @@ uv run python manage.py migrate
 Before enabling production traffic, validate the environment and signing identity in a staging deployment or controlled maintenance window. Run the local signing and mocked wire-contract tests; they do not call GePG:
 
 ```sh
-uv run pytest apps/billing/tests/test_gepg_legacy.py -q
+uv run pytest apps/billing/tests/test_gepg_legacy.py apps/billing/tests/test_gepg_processing.py -q
 ```
 
 Confirm that `GEPG_SIMULATE` is false, signing is enabled, the configured PFX path exists and is readable by the service account, and the app can sign with the configured password. Do not verify credentials by printing environment values. Do not send a test bill, cancellation, or reconciliation to a live GePG URL as part of this checklist.
@@ -206,9 +205,10 @@ control number into this guide.
 - A successful control-number SMS is recorded to prevent repeat sends. Beem delivery still depends on the credentials, customer phone number, and provider availability.
 - The old system's unused bill-update URL is intentionally omitted because there is no caller in either configured workflow.
 
-The Celery worker and beat services must be enabled alongside the web process.
-The PostgreSQL inbox/outbox is the recovery source when Redis is unavailable;
-the callback endpoint returns HTTP 503 rather than acknowledging work that was
-not queued. Monitor pending callback age, failed callbacks, exhausted outbound
-requests, invalid signature counts (when verification is enabled), and
-Redis/worker availability in staging before production cutover.
+Enable `tgpmis-gepg-processor.timer` alongside the web process. The callback
+endpoint acknowledges after the PostgreSQL inbox write commits; a database
+outage returns HTTP 503 so GePG can redeliver. The timer processes pending
+callbacks and retries due outbound requests once per minute, recovering stale
+work after an interrupted run. Monitor pending callback age, failed callbacks,
+exhausted outbound requests, timer failures, and invalid signature counts (when
+verification is enabled) in staging before production cutover.

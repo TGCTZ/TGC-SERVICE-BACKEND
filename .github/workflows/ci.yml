@@ -192,8 +192,6 @@ jobs:
           /home/madini01/.local/bin/uv run python manage.py migrate --noinput
           /home/madini01/.local/bin/uv run python manage.py collectstatic --noinput
           sudo -n /usr/bin/systemctl restart tgpmis-gunicorn.service
-          sudo -n /usr/bin/systemctl restart tgpmis-celery-worker.service
-          sudo -n /usr/bin/systemctl restart tgpmis-celery-beat.service
           REMOTE
 
       - name: Check production health
@@ -209,3 +207,19 @@ jobs:
           done
           echo "Production API did not become healthy within 60 seconds." >&2
           exit 1
+
+      - name: Verify GePG processor timer
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_PORT: ${{ vars.SSH_PORT }}
+          SSH_USER: ${{ vars.SSH_USER }}
+        run: |
+          ssh \
+            -i "$HOME/.ssh/tgc-actions" \
+            -p "$SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            "$SSH_USER@$SSH_HOST" \
+            "systemctl is-active --quiet tgpmis-gepg-processor.timer && systemctl list-timers --no-pager tgpmis-gepg-processor.timer"
