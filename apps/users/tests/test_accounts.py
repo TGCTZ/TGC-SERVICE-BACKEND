@@ -155,6 +155,7 @@ def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
 
 
 def test_a_manager_cannot_reset_passwords(auth_client):
+    """Managers cannot issue temporary passwords, even to lower-ranked users."""
     manager = _holding("manager")
     colleague = _holding("receptionist")
 
