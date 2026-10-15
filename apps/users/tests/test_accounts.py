@@ -121,14 +121,17 @@ def _holding(role: str):
 
 
 def test_a_reset_issues_a_new_password_and_ends_every_session(
-    auth_client, admin_user, django_capture_on_commit_callbacks
+    auth_client, roles, django_capture_on_commit_callbacks
 ):
     """For credentials that never arrived, or a forgotten password."""
+    administrator = _holding("admin")
     colleague = _holding("receptionist")
+    colleague.must_complete_profile = True
+    colleague.save(update_fields=["must_complete_profile"])
     old_session = RefreshToken.for_user(colleague)
 
     with django_capture_on_commit_callbacks(execute=True):
-        response = auth_client(admin_user).post(
+        response = auth_client(administrator).post(
             f"/api/v1/users/{colleague.pk}/reset-password/"
         )
 
@@ -136,8 +139,9 @@ def test_a_reset_issues_a_new_password_and_ends_every_session(
     colleague.refresh_from_db()
     assert colleague.check_password(response.data["temporary_password"])
     assert colleague.must_change_password
+    assert not colleague.must_complete_profile
     assert BlacklistedToken.objects.filter(token__jti=old_session["jti"]).exists()
-    assert len(mail.outbox) == 1
+    assert mail.outbox == []
 
 
 def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
@@ -149,3 +153,15 @@ def test_a_reset_follows_the_hierarchy(auth_client, admin_user, roles):
     superior = client.post(f"/api/v1/users/{_holding('admin').pk}/reset-password/")
 
     assert (own.status_code, peer.status_code, superior.status_code) == (400, 403, 404)
+
+
+def test_a_manager_cannot_reset_passwords(auth_client, roles):
+    """Managers cannot issue temporary passwords, even to lower-ranked users."""
+    manager = _holding("manager")
+    colleague = _holding("receptionist")
+
+    response = auth_client(manager).post(f"/api/v1/users/{colleague.pk}/reset-password/")
+
+    assert response.status_code == 403
+    assert "Only admins" in response.data["detail"]
+    assert mail.outbox == []

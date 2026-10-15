@@ -5,6 +5,7 @@ import contextlib
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -20,6 +21,7 @@ from apps.core.permissions import StrictModelPermissions
 from apps.core.viewsets import BaseModelViewSet
 
 from .models import Gender, IdentityDetail, UserStatus
+from .roles import ROLE_RANKS
 from .serializers import (
     ChangePasswordSerializer,
     FirstLoginPasswordSerializer,
@@ -51,6 +53,7 @@ from .services.roles import (
     assert_can_manage_user,
     hidden_role_names,
     permission_labels,
+    user_rank,
 )
 from .services.sessions import record_interaction, revoke_session
 
@@ -252,12 +255,14 @@ class UserViewSet(BaseModelViewSet, viewsets.ModelViewSet):
     @extend_schema(request=None, responses=UserSerializer)
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
-        """Issue a new temporary password, email it, and show it once."""
+        """Let admins issue a temporary password for manual handoff."""
         from apps.core.exceptions import ServiceError
 
         user = self.get_object()
         if user.pk == request.user.pk:
             raise ServiceError("Change your own password from Settings.")
+        if user_rank(request.user) < ROLE_RANKS["admin"]:
+            raise PermissionDenied("Only admins can reset passwords.")
         assert_can_manage_user(request.user, user)
         password = reset_temporary_password(user=user)
         data = self.get_serializer(user).data

@@ -8,8 +8,9 @@ them; ``apps/users/authentication.py`` holds them to that.
 
 The temporary password is random per account rather than one shared default: a
 default everyone knows lets anyone who knows a new colleague's email sign in
-first and take the account. It is shown once to whoever created or reset it,
-and emailed - never stored in a form that can be read back.
+first and take the account. It is shown once to whoever created the account and
+emailed - never stored in a form that can be read back. Resets are admin-only
+and their generated password is handed to the user manually.
 """
 
 import logging
@@ -94,12 +95,13 @@ def create_user_account(*, email: str, role, actor) -> tuple:
 
 @transaction.atomic
 def reset_temporary_password(*, user) -> str:
-    """Give an account a new temporary password and send it again.
+    """Give an account a new temporary password for manual handoff.
 
-    For a colleague whose credentials email never came, or who has forgotten
-    their password. Outstanding refresh tokens are blacklisted and the password
-    must be changed again; existing access sessions expire through their normal
-    expiry and idle-timeout checks. A completed profile stays completed.
+    For a colleague whose temporary password was lost or forgotten. The user
+    must choose a new password at sign-in, but profile setup is skipped because
+    this flow is for an existing account. Outstanding refresh tokens are
+    blacklisted; existing access sessions expire through their normal expiry
+    and idle-timeout checks.
 
     Returns:
         The new temporary password, so it can be shown once.
@@ -107,9 +109,16 @@ def reset_temporary_password(*, user) -> str:
     password = generate_temporary_password()
     user.set_password(password)
     user.must_change_password = True
-    user.save(update_fields=["password", "must_change_password", "updated_at"])
+    user.must_complete_profile = False
+    user.save(
+        update_fields=[
+            "password",
+            "must_change_password",
+            "must_complete_profile",
+            "updated_at",
+        ]
+    )
     revoke_all_tokens(user)
-    _email_credentials_on_commit(user, password)
     return password
 
 
