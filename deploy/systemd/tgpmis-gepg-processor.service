@@ -1,0 +1,16 @@
+[Unit]
+Description=TGPMIS GePG PostgreSQL queue processor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=madini01
+Group=madini01
+WorkingDirectory=/home/madini01/tgpmis-backend-production
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+ExecStart=/home/madini01/.local/bin/uv run --frozen python manage.py process_gepg_queue
+TimeoutStartSec=45
+NoNewPrivileges=true
+PrivateTmp=true
+

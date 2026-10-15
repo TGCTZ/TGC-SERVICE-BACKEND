@@ -22,7 +22,3 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {"auth": None}
 
 LOGGING["root"]["handlers"] = ["console"]
-
-# Callback tasks run inline in tests; no Redis service is needed for the suite.
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True

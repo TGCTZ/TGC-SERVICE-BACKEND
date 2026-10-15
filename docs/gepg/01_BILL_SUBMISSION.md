@@ -40,7 +40,7 @@ including a failed one; it does not prove acceptance.
 `POST /gepg/bill/response/` extracts `ResId`, `BillId`, `BillCntrNum`, and status
 fields. Inbound signature verification is controlled by
 `GEPG_VERIFY_CALLBACK_SIGNATURE` and defaults to `False` for legacy
-compatibility. The callback is stored before it is queued. A matching bill
+compatibility. The callback is stored before it is acknowledged. A matching bill
 receives a control number only when its bill-level status is `7101` and the
 number is neither empty nor `0`. Unknown bills are recorded as failures for
 staff review.
@@ -59,5 +59,5 @@ without replacing lines, number, or stone statuses. Held orders are refused.
 
 An existing bill needs attention only when it is `pending`, has no control
 number, and has no accepted acknowledgement code. Accepted asynchronous bills
-wait for their callback. Celery workers retry persisted transport failures;
+wait for their callback. The PostgreSQL timer retries persisted transport failures;
 exhausted requests remain visible to staff in the GePG outbound-request admin.

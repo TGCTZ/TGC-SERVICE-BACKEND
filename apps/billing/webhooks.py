@@ -8,7 +8,6 @@ from defusedxml.ElementTree import ParseError, fromstring
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
-from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
@@ -21,7 +20,6 @@ from .gateways.gepg import (
 from .gateways.signing import verify_payload
 from .models import GePGCallback
 from .services import handle_cancel_response
-from .tasks import process_gepg_callback
 
 logger = logging.getLogger(__name__)
 XML_CONTENT_TYPE = "text/xml; charset=utf-8"
@@ -49,7 +47,7 @@ def _event_id(kind: str, payload: str) -> str:
 
 
 def _queue_callback(request, kind: str) -> HttpResponse:
-    """Optionally verify, persist, enqueue, and acknowledge one callback."""
+    """Optionally verify, persist, and acknowledge one callback."""
     try:
         payload = request.body.decode("utf-8")
         event_id = _event_id(kind, payload)
@@ -74,22 +72,16 @@ def _queue_callback(request, kind: str) -> HttpResponse:
 
     try:
         try:
-            callback, _created = GePGCallback.objects.get_or_create(
+            GePGCallback.objects.get_or_create(
                 kind=kind,
                 event_id=event_id,
                 defaults={"payload": payload},
             )
         except IntegrityError:
-            callback = GePGCallback.objects.get(kind=kind, event_id=event_id)
+            GePGCallback.objects.get(kind=kind, event_id=event_id)
 
-        if callback.status != GePGCallback.Status.PROCESSED and (
-            callback.next_attempt_at is None or callback.next_attempt_at <= timezone.now()
-        ):
-            process_gepg_callback.delay(callback.pk)
     except Exception:
-        # The persisted inbox row will be redispatched by Celery Beat if the
-        # broker is unavailable. Ask GePG to retry rather than false-acknowledge.
-        logger.exception("Could not persist or queue GePG callback %s", event_id)
+        logger.exception("Could not persist GePG callback %s", event_id)
         return HttpResponse("GePG callback temporarily unavailable", status=503)
 
     return HttpResponse(_ack(kind, event_id, "7101"), content_type=XML_CONTENT_TYPE)

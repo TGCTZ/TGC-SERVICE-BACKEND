@@ -20,7 +20,7 @@ def send_gepg_request(
     cancellation=None,
     reconciliation=None,
 ) -> tuple[GePGRequest, str | None]:
-    """Persist and send the exact signed payload once; retry failures in Celery."""
+    """Persist and send the exact signed payload once; retry failures from PostgreSQL."""
     try:
         root = fromstring(payload)
         req_id = root.findtext(".//ReqId", "")

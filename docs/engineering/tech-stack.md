@@ -14,8 +14,8 @@ version numbers into this guide.
 | Filtering and schema | django-filter, drf-spectacular | Request filtering and generated OpenAPI documentation. |
 | Audit and configuration | django-auditlog, django-environ | Model-change history and typed environment settings. |
 | Gateway | requests, defusedxml, cryptography | GePG HTTP calls, safe XML parsing, outbound signing, and optional inbound signature verification. |
-| Background work | Celery, Redis | Asynchronous callback processing, outbound retry scheduling, and periodic recovery. |
-| Durable message state | Django ORM, PostgreSQL | Callback inbox and outbound request records; the database remains the recovery source if Redis or a worker restarts. |
+| Background work | Django management command, systemd timer | Once-per-minute processing of due callbacks, outbound retries, and stale work recovery. |
+| Durable message state | Django ORM, PostgreSQL | Callback inbox and outbound request records, including retry timing and recovery state. |
 | Certificate output | WeasyPrint, qrcode, Pillow | PDF rendering, verification QR codes, and image support. |
 
 The certificate renderer loads WeasyPrint on demand. Its native system
@@ -29,9 +29,9 @@ optional and its header is omitted when unset. Callback signature verification
 defaults to off for legacy compatibility and can be enabled with
 `GEPG_VERIFY_CALLBACK_SIGNATURE` when the GePG public certificate is configured.
 Payment, bill-response, and reconciliation callbacks are persisted before they
-are queued. Celery workers process the inbox and retry exact persisted outbound
-requests. See the [GePG integration guide](../gepg/README.md) for protocol
-behavior and the [deployment guide](../deployment.md) for worker and Redis
+are processed. A bounded Django command, scheduled by systemd, retries exact
+persisted outbound requests. See the [GePG integration guide](../gepg/README.md)
+for protocol behavior and the [deployment guide](../deployment.md) for timer
 setup.
 
 ## Development and checks
@@ -39,7 +39,7 @@ setup.
 | Area | Tools |
 | --- | --- |
 | Environment and dependencies | `uv`, `uv.lock` |
-| Background processing | Celery workers and Celery Beat, backed by Redis |
+| Background processing | PostgreSQL-backed command, scheduled by systemd |
 | Tests | `pytest`, `pytest-django`, `factory-boy` |
 | Lint, format, and docstrings | Ruff, configured in `pyproject.toml` |
 | CI | GitHub Actions workflows in `.github/workflows/` |
@@ -56,7 +56,7 @@ updating this summary.
   role-rank checks for account and role administration.
 - Soft deletion and audit logging are implemented in shared model behavior.
   These are project conventions, not third-party packages.
-- Callback delivery is backed by a PostgreSQL inbox and Celery processing;
-  outbound transport retries use persisted payloads with bounded exponential
-  backoff. Reconciliation applies payment transactions through the same
+- Callback delivery and retries are backed by PostgreSQL inbox/outbox records
+  processed by a systemd timer; outbound transport retries use persisted
+  payloads with bounded exponential backoff. Reconciliation applies payment transactions through the same
   idempotent settlement path as notifications.
