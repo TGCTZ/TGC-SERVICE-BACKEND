@@ -1,10 +1,9 @@
-"""Accounts created by staff: an email and a role, then a credentials email."""
+"""Staff-created accounts and manual credential handoff."""
 
 import pytest
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core import mail
@@ -46,47 +45,16 @@ def test_an_email_and_a_role_are_all_it_takes(
     assert "temporary_password" not in client.get(f"/api/v1/users/{user.pk}/").data
 
 
-def test_the_new_user_is_emailed_their_credentials_and_where_to_sign_in(
+def test_account_creation_does_not_email_credentials(
     auth_client, admin_user, django_capture_on_commit_callbacks
 ):
-    """Email, username, temporary password, the link, and what happens next."""
+    """The admin shares the one-time credentials with the new user manually."""
     with django_capture_on_commit_callbacks(execute=True):
         response = _create(auth_client(admin_user))
 
-    [message] = mail.outbox
-    assert message.to == ["asha.juma@example.com"]
-    for expected in (
-        "asha.juma@example.com",
-        response.data["username"],
-        response.data["temporary_password"],
-        f"{settings.FRONTEND_URL}/sign-in",
-        "choose your own password",
-    ):
-        assert expected in message.body
-    assert message.alternatives, "expected an HTML version too"
-
-
-def test_nothing_is_emailed_until_the_account_is_saved(auth_client, admin_user):
-    """The mail waits for the transaction; a rolled-back account gets none."""
-    _create(auth_client(admin_user))
-
+    assert response.status_code == 201, response.data
+    assert response.data["temporary_password"]
     assert mail.outbox == []
-
-
-def test_a_failed_email_does_not_undo_the_account(
-    auth_client, admin_user, django_capture_on_commit_callbacks, monkeypatch
-):
-    """The creator has the credentials on screen; the account must survive."""
-
-    def refuse(**kwargs):
-        raise OSError("mail server down")
-
-    monkeypatch.setattr(accounts, "send_mail", refuse)
-    with django_capture_on_commit_callbacks(execute=True):
-        response = _create(auth_client(admin_user))
-
-    assert response.status_code == 201
-    assert User.objects.filter(email="asha.juma@example.com").exists()
 
 
 def test_usernames_and_emails_stay_unique(auth_client, admin_user):

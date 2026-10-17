@@ -2,26 +2,22 @@
 
 There is no self-registration. A superadmin, admin or manager creates an
 account from an email and a role; the system fills in the rest - Tanzania,
-Active, a temporary password - and emails the credentials. The user then has to
-set their own password and complete their profile before the app opens up to
-them; ``apps/users/authentication.py`` holds them to that.
+Active and a temporary password. The creator shares the credentials manually.
+The user then has to set their own password and complete their profile before
+the app opens up to them; ``apps/users/authentication.py`` holds them to that.
 
 The temporary password is random per account rather than one shared default: a
 default everyone knows lets anyone who knows a new colleague's email sign in
-first and take the account. It is shown once to whoever created the account and
-emailed - never stored in a form that can be read back. Resets are admin-only
-and their generated password is handed to the user manually.
+first and take the account. It is shown once to whoever created the account -
+never stored in a form that can be read back. Resets are admin-only and their
+generated password is handed to the user manually.
 """
 
-import logging
 import re
 import secrets
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
 from django.db import transaction
-from django.template.loader import render_to_string
 
 from apps.core.exceptions import ServiceError
 from apps.users.models import UserStatus
@@ -29,7 +25,6 @@ from apps.users.services.auth import revoke_all_tokens
 from apps.users.services.roles import assert_can_assign
 from apps.users.services.sessions import issue_session_refresh
 
-logger = logging.getLogger(__name__)
 User = get_user_model()
 
 COUNTRY = "Tanzania"
@@ -61,7 +56,7 @@ def _username_for(email: str) -> str:
 
 @transaction.atomic
 def create_user_account(*, email: str, role, actor) -> tuple:
-    """Create an account from an email and a role, and email its credentials.
+    """Create an account from an email and a role.
 
     Args:
         email: The new user's email, also what they sign in with.
@@ -89,7 +84,6 @@ def create_user_account(*, email: str, role, actor) -> tuple:
         must_complete_profile=True,
     )
     user.groups.set([role])
-    _email_credentials_on_commit(user, password)
     return user, password
 
 
@@ -120,35 +114,6 @@ def reset_temporary_password(*, user) -> str:
     )
     revoke_all_tokens(user)
     return password
-
-
-def _email_credentials_on_commit(user, password: str) -> None:
-    """Send the credentials once the account is really saved.
-
-    Requests run in a transaction, so sending straight away could mail someone
-    an account that is then rolled back. A failed send is logged, not raised:
-    the account exists, and whoever created it has the credentials on screen.
-    """
-
-    def send():
-        context = {
-            "user": user,
-            "password": password,
-            "login_url": f"{settings.FRONTEND_URL.rstrip('/')}/sign-in",
-            "lab_name": settings.CERTIFICATE_LAB_NAME,
-        }
-        try:
-            send_mail(
-                subject=f"Your {settings.CERTIFICATE_LAB_NAME} account",
-                message=render_to_string("users/email/credentials.txt", context),
-                html_message=render_to_string("users/email/credentials.html", context),
-                from_email=None,  # DEFAULT_FROM_EMAIL
-                recipient_list=[user.email],
-            )
-        except Exception:
-            logger.exception("Could not email credentials to %s", user.email)
-
-    transaction.on_commit(send)
 
 
 @transaction.atomic

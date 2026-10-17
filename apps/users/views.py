@@ -235,10 +235,10 @@ class UserViewSet(BaseModelViewSet, viewsets.ModelViewSet):
 
     @extend_schema(request=UserCreateSerializer, responses={201: UserSerializer})
     def create(self, request, *args, **kwargs):
-        """Create the account and email its credentials.
+        """Create the account and return credentials for manual handoff.
 
         The temporary password is in this response and nowhere else afterwards,
-        so whoever created the account can pass it on if the email goes astray.
+        so the creator must share it with the intended user.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

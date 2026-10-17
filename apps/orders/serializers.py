@@ -19,26 +19,6 @@ class CustomerSerializer(AuditFieldsMixin):
 
     full_name = serializers.CharField(read_only=True)
 
-    def validate_phone(self, value):
-        """Refuse a phone already on file, naming who holds it.
-
-        The model has a partial unique index on ``phone``, but an IntegrityError
-        reaches the client as an opaque "conflicts with existing data" - which
-        tells reception nothing and offers no way out. Checking here turns it
-        into a field error naming the existing customer, so the UI can offer to
-        use that record instead of asking for the same details again.
-        """
-        existing = Customer.objects.filter(phone=value)
-        if self.instance is not None:
-            existing = existing.exclude(pk=self.instance.pk)
-
-        match = existing.first()
-        if match is not None:
-            raise serializers.ValidationError(
-                f"Already registered to {match.full_name}. Pick that customer instead."
-            )
-        return value
-
     class Meta:
         model = Customer
         fields = (
@@ -56,10 +36,6 @@ class CustomerSerializer(AuditFieldsMixin):
             *AuditFieldsMixin.AUDIT_FIELDS,
         )
         read_only_fields = AuditFieldsMixin.AUDIT_FIELDS
-        # Drop the UniqueValidator DRF infers from the model's partial unique
-        # index: it fires before validate_phone and reports a message that names
-        # nobody. The check below replaces it, and the index still backstops.
-        extra_kwargs = {"phone": {"validators": []}}
 
 
 class StoneReportSerializer(serializers.Serializer):

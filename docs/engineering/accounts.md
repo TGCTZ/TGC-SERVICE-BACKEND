@@ -1,13 +1,12 @@
 # Accounts and first login
 
 There is no self-registration. Every account is created by a superadmin, admin
-or manager, from an email and a role. The new user is emailed a temporary
-password and, on first sign-in, must set their own password and complete their
-profile before the system opens up to them.
+or manager, from an email and a role. No credentials email is sent. The creator
+shares the temporary password manually; on first sign-in, the new user must set
+their own password and complete their profile before the system opens up to them.
 
 Code: `apps/users/services/accounts.py` (the flow),
-`apps/users/authentication.py` (the first-login and idle-session rules),
-`apps/users/templates/users/email/` (the email).
+`apps/users/authentication.py` (the first-login and idle-session rules).
 
 ## Inactivity timeout
 
@@ -42,26 +41,14 @@ even resolvable, so naming one is a 400 "does not exist".
 | names | blank - the user fills them in |
 
 The response is the new user **plus `temporary_password`**. It is the only time
-the API returns it, so the Users screen shows it to the creator once, for when the
-email does not arrive.
+the API returns it, so the Users screen shows it to the creator once to share
+manually with the intended user.
 
 ### Why a random password per account
 
 A shared default password (the same for everyone) lets anyone who knows a new
 colleague's email sign in before they do and take the account. A random one
 closes that window at no cost to the flow.
-
-## The credentials email
-
-Sent after the transaction commits (`transaction.on_commit`): requests are atomic,
-so sending earlier could mail someone an account that is then rolled back. A send
-failure is logged and never fails the request - the account exists, and the
-creator has the credentials on screen.
-
-It contains the email, username, temporary password, a link to
-`{FRONTEND_URL}/sign-in`, and what first sign-in will ask for. Templates:
-`credentials.txt` and `credentials.html`. Delivery is configured by `EMAIL_URL`
-and `DEFAULT_FROM_EMAIL` - see [Operations](operations.md#configuration).
 
 ## First login
 
@@ -103,8 +90,8 @@ user can reach before finishing is reachable with only the emailed password.
 
 ## Resetting a password
 
-`POST /api/v1/users/{id}/reset-password/` issues a new temporary password, emails
-it, returns it once, sets `must_change_password`, and blacklists outstanding
+`POST /api/v1/users/{id}/reset-password/` issues a new temporary password,
+returns it once for manual sharing, sets `must_change_password`, and blacklists outstanding
 refresh tokens. It requires `users.change_user` and follows the hierarchy (a
 peer is refused, a superior is not even visible). It refuses your own account -
 that is changed from Settings, where the current password is checked. The profile
@@ -121,5 +108,5 @@ accounts from `seed` - sign in as usual.
 
 ## Tests
 
-`apps/users/tests/test_accounts.py` (creation, the email, reset) and
+`apps/users/tests/test_accounts.py` (creation, manual credential handoff, reset) and
 `apps/users/tests/test_first_login.py` (the rule and both steps).

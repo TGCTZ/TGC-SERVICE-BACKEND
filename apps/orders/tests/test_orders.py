@@ -392,18 +392,27 @@ def test_a_failed_order_leaves_no_orphan_customer(monkeypatch):
     assert not Customer.objects.filter(phone="0754123456").exists()
 
 
-def test_a_duplicate_phone_names_the_existing_customer(admin_user, auth_client):
-    """An opaque integrity error would tell reception nothing and offer no way out."""
+def test_an_order_can_register_a_customer_with_an_existing_phone(admin_user, auth_client):
+    """Phone numbers may be shared by customers, so they are not identifiers."""
     existing = CustomerFactory(first_name="Asha", last_name="Mwinyi", phone="0754123456")
 
     response = auth_client(admin_user).post(
-        "/api/v1/customers/",
-        {"first_name": "Aisha", "last_name": "M", "phone": "0754123456"},
+        "/api/v1/orders/",
+        {
+            "customer_data": {
+                "first_name": "Aisha",
+                "last_name": "M",
+                "phone": "0754123456",
+            },
+            "stone_count": 1,
+            "received_date": "2026-09-13",
+        },
         format="json",
     )
 
-    assert response.status_code == 400
-    assert existing.full_name in str(response.data["phone"])
+    assert response.status_code == 201, response.data
+    assert response.data["customer"] != existing.pk
+    assert Customer.objects.filter(phone="0754123456").count() == 2
 
 
 def test_a_gemmologist_may_identify_a_stone(gemmologist_user, auth_client):
