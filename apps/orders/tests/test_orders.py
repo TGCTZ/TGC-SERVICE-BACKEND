@@ -392,9 +392,7 @@ def test_a_failed_order_leaves_no_orphan_customer(monkeypatch):
     assert not Customer.objects.filter(phone="0754123456").exists()
 
 
-def test_an_order_can_register_a_customer_with_an_existing_phone(
-    admin_user, auth_client
-):
+def test_an_order_can_register_a_customer_with_an_existing_phone(admin_user, auth_client):
     """Phone numbers may be shared by customers, so they are not identifiers."""
     existing = CustomerFactory(first_name="Asha", last_name="Mwinyi", phone="0754123456")
 
