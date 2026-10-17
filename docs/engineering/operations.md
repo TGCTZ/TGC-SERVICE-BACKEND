@@ -58,9 +58,8 @@ first used. Other API endpoints can start without them, but certificate download
 require them. See the
 [README](../../README.md#quick-start) for the package list.
 
-Set up email before anyone creates an account: without `EMAIL_URL`, the
-credentials email only reaches the server log (the creator still sees the
-temporary password on screen).
+Account creation does not send credentials by email. The creator must share the
+one-time temporary password shown on screen with the intended user.
 
 ## Deploying
 

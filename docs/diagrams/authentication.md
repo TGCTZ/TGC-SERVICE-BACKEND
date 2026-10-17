@@ -63,7 +63,8 @@ or manager - see [Accounts and first login](../engineering/accounts.md).
 ## First login
 
 An account created from the Users screen carries `must_change_password` and
-`must_complete_profile`. It can sign in with the emailed temporary password, but
+`must_complete_profile`. It can sign in with the temporary password shared by
+the account creator, but
 until both flags are cleared `OnboardingJWTAuthentication` refuses every endpoint
 outside a short allowlist:
 

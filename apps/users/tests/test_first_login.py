@@ -40,7 +40,7 @@ def _profile(**overrides):
     }
 
 
-def test_the_emailed_credentials_sign_in(api_client, new_account):
+def test_the_temporary_credentials_sign_in(api_client, new_account):
     """Signing in works, and says a first login is due."""
     user, password = new_account
 

@@ -157,7 +157,7 @@ how it is built.
 | [API lifecycle](docs/engineering/api-lifecycle.md) | A request traced from URL to response |
 | [Testing the API](docs/engineering/testing-the-api.md) | Swagger, `api.http`, the query contract, the test suite |
 | [Permissions](docs/engineering/permissions.md) | Roles, the hierarchy, permissions, module gates, workflow verbs |
-| [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, the credentials email, first login, password resets |
+| [Accounts and first login](docs/engineering/accounts.md) | Staff-created accounts, manual credential sharing, first login, password resets |
 | [GePG integration](docs/gepg/README.md) | The payment gateway, and the gaps in it |
 | [Certificates](docs/engineering/certificates.md) | Snapshots, the PDF, QR verification and report numbering |
 | [Reports](docs/engineering/reports.md) | Financial and operational sections, filters, and exports |

@@ -1,7 +1,6 @@
 """Customer who brings stones for identification."""
 
 from django.db import models
-from django.db.models import Q
 
 from apps.core.models import BaseModel
 from apps.gems.enums import Region
@@ -26,13 +25,6 @@ class Customer(BaseModel):
 
     class Meta:
         ordering = ["first_name", "last_name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["phone"],
-                condition=Q(deleted_at__isnull=True),
-                name="%(app_label)s_%(class)s_unique_phone",
-            ),
-        ]
 
     @property
     def full_name(self) -> str:
